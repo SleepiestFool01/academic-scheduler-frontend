@@ -9,7 +9,7 @@
              <img :src="user.picture" />
             </v-avatar>
             <v-icon left v-else>mdi-dumbbell</v-icon>
-            Fitness - Tracker
+            Academic Scheduler
           </v-btn>
         </v-col>
   
@@ -24,6 +24,10 @@
             >
               <v-icon left>{{ item.icon }}</v-icon>
               {{ item.title }}
+            </v-btn>
+
+            <v-btn icon color="white" @click="logout">
+              <v-icon>mdi-cog</v-icon>
             </v-btn>
   
             <v-btn icon color="white" @click="logout">
@@ -48,8 +52,10 @@
           { title: "Schedules", icon: "mdi-account-circle", route: "/schedules" },
           { title: "Employees", icon: "mdi-account-group", route: "/employees" },
           { title: "Shifts", icon: "mdi-dumbbell", route: "/shifts" },
+          { title: "Tradeboard", icon: "mdi-dumbbell", route: "/tradeboard" },
           { title: "Tasks", icon: "mdi-target", route: "/tasks" },
           { title: "Requests", icon: "mdi-chart-line", route: "/requests" },
+          { title: "Timesheets", icon: "mdi-chart-line", route: "/timesheets" },
           { title: "Payroll", icon: "mdi-chart-line", route: "/payroll" },
         ],
       };
