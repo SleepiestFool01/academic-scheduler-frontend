@@ -27,6 +27,10 @@
         </v-btn>
 
         <v-btn v-if="!overflowItems.length" icon color="white" @click="logout">
+          <v-icon>mdi-cog</v-icon>
+        </v-btn>
+
+        <v-btn v-if="!overflowItems.length" icon color="white" @click="logout">
           <v-icon>mdi-logout</v-icon>
         </v-btn>
       </div>
@@ -52,6 +56,10 @@
 
             <v-divider />
 
+            <v-list-item @click="logout">
+              <v-icon start>mdi-cog</v-icon>
+              Settings
+            </v-list-item>
             <v-list-item @click="logout">
               <v-icon start>mdi-logout</v-icon>
               Logout
@@ -182,7 +190,6 @@
 
   /* Stop the nav items from wrapping and clipping */
   .nav-items {
-    display: flex;
     white-space: nowrap;
     margin-left: auto;
   }
