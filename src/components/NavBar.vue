@@ -1,74 +1,162 @@
 <template>
-    <v-app-bar app color="primary" dark elevate-on-scroll>
-      <v-container>
-        <v-row align="center" justify="space-between">
-          <!-- Left: App title -->
-          <v-col cols="auto">
-          <v-btn variant="text" class="text-white text-h6" @click="goHome">
-            <v-avatar size="32" class="mr-2" v-if="user.picture">
-             <img :src="user.picture" />
-            </v-avatar>
-            <v-icon left v-else>mdi-dumbbell</v-icon>
-            Academic Scheduler
-          </v-btn>
-        </v-col>
-  
-          <!-- Right: Navigation links -->
-          <v-col cols="auto">
-            <v-btn
-              v-for="item in navItems"
-              :key="item.title"
-              text
-              class="text-white"
+  <v-app-bar ref="appBar" app color="primary" dark elevate-on-scroll>
+    <v-container fluid class="nav-container">
+    
+      <!-- Left -->
+      <div ref="left" class="nav-left">
+        <v-btn variant="text" class="text-white text-h6" @click="goHome">
+          <v-avatar size="32" class="mr-2" v-if="user.picture">
+            <img :src="user.picture" />
+          </v-avatar>
+          <v-icon start v-else>mdi-dumbbell</v-icon>
+          Academic Scheduler
+        </v-btn>
+      </div>
+
+      <!-- Visible nav items -->
+      <div ref="nav" class="nav-items">
+        <v-btn
+          v-for="item in visibleItems"
+          :key="item.id"
+          variant="text"
+          class="text-white nav-btn"
+          @click="go(item.route)"
+        >
+          <v-icon start>{{ item.icon }}</v-icon>
+          {{ item.title }}
+        </v-btn>
+
+        <v-btn v-if="!overflowItems.length" icon color="white" @click="logout">
+          <v-icon>mdi-logout</v-icon>
+        </v-btn>
+      </div>
+
+      <!-- Hamburger (only if needed) -->
+      <div v-if="overflowItems.length" class="nav-hamburger">
+        <v-menu location="bottom end">
+          <template #activator="{ props }">
+            <v-btn icon v-bind="props">
+              <v-icon>mdi-menu</v-icon>
+            </v-btn>
+          </template>
+
+          <v-list>
+            <v-list-item
+              v-for="item in overflowItems"
+              :key="item.id"
               @click="go(item.route)"
             >
-              <v-icon left>{{ item.icon }}</v-icon>
+              <v-icon start>{{ item.icon }}</v-icon>
               {{ item.title }}
-            </v-btn>
+            </v-list-item>
 
-            <v-btn icon color="white" @click="logout">
-              <v-icon>mdi-cog</v-icon>
-            </v-btn>
-  
-            <v-btn icon color="white" @click="logout">
-              <v-icon>mdi-logout</v-icon>
-            </v-btn>
-          </v-col>
-        </v-row>
-      </v-container>
-    </v-app-bar>
-  </template>
-  
-  <script>
+            <v-divider />
+
+            <v-list-item @click="logout">
+              <v-icon start>mdi-logout</v-icon>
+              Logout
+            </v-list-item>
+          </v-list>
+        </v-menu>
+      </div>
+
+      <!-- Measures exact widths -->
+      <div ref="measure" class="measure-container">
+        <v-btn
+          v-for="item in navItems"
+          :key="item.id"
+          class="nav-btn"
+        >
+          <v-icon start>{{ item.icon }}</v-icon>
+          {{ item.title }}
+        </v-btn>
+      </div>
+
+
+    </v-container>
+  </v-app-bar>
+
+</template>
+
+<script>
+  import { useDisplay } from "vuetify";
   import Utils from "../config/utils";
   
   export default {
     name: "NavBar",
+    setup() {
+      const display = useDisplay();
+      return {
+        isMobile: display.mbAndDown, 
+      };
+    },
     data() {
       const user = Utils.getStore("user");
       return {
         user,
+        visibleItems: [],
+        overflowItems: [],
         navItems: [
-          { title: "Schedules", icon: "mdi-account-circle", route: "/schedules" },
-          { title: "Employees", icon: "mdi-account-group", route: "/employees" },
-          { title: "Shifts", icon: "mdi-dumbbell", route: "/shifts" },
-          { title: "Tradeboard", icon: "mdi-dumbbell", route: "/tradeboard" },
-          { title: "Tasks", icon: "mdi-target", route: "/tasks" },
-          { title: "Requests", icon: "mdi-chart-line", route: "/requests" },
-          { title: "Timesheets", icon: "mdi-chart-line", route: "/timesheets" },
-          { title: "Payroll", icon: "mdi-chart-line", route: "/payroll" },
+          { id: 1, title: "Schedules", icon: "mdi-account-circle", route: "/schedules" },
+          { id: 2, title: "Employees", icon: "mdi-account-group", route: "/employees" },
+          { id: 3, title: "Shifts", icon: "mdi-dumbbell", route: "/shifts" },
+          { id: 4, title: "Tradeboard", icon: "mdi-dumbbell", route: "/tradeboard" },
+          { id: 5, title: "Tasks", icon: "mdi-target", route: "/tasks" },
+          { id: 6, title: "Requests", icon: "mdi-chart-line", route: "/requests" },
+          { id: 7, title: "Timesheets", icon: "mdi-chart-line", route: "/timesheets" },
+          { id: 8, title: "Payroll", icon: "mdi-chart-line", route: "/payroll" },
         ],
       };
     },
+    mounted() {
+      this.$nextTick(() => {
+        this.calculateItems();
+
+        this.resizeObserver = new ResizeObserver(() => {
+          this.calculateItems();
+        });
+
+        this.resizeObserver.observe(this.$refs.appBar.$el);
+      });
+    },
+    beforeUnmount() {
+        this.resizeObserver?.disconnect();
+    },
     methods: {
+      calculateItems() {
+        if (!this.$refs.measure || !this.$refs.left) return;
+
+        const appBarWidth = this.$refs.appBar.$el.clientWidth;
+        const leftWidth = this.$refs.left.offsetWidth;
+        const hamburgerWidth = 48;
+        const padding = 32;
+
+        const available = appBarWidth - leftWidth - hamburgerWidth - padding;
+
+        const buttons = [...this.$refs.measure.children];
+
+        let used = 0;
+        this.visibleItems = [];
+        this.overflowItems = [];
+
+        buttons.forEach((btn, index) => {
+          const width = btn.offsetWidth;
+
+          if (used + width <= available) {
+            used += width;
+            this.visibleItems.push(this.navItems[index]);
+          } else {
+            this.overflowItems.push(this.navItems[index]);
+          }
+        });
+      },
+
       go(route) {
         this.$router.push(route);
       },
       goHome() {
-        const user = Utils.getStore("user");
-        const role = user.role;       
-        if (role === "coach") this.$router.push("/coach");
-        else this.$router.push("/athlete");
+        const role = Utils.getStore("user")?.role;
+        this.$router.push(role === "coach" ? "/coach" : "/athlete");
       },
       logout() {
         Utils.removeItem("user");
@@ -77,4 +165,42 @@
       },
     },
   };
-  </script>
+</script>
+
+<style scoped>
+  /* Wrap items properly in the navigation bar container */
+  .nav-container {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .nav-left {
+    flex-shrink: 0;
+  }
+
+  /* Stop the nav items from wrapping and clipping */
+  .nav-items {
+    display: flex;
+    white-space: nowrap;
+    margin-left: auto;
+  }
+
+  .nav-hamburger {
+    margin-left: 8px;
+  }
+
+  /* Measurement container */
+  .measure-container {
+    position: absolute;
+    visibility: hidden;
+    height: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .nav-btn {
+    flex-shrink: 0;
+  }
+</style>
