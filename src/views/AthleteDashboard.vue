@@ -1,6 +1,6 @@
 <template>
   <v-app>
-    <AthleteNav />
+    <NavBar />
 
     <v-container fluid class="pa-8 mt-12">
       <v-row>
@@ -92,6 +92,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import AthleteNav from "../components/AthleteNav.vue";
+import NavBar from "../components/NavBar.vue";
 import TeamsBox from "../components/TeamsBox.vue";
 import GoalsBox from "../components/GoalsBox.vue";
 import LessonBox from "../components/LessonBox.vue";
