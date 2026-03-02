@@ -32,7 +32,6 @@
           class="manage-btn" @click="router.push('/manage')">
           ⚙ Manage
         </button>
-        <button class="icon-btn" title="Notifications"><span class="notif-dot"></span>🔔</button>
         <div class="avatar" @click="profileOpen = true" title="My Profile">
           <img v-if="currentUser?.picture" :src="currentUser.picture" class="avatar-img" referrerpolicy="no-referrer" />
           <span v-else>{{ userInitials }}</span>
