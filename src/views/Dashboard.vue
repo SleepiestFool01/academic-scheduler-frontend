@@ -25,7 +25,7 @@
       </div>
       <div class="nav-tabs">
         <button v-for="tab in tabs" :key="tab" class="nav-tab"
-          :class="{ active: activeTab === tab }" @click="activeTab = tab">{{ tab }}</button>
+          :class="{ active: activeTab === tab }" @click="handleTabClick(tab)">{{ tab }}</button>
       </div>
       <div class="nav-right">
         <button v-if="currentUser?.role === 'Manager' || currentUser?.role === 'Admin'"
@@ -321,6 +321,21 @@ const EMPLOYEE_COLORS = ["#F0E6D3","#C0392B","#FF1744","#E8724A","#9B6B9B","#4A9
 
 // ── Core state ─────────────────────────────────────────────────────────────────
 const router = useRouter();
+
+function handleTabClick(tab) {
+  const routes = {
+    Employees:  "/manage",
+    Shifts:     "/manage?tab=Shifts",
+    Tradeboard: "/tradeboard",
+    Tasks:      "/tasks",
+    Requests:   "/requests",
+  };
+  if (routes[tab]) {
+    router.push(routes[tab]);
+  } else {
+    activeTab.value = tab;
+  }
+}
 const activeTab      = ref("Schedules");
 const calView        = ref("Week");
 const weekOffset     = ref(0);
@@ -336,7 +351,7 @@ const calBody        = ref(null);
 const loading = ref(true);
 const apiError = ref(null);
 
-const tabs        = ["Schedules","Employees","Shifts","Tasks","Requests","Payroll"];
+const tabs        = ["Schedules", "Employees", "Shifts", "Tradeboard", "Tasks", "Requests"];
 const dayLetters  = ["S","M","T","W","R","F","S"];
 const hours       = Array.from({ length: 13 }, (_, i) => i + CAL_START_HOUR);
 

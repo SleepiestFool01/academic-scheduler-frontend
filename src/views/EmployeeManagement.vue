@@ -281,7 +281,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import {
   employeeService,
   departmentService,
@@ -291,7 +291,8 @@ import {
 } from "../services/employeeManagementService.js";
 
 const router     = useRouter();
-const activeTab  = ref("Employees");
+const route      = useRoute();
+const activeTab  = ref(route.query.tab || "Employees");
 const loading    = ref(false);
 const apiError   = ref("");
 const empSearch  = ref("");
