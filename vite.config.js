@@ -15,6 +15,19 @@ export default () => {
     server: {
       host: "localhost",
       port: 8081,
+
+      // ── Dev proxy ─────────────────────────────────────────────────────────
+      // In services.js, DEV baseURL is "http://localhost/workerscheduling-t9".
+      // Vite intercepts those requests here and forwards them to Express on
+      // port 3129, stripping the prefix so your Express routes work as-is.
+      // No CORS config needed on the backend for local development.
+      proxy: {
+        "/workerscheduling-t9": {
+          target: "http://localhost:3129",
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/workerscheduling-t9/, ""),
+        },
+      },
     },
 
     base: baseURL,

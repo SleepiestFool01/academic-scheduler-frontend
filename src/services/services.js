@@ -5,9 +5,9 @@ import Router from "../router.js";
 
 var baseurl = "";
 if (import.meta.env.DEV) {
-  baseurl = "http://localhost/tracker-t9";
+  baseurl = "http://localhost/workerscheduling-t9";
 } else {
-  baseurl = "/tracker-t9";
+  baseurl = "/workerscheduling-t9";
 }
 
 
