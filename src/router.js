@@ -19,9 +19,9 @@ const router = createRouter({
     // ── App ──────────────────────────────────────────────────────────────────
     { path: "/dashboard",   component: Dashboard },
     { path: "/manage",      component: () => import("./views/EmployeeManagement.vue") },
-    //{ path: "/tradeboard",  component: () => import("./views/Tradeboard.vue") },
-    //{ path: "/tasks",       component: () => import("./views/Tasks.vue") },
-    //{ path: "/requests",    component: () => import("./views/Requests.vue") },
+    { path: "/tradeboard",  component: () => import("./views/Tradeboard.vue") },
+    { path: "/tasks",       component: () => import("./views/Tasks.vue") },
+    { path: "/requests",    component: () => import("./views/Requests.vue") },
 
     // ── Unknown paths → login ─────────────────────────────────────────────────
     { path: "/:pathMatch(.*)*", redirect: "/start" },
