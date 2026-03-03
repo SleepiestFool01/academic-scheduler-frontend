@@ -80,6 +80,23 @@
             <span class="request-type">{{ r.type }}</span>
           </div>
         </div>
+
+        <!-- My Tasks Today — Employee only -->
+        <div v-if="!isManager && myShiftTasks.length > 0" class="sidebar-section">
+          <p class="sidebar-label">My Tasks Today</p>
+          <div v-for="stl in myShiftTasks" :key="stl.shiftTaskListId" class="my-task-item">
+            <div class="my-task-list-name">{{ stl.taskList.name }}</div>
+            <div class="my-task-progress">
+              <div class="my-task-bar">
+                <div
+                  class="my-task-fill"
+                  :style="{ width: stl.totalCount ? (stl.completedCount / stl.totalCount * 100) + '%' : '0%' }"
+                ></div>
+              </div>
+              <span class="my-task-count">{{ stl.completedCount }}/{{ stl.totalCount }}</span>
+            </div>
+          </div>
+        </div>
       </aside>
 
       <!-- ── Main Calendar ── -->
@@ -275,6 +292,106 @@
       </div>
     </Transition>
 
+    <!-- ── Shift Tasks Modal ── -->
+    <Transition name="modal">
+      <div v-if="shiftTasksModal.open" class="modal-overlay" @click.self="shiftTasksModal.open = false">
+        <div class="modal stm-modal">
+          <div class="stm-header">
+            <div>
+              <h2 class="modal-title">{{ isManager ? 'Shift Task Lists' : 'Your Tasks' }}</h2>
+              <p class="stm-sub">
+                {{ shiftTasksModal.shift?.employee }} ·
+                {{ formatShiftDate(shiftTasksModal.shift?.date) }}
+              </p>
+            </div>
+            <button class="stm-close" @click="shiftTasksModal.open = false">✕</button>
+          </div>
+
+          <p v-if="shiftTasksModal.error" class="stm-error">{{ shiftTasksModal.error }}</p>
+
+          <div v-if="shiftTasksModal.loading" class="stm-loading">
+            <div class="stm-spinner"></div>
+            <span>Loading tasks…</span>
+          </div>
+
+          <!-- Assigned Task Lists -->
+          <div v-if="!shiftTasksModal.loading" class="stm-lists">
+            <div
+              v-for="stl in shiftTasksModal.shiftTaskLists"
+              :key="stl.id_shiftTaskList"
+              class="stm-list-card">
+              <div class="stm-list-header">
+                <div class="stm-list-meta">
+                  <span class="stm-list-name">{{ stl.taskList?.name || 'Unknown List' }}</span>
+                  <span class="stm-progress">
+                    {{ stl.statuses.filter(s => s.isCompleted).length }}/{{ stl.statuses.length }} done
+                  </span>
+                </div>
+                <button v-if="isManager" class="stm-remove-btn" title="Remove from shift" @click="removeShiftTaskListItem(stl)">✕</button>
+              </div>
+              <!-- Progress bar -->
+              <div class="stm-prog-bar">
+                <div
+                  class="stm-prog-fill"
+                  :style="{ width: stl.statuses.length ? (stl.statuses.filter(s=>s.isCompleted).length / stl.statuses.length * 100) + '%' : '0%' }">
+                </div>
+              </div>
+              <!-- Task rows -->
+              <div class="stm-tasks">
+                <label
+                  v-for="status in stl.statuses"
+                  :key="status.id_shiftTaskListStatus"
+                  class="stm-task-row"
+                  :class="{ 'stm-task-disabled': isManager }">
+                  <input
+                    type="checkbox"
+                    class="stm-checkbox"
+                    :checked="status.isCompleted"
+                    :disabled="isManager"
+                    @change="toggleTaskStatus(status)"
+                  />
+                  <span class="stm-task-name" :class="{ done: status.isCompleted }">
+                    {{ taskNameById(status.id_task) }}
+                  </span>
+                </label>
+                <div v-if="stl.statuses.length === 0" class="stm-no-tasks">
+                  No tasks in this list.
+                </div>
+              </div>
+            </div>
+
+            <div v-if="shiftTasksModal.shiftTaskLists.length === 0" class="stm-empty-state">
+              <p>No task lists assigned to this shift yet.</p>
+              <p v-if="!isManager" class="stm-empty-sub">Ask your manager to assign tasks.</p>
+            </div>
+          </div>
+
+          <!-- Manager: Assign Task List -->
+          <div v-if="isManager && !shiftTasksModal.loading" class="stm-assign-section">
+            <p class="stm-assign-label">Assign Task List to This Shift</p>
+            <div class="stm-assign-row">
+              <select v-model="shiftTasksModal.selectedTaskListId" class="stm-select">
+                <option :value="null" disabled>Select a task list…</option>
+                <option v-for="tl in taskLists" :key="tl.id_taskList" :value="tl.id_taskList">
+                  {{ tl.name }}
+                </option>
+              </select>
+              <button
+                class="stm-assign-btn"
+                :disabled="shiftTasksModal.saving || !shiftTasksModal.selectedTaskListId"
+                @click="assignTaskListToCurrentShift">
+                {{ shiftTasksModal.saving ? '…' : 'Assign' }}
+              </button>
+            </div>
+            <p v-if="taskLists.length === 0" class="stm-hint">
+              No task lists exist yet.
+              <span class="stm-link" @click="$router.push('/tasks')">Create one in Tasks →</span>
+            </p>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <!-- ── Shift Detail Popover ── -->
     <Transition name="fade">
       <div v-if="selectedShift" class="shift-popover" :style="popoverStyle" @mousedown.stop>
@@ -286,6 +403,12 @@
         <div v-if="selectedShift.notes" class="popover-notes">{{ selectedShift.notes }}</div>
         <div class="popover-actions">
           <button class="popover-edit" @click="editShift">Edit</button>
+          <button
+            v-if="isManager || selectedShift.id_employee === currentUser?.id_employee"
+            class="popover-tasks"
+            @click="openShiftTasksModal(selectedShift)">
+            Tasks
+          </button>
           <button class="popover-delete" @click="deleteShift(selectedShift.id)">Delete</button>
         </div>
       </div>
@@ -306,6 +429,15 @@ import {
   deleteShift  as apiDeleteShift,
   fetchSwapRequests,
 } from "../services/schedulingService.js";
+import {
+  fetchTaskLists,
+  fetchTasks,
+  getShiftTaskLists,
+  assignTaskListToShift,
+  removeShiftTaskList,
+  getTaskListStatuses,
+  updateTaskComplete,
+} from "../services/taskService.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const CELL_HEIGHT    = 60;
@@ -363,6 +495,27 @@ const employeeMap  = ref({});
 
 const shifts          = ref([]);
 const pendingRequests = ref([]);
+
+// ── Task state ─────────────────────────────────────────────────────────────────
+const taskLists = ref([]);
+const allTasks  = ref([]);
+
+const isManager = computed(() =>
+  currentUser.value?.role === "Manager" || currentUser.value?.role === "Admin"
+);
+
+const shiftTasksModal = ref({
+  open: false,
+  shift: null,
+  shiftTaskLists: [],   // [{ id_shiftTaskList, id_taskList, taskList, statuses }]
+  selectedTaskListId: null,
+  loading: false,
+  saving: false,
+  error: "",
+});
+
+// Employee sidebar: task lists from today's shifts
+const myShiftTasks = ref([]); // [{ shiftTaskListId, taskList, statuses, completedCount, totalCount }]
 
 // Derived from logged-in user (placeholder until auth is wired up)
 const currentUser = ref(Utils.getStore("user") || { fName: "?", lName: "?" });
@@ -731,8 +884,12 @@ async function loadAll() {
   loading.value  = true;
   apiError.value = null;
   try {
-    const empList = await fetchEmployees();
-    const map     = {};
+    const [empList, tlData, tData] = await Promise.all([
+      fetchEmployees(),
+      fetchTaskLists().catch(() => []),
+      fetchTasks().catch(() => []),
+    ]);
+    const map = {};
     empList.forEach((e, i) => {
       e.color = EMPLOYEE_COLORS[i % EMPLOYEE_COLORS.length];
       e.name  = `${e.fName} ${e.lName}`;
@@ -740,12 +897,15 @@ async function loadAll() {
     });
     employees.value   = empList;
     employeeMap.value = map;
+    taskLists.value   = tlData;
+    allTasks.value    = tData;
     if (empList.length > 0) {
       newShift.value.employee    = empList[0].name;
       newShift.value.id_employee = empList[0].id_employee;
     }
     shifts.value = await fetchShiftsWithAssignments(map);
     pendingRequests.value = await fetchSwapRequests(map);
+    loadMyTasks(); // async, non-blocking — populates employee sidebar
   } catch (err) {
     apiError.value = err.message;
     console.error("Dashboard load error:", err);
@@ -833,6 +993,125 @@ async function addShift() {
     } catch (err) { alert("Error creating shift: " + err.message); return; }
   }
   showAddModal.value = false;
+}
+
+// ── Task helpers ───────────────────────────────────────────────────────────────
+
+function formatShiftDate(dateStr) {
+  if (!dateStr) return "";
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+    weekday: "short", month: "short", day: "numeric",
+  });
+}
+
+function taskNameById(id_task) {
+  return allTasks.value.find(t => t.id_task === id_task)?.name || `Task #${id_task}`;
+}
+
+async function openShiftTasksModal(shift) {
+  selectedShift.value = null;
+  shiftTasksModal.value = {
+    open: true,
+    shift,
+    shiftTaskLists: [],
+    selectedTaskListId: taskLists.value[0]?.id_taskList ?? null,
+    loading: true,
+    saving: false,
+    error: "",
+  };
+  try {
+    const stls = await getShiftTaskLists(shift.id_shift);
+    const enriched = await Promise.all(
+      stls.map(async (stl) => {
+        const statuses  = await getTaskListStatuses(stl.id_shiftTaskList);
+        const taskList  = taskLists.value.find(l => l.id_taskList === stl.id_taskList);
+        return { ...stl, taskList, statuses };
+      })
+    );
+    shiftTasksModal.value.shiftTaskLists = enriched;
+  } catch (err) {
+    shiftTasksModal.value.error = "Could not load tasks: " + (err.message || "Network error");
+  } finally {
+    shiftTasksModal.value.loading = false;
+  }
+}
+
+async function assignTaskListToCurrentShift() {
+  const id_taskList = shiftTasksModal.value.selectedTaskListId;
+  if (!id_taskList) return;
+  // Prevent duplicate assignments
+  if (shiftTasksModal.value.shiftTaskLists.some(s => s.id_taskList === id_taskList)) {
+    shiftTasksModal.value.error = "This task list is already assigned to this shift.";
+    return;
+  }
+  shiftTasksModal.value.saving = true;
+  shiftTasksModal.value.error  = "";
+  try {
+    const newStl   = await assignTaskListToShift(shiftTasksModal.value.shift.id_shift, id_taskList);
+    const taskList = taskLists.value.find(l => l.id_taskList === id_taskList);
+    const statuses = await getTaskListStatuses(newStl.id_shiftTaskList);
+    shiftTasksModal.value.shiftTaskLists.push({ ...newStl, taskList, statuses });
+    // Refresh sidebar tasks if employee
+    if (!isManager.value) loadMyTasks();
+  } catch (err) {
+    shiftTasksModal.value.error = err.message || "Assignment failed.";
+  } finally {
+    shiftTasksModal.value.saving = false;
+  }
+}
+
+async function removeShiftTaskListItem(stl) {
+  try {
+    await removeShiftTaskList(stl.id_shiftTaskList);
+    shiftTasksModal.value.shiftTaskLists = shiftTasksModal.value.shiftTaskLists.filter(
+      s => s.id_shiftTaskList !== stl.id_shiftTaskList
+    );
+  } catch (err) {
+    shiftTasksModal.value.error = err.message || "Could not remove task list.";
+  }
+}
+
+async function toggleTaskStatus(status) {
+  const newVal = !status.isCompleted;
+  try {
+    await updateTaskComplete(status.id_shiftTaskListStatus, newVal);
+    status.isCompleted = newVal;
+    // Refresh sidebar counts
+    const stl = myShiftTasks.value.find(s => s.shiftTaskListId === status.id_shiftTaskList);
+    if (stl) stl.completedCount = stl.statuses.filter(s => s.isCompleted).length;
+  } catch (err) {
+    shiftTasksModal.value.error = "Could not update task: " + (err.message || "Error");
+  }
+}
+
+// Employee-only: load task lists for today's own shifts (populates sidebar)
+async function loadMyTasks() {
+  if (isManager.value) return;
+  const myId     = currentUser.value?.id_employee;
+  if (!myId) return;
+  const todayKey = dateToKey(new Date());
+  const todayShifts = shifts.value.filter(s => s.date === todayKey && s.id_employee === myId);
+  const results = [];
+  for (const shift of todayShifts) {
+    try {
+      const stls = await getShiftTaskLists(shift.id_shift);
+      for (const stl of stls) {
+        const statuses  = await getTaskListStatuses(stl.id_shiftTaskList);
+        const taskList  = taskLists.value.find(l => l.id_taskList === stl.id_taskList);
+        if (taskList) {
+          results.push({
+            shiftTaskListId: stl.id_shiftTaskList,
+            taskList,
+            statuses,
+            completedCount: statuses.filter(s => s.isCompleted).length,
+            totalCount:     statuses.length,
+          });
+        }
+      }
+    } catch { /* silent — sidebar is non-critical */ }
+  }
+  myShiftTasks.value = results;
 }
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────────
@@ -1116,8 +1395,64 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .popover-actions { display: flex; gap: 8px; margin-top: 14px; }
 .popover-edit { flex: 1; background: #221014; border: none; color: #94a3b8; padding: 6px; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
 .popover-edit:hover { background: #1a0508; color: #FF1744; }
+.popover-tasks { flex: 1; background: #1a2a3e; border: none; color: #7dd3fc; padding: 6px; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
+.popover-tasks:hover { background: #1a3a5e; color: #bae6fd; }
 .popover-delete { flex: 1; background: #2a1515; border: none; color: #EF4444; padding: 6px; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
 .popover-delete:hover { background: #3a1a1a; }
+
+/* ── Shift Tasks Modal ── */
+.stm-modal { width: 500px; max-width: 96vw; max-height: 82vh; overflow-y: auto; padding: 24px; }
+.stm-modal::-webkit-scrollbar { width: 5px; }
+.stm-modal::-webkit-scrollbar-thumb { background: #1e1e2e; border-radius: 4px; }
+.stm-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
+.stm-header .modal-title { margin-bottom: 4px; }
+.stm-sub { font-size: 12px; color: #64748b; }
+.stm-close { background: none; border: none; color: #475569; font-size: 18px; cursor: pointer; line-height: 1; padding: 2px; flex-shrink: 0; }
+.stm-close:hover { color: #FF1744; }
+.stm-error { font-size: 12px; color: #EF4444; background: #2a1515; border: 1px solid #3a2020; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; }
+.stm-loading { display: flex; align-items: center; gap: 10px; color: #64748b; font-size: 13px; padding: 24px 0; }
+.stm-spinner { width: 20px; height: 20px; border: 2px solid #1a1a2e; border-top-color: #FF1744; border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
+.stm-lists { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+.stm-list-card { background: #0a0a14; border: 1px solid #1a1a2e; border-radius: 10px; padding: 14px; }
+.stm-list-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.stm-list-meta { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.stm-list-name { font-size: 14px; font-weight: 600; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stm-progress { font-size: 11px; color: #64748b; font-family: 'DM Mono', monospace; white-space: nowrap; }
+.stm-remove-btn { background: none; border: none; color: #334155; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px; flex-shrink: 0; }
+.stm-remove-btn:hover { background: #2a1515; color: #EF4444; }
+.stm-prog-bar { height: 3px; background: #1a1a2e; border-radius: 2px; overflow: hidden; margin-bottom: 10px; }
+.stm-prog-fill { height: 100%; background: #FF1744; border-radius: 2px; transition: width 0.3s; }
+.stm-tasks { display: flex; flex-direction: column; gap: 4px; }
+.stm-task-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; cursor: pointer; border-radius: 4px; }
+.stm-task-row:not(.stm-task-disabled):hover { background: #0f0f1a; }
+.stm-task-disabled { cursor: default; }
+.stm-checkbox { width: 16px; height: 16px; accent-color: #FF1744; cursor: pointer; flex-shrink: 0; }
+.stm-task-disabled .stm-checkbox { cursor: default; }
+.stm-task-name { font-size: 13px; color: #94a3b8; transition: color 0.15s; }
+.stm-task-name.done { text-decoration: line-through; color: #334155; }
+.stm-no-tasks { font-size: 12px; color: #334155; font-style: italic; padding: 4px 0; }
+.stm-empty-state { text-align: center; font-size: 13px; color: #334155; padding: 28px 0; }
+.stm-empty-sub { font-size: 12px; color: #1e2a3a; margin-top: 6px; }
+.stm-assign-section { border-top: 1px solid #1a1a2e; padding-top: 16px; }
+.stm-assign-label { font-size: 11px; color: #4a5568; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 10px; }
+.stm-assign-row { display: flex; gap: 10px; }
+.stm-select { flex: 1; background: #0a0a14; border: 1px solid #1e2a3a; color: #e2e8f0; padding: 8px 10px; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; }
+.stm-select:focus { border-color: #FF1744; }
+.stm-select option { background: #13131f; }
+.stm-assign-btn { background: #FF1744; border: none; color: #fff; padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; transition: background 0.15s; }
+.stm-assign-btn:hover:not(:disabled) { background: #FF4569; }
+.stm-assign-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.stm-hint { font-size: 12px; color: #334155; margin-top: 10px; }
+.stm-link { color: #FF1744; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.stm-link:hover { color: #FF4569; }
+
+/* ── My Tasks sidebar ── */
+.my-task-item { margin-bottom: 10px; }
+.my-task-list-name { font-size: 12px; color: #94a3b8; font-weight: 500; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.my-task-progress { display: flex; align-items: center; gap: 8px; }
+.my-task-bar { flex: 1; height: 4px; background: #1a1a2e; border-radius: 2px; overflow: hidden; }
+.my-task-fill { height: 100%; background: #FF1744; border-radius: 2px; transition: width 0.3s; }
+.my-task-count { font-size: 10px; color: #475569; font-family: 'DM Mono', monospace; white-space: nowrap; }
 
 .manage-btn {
   background: none; border: 1px solid #FF1744; color: #FF1744;
