@@ -939,7 +939,7 @@ async function loadAll() {
     ]);
     const map = {};
     empList.forEach((e, i) => {
-      e.color = EMPLOYEE_COLORS[i % EMPLOYEE_COLORS.length];
+      e.color = e.color || EMPLOYEE_COLORS[i % EMPLOYEE_COLORS.length];
       e.name  = `${e.fName} ${e.lName}`;
       map[e.id_employee] = e;
     });

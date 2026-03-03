@@ -178,6 +178,26 @@
               <label>Bio <span class="optional">(optional)</span></label>
               <input v-model="modal.data.bio" type="text" placeholder="Brief bio…" />
             </div>
+            <div class="form-group">
+              <label>Shift Color</label>
+              <div class="color-picker-row">
+                <button
+                  v-for="c in COLOR_PRESETS" :key="c"
+                  type="button"
+                  class="color-swatch"
+                  :class="{ active: modal.data.color === c }"
+                  :style="{ background: c }"
+                  @click="modal.data.color = c"
+                />
+                <input type="color" v-model="modal.data.color" class="color-native" title="Custom color" />
+              </div>
+              <div class="color-preview" v-if="modal.data.color">
+                <div class="emp-avatar" :style="{ background: modal.data.color }">
+                  {{ (modal.data.fName?.[0] || '?') + (modal.data.lName?.[0] || '') }}
+                </div>
+                <span class="color-hex">{{ modal.data.color }}</span>
+              </div>
+            </div>
           </template>
 
           <!-- ── Create / Edit Shift ── -->
@@ -264,6 +284,7 @@ const employees = ref([]);
 const shifts    = ref([]);
 
 const COLORS = ["#FF1744","#C0392B","#E8724A","#9B6B9B","#4A90A4","#C8973A","#D4756B","#6C8EAD"];
+const COLOR_PRESETS = ["#FF1744","#C0392B","#E8724A","#F0E6D3","#9B6B9B","#4A90A4","#22c55e","#f59e0b","#6366f1","#ec4899","#14b8a6","#D4756B"];
 const empColorMap = ref({});
 
 function assignColors(emps) {
@@ -273,8 +294,11 @@ function assignColors(emps) {
     }
   });
 }
-function empColor(emp)    { return empColorMap.value[emp.id_employee] || COLORS[0]; }
-function empColorById(id) { return empColorMap.value[id] || COLORS[0]; }
+function empColor(emp)    { return emp.color || empColorMap.value[emp.id_employee] || COLORS[0]; }
+function empColorById(id) {
+  const emp = employees.value.find(e => e.id_employee === id);
+  return emp?.color || empColorMap.value[id] || COLORS[0];
+}
 function initials(emp)    { return `${emp.fName?.[0] || ""}${emp.lName?.[0] || ""}`.toUpperCase(); }
 function initialsById(id) {
   const e = employees.value.find(e => e.id_employee === id);
@@ -359,7 +383,7 @@ function openCreateModal() {
   modal.value = {
     open: true, type, isEdit: false, saving: false, error: "",
     data: type === "employee"
-      ? { fName: "", lName: "", email: "", role: "Employee", bio: "" }
+      ? { fName: "", lName: "", email: "", role: "Employee", bio: "", color: null }
       : { id_employee: employees.value[0]?.id_employee || null, date: "", startTime: "09:00", endTime: "17:00", notes: "" },
     editId: null,
   };
@@ -368,7 +392,7 @@ function openCreateModal() {
 function openEditEmployee(emp) {
   modal.value = {
     open: true, type: "employee", isEdit: true, saving: false, error: "",
-    data: { fName: emp.fName, lName: emp.lName, email: emp.email, role: emp.role, bio: emp.bio || "" },
+    data: { fName: emp.fName, lName: emp.lName, email: emp.email, role: emp.role, bio: emp.bio || "", color: emp.color || null },
     editId: emp.id_employee,
   };
 }
@@ -659,4 +683,12 @@ async function executeDelete() {
 .confirm-btn.danger:hover { background: #991b1b; }
 .modal-enter-active, .modal-leave-active { transition: opacity 0.2s, transform 0.2s; }
 .modal-enter-from, .modal-leave-to { opacity: 0; transform: scale(0.96); }
+
+.color-picker-row { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+.color-swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; transition: transform 0.12s, border-color 0.12s; flex-shrink: 0; }
+.color-swatch:hover { transform: scale(1.2); }
+.color-swatch.active { border-color: #fff; transform: scale(1.2); }
+.color-native { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #1e2a3a; cursor: pointer; padding: 0; background: none; flex-shrink: 0; }
+.color-preview { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.color-hex { font-family: 'DM Mono', monospace; font-size: 11px; color: #64748b; }
 </style>
