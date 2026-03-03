@@ -36,31 +36,6 @@ export const employeeService = {
   },
 };
 
-// ── Departments ────────────────────────────────────────────────────────────────
-
-export const departmentService = {
-  /** GET /departments */
-  getAll() {
-    return apiClient.get("/departments");
-  },
-
-  /** POST /departments */
-  create(payload) {
-    // payload: { name, description? }
-    return apiClient.post("/departments", payload);
-  },
-
-  /** PUT /departments/:id */
-  update(id_department, payload) {
-    return apiClient.put(`/departments/${id_department}`, payload);
-  },
-
-  /** DELETE /departments/:id */
-  remove(id_department) {
-    return apiClient.delete(`/departments/${id_department}`);
-  },
-};
-
 // ── Shifts ─────────────────────────────────────────────────────────────────────
 
 // Helpers

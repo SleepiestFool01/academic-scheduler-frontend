@@ -32,8 +32,10 @@
           class="manage-btn" @click="router.push('/manage')">
           ⚙ Manage
         </button>
-        <button class="icon-btn" title="Notifications"><span class="notif-dot"></span>🔔</button>
-        <div class="avatar">{{ userInitials }}</div>
+        <div class="avatar" @click="profileOpen = true" title="My Profile">
+          <img v-if="currentUser?.picture" :src="currentUser.picture" class="avatar-img" referrerpolicy="no-referrer" />
+          <span v-else>{{ userInitials }}</span>
+        </div>
       </div>
     </nav>
 
@@ -415,12 +417,43 @@
     </Transition>
 
   </div>
+
+  <!-- ── Profile panel ── -->
+  <Transition name="slide-right">
+    <div v-if="profileOpen" class="profile-overlay" @click.self="profileOpen = false">
+      <div class="profile-panel">
+        <div class="profile-header">
+          <div class="profile-avatar-lg">
+            <img v-if="currentUser?.picture" :src="currentUser.picture" class="avatar-img" referrerpolicy="no-referrer" />
+            <span v-else>{{ userInitials }}</span>
+          </div>
+          <button class="profile-close" @click="profileOpen = false">✕</button>
+        </div>
+        <div class="profile-body">
+          <h2 class="profile-name">{{ currentUser?.fName }} {{ currentUser?.lName }}</h2>
+          <p class="profile-email">{{ currentUser?.email }}</p>
+          <span class="profile-role-badge" :class="currentUser?.role?.toLowerCase()">{{ currentUser?.role }}</span>
+        </div>
+        <div class="profile-divider"></div>
+        <button class="logout-btn" @click="logout">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <polyline points="16,17 21,12 16,7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="21" y1="12" x2="9" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          Log Out
+        </button>
+      </div>
+    </div>
+  </Transition>
+
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import Utils from "../config/utils.js";
+import AuthServices from "../services/authServices.js";
 import {
   fetchEmployees,
   fetchShiftsWithAssignments,
@@ -467,6 +500,21 @@ function handleTabClick(tab) {
   } else {
     activeTab.value = tab;
   }
+}
+
+const profileOpen = ref(false);
+
+async function logout() {
+  try {
+    const user = Utils.getStore("user");
+    if (user?.token) {
+      await AuthServices.logoutUser({ token: user.token });
+    }
+  } catch (e) {
+    // proceed even if logout API fails
+  }
+  Utils.removeItem("user");
+  router.push("/start");
 }
 const activeTab      = ref("Schedules");
 const calView        = ref("Week");
@@ -1400,59 +1448,81 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .popover-delete { flex: 1; background: #2a1515; border: none; color: #EF4444; padding: 6px; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
 .popover-delete:hover { background: #3a1a1a; }
 
-/* ── Shift Tasks Modal ── */
-.stm-modal { width: 500px; max-width: 96vw; max-height: 82vh; overflow-y: auto; padding: 24px; }
-.stm-modal::-webkit-scrollbar { width: 5px; }
-.stm-modal::-webkit-scrollbar-thumb { background: #1e1e2e; border-radius: 4px; }
-.stm-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
-.stm-header .modal-title { margin-bottom: 4px; }
-.stm-sub { font-size: 12px; color: #64748b; }
-.stm-close { background: none; border: none; color: #475569; font-size: 18px; cursor: pointer; line-height: 1; padding: 2px; flex-shrink: 0; }
-.stm-close:hover { color: #FF1744; }
-.stm-error { font-size: 12px; color: #EF4444; background: #2a1515; border: 1px solid #3a2020; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; }
-.stm-loading { display: flex; align-items: center; gap: 10px; color: #64748b; font-size: 13px; padding: 24px 0; }
-.stm-spinner { width: 20px; height: 20px; border: 2px solid #1a1a2e; border-top-color: #FF1744; border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
-.stm-lists { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
-.stm-list-card { background: #0a0a14; border: 1px solid #1a1a2e; border-radius: 10px; padding: 14px; }
-.stm-list-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.stm-list-meta { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
-.stm-list-name { font-size: 14px; font-weight: 600; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.stm-progress { font-size: 11px; color: #64748b; font-family: 'DM Mono', monospace; white-space: nowrap; }
-.stm-remove-btn { background: none; border: none; color: #334155; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px; flex-shrink: 0; }
-.stm-remove-btn:hover { background: #2a1515; color: #EF4444; }
-.stm-prog-bar { height: 3px; background: #1a1a2e; border-radius: 2px; overflow: hidden; margin-bottom: 10px; }
-.stm-prog-fill { height: 100%; background: #FF1744; border-radius: 2px; transition: width 0.3s; }
-.stm-tasks { display: flex; flex-direction: column; gap: 4px; }
-.stm-task-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; cursor: pointer; border-radius: 4px; }
-.stm-task-row:not(.stm-task-disabled):hover { background: #0f0f1a; }
-.stm-task-disabled { cursor: default; }
-.stm-checkbox { width: 16px; height: 16px; accent-color: #FF1744; cursor: pointer; flex-shrink: 0; }
-.stm-task-disabled .stm-checkbox { cursor: default; }
-.stm-task-name { font-size: 13px; color: #94a3b8; transition: color 0.15s; }
-.stm-task-name.done { text-decoration: line-through; color: #334155; }
-.stm-no-tasks { font-size: 12px; color: #334155; font-style: italic; padding: 4px 0; }
-.stm-empty-state { text-align: center; font-size: 13px; color: #334155; padding: 28px 0; }
-.stm-empty-sub { font-size: 12px; color: #1e2a3a; margin-top: 6px; }
-.stm-assign-section { border-top: 1px solid #1a1a2e; padding-top: 16px; }
-.stm-assign-label { font-size: 11px; color: #4a5568; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 10px; }
-.stm-assign-row { display: flex; gap: 10px; }
-.stm-select { flex: 1; background: #0a0a14; border: 1px solid #1e2a3a; color: #e2e8f0; padding: 8px 10px; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; }
-.stm-select:focus { border-color: #FF1744; }
-.stm-select option { background: #13131f; }
-.stm-assign-btn { background: #FF1744; border: none; color: #fff; padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; transition: background 0.15s; }
-.stm-assign-btn:hover:not(:disabled) { background: #FF4569; }
-.stm-assign-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.stm-hint { font-size: 12px; color: #334155; margin-top: 10px; }
-.stm-link { color: #FF1744; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
-.stm-link:hover { color: #FF4569; }
+.avatar { cursor: pointer; transition: opacity 0.15s, transform 0.15s; }
+.avatar:hover { opacity: 0.85; transform: scale(1.05); }
+.avatar-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
 
-/* ── My Tasks sidebar ── */
-.my-task-item { margin-bottom: 10px; }
-.my-task-list-name { font-size: 12px; color: #94a3b8; font-weight: 500; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.my-task-progress { display: flex; align-items: center; gap: 8px; }
-.my-task-bar { flex: 1; height: 4px; background: #1a1a2e; border-radius: 2px; overflow: hidden; }
-.my-task-fill { height: 100%; background: #FF1744; border-radius: 2px; transition: width 0.3s; }
-.my-task-count { font-size: 10px; color: #475569; font-family: 'DM Mono', monospace; white-space: nowrap; }
+/* ── Profile panel ── */
+.profile-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,0.4);
+  backdrop-filter: blur(2px);
+}
+.profile-panel {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: 300px;
+  background: #0f0f1a;
+  border-left: 1px solid #1a1a2e;
+  display: flex; flex-direction: column;
+  box-shadow: -20px 0 60px rgba(0,0,0,0.5);
+  z-index: 501;
+}
+.profile-header {
+  display: flex; align-items: flex-start;
+  justify-content: flex-end;
+  padding: 20px 20px 0;
+}
+.profile-avatar-lg {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: linear-gradient(135deg, #FF1744, #F0E6D3);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px; font-weight: 700; color: #fff;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 2px solid rgba(255,23,68,0.3);
+}
+.profile-header { flex-direction: column; align-items: center; padding: 28px 20px 16px; position: relative; }
+.profile-close {
+  position: absolute; top: 16px; right: 16px;
+  background: none; border: none; color: #475569;
+  font-size: 14px; cursor: pointer;
+  transition: color 0.15s;
+}
+.profile-close:hover { color: #FF1744; }
+.profile-body { padding: 0 24px 20px; text-align: center; }
+.profile-name { font-size: 20px; font-weight: 700; color: #f1f5f9; margin-bottom: 6px; }
+.profile-email { font-size: 13px; color: #475569; margin-bottom: 12px; font-family: 'DM Mono', monospace; }
+.profile-role-badge {
+  display: inline-block; padding: 3px 14px; border-radius: 100px;
+  font-size: 11px; font-weight: 600;
+}
+.profile-role-badge.employee { background: rgba(255,23,68,0.1);  color: #FF4569; }
+.profile-role-badge.manager  { background: rgba(240,230,211,0.1); color: #F0E6D3; }
+.profile-role-badge.admin    { background: rgba(74,144,164,0.15); color: #4A90A4; }
+.profile-divider { height: 1px; background: #1a1a2e; margin: 0 24px; }
+.profile-info { padding: 16px 24px; }
+.profile-info-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 6px 0; }
+.info-label { color: #475569; }
+.info-val { color: #94a3b8; }
+.mono { font-family: 'DM Mono', monospace; }
+.logout-btn {
+  margin: auto 24px 28px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: rgba(239,68,68,0.08);
+  border: 1px solid rgba(239,68,68,0.25);
+  color: #EF4444;
+  padding: 12px; border-radius: 10px;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px; font-weight: 600;
+  transition: background 0.15s, border-color 0.15s;
+  width: calc(100% - 48px);
+}
+.logout-btn:hover { background: rgba(239,68,68,0.16); border-color: rgba(239,68,68,0.45); }
+
+/* ── Slide-right transition ── */
+.slide-right-enter-active, .slide-right-leave-active { transition: transform 0.25s ease, opacity 0.25s; }
+.slide-right-enter-from, .slide-right-leave-to { transform: translateX(100%); opacity: 0; }
 
 .manage-btn {
   background: none; border: 1px solid #FF1744; color: #FF1744;
