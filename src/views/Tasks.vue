@@ -78,7 +78,10 @@
               <div v-if="tasksForList(list.id_taskList).length === 0" class="no-tasks">No tasks in this list yet.</div>
             </div>
 
-            <button class="add-task-btn" @click="openCreateTaskInList(list)">+ Add Task</button>
+            <div class="list-btn-row">
+              <button class="add-task-btn" @click="openCreateTaskInList(list)">+ New Task</button>
+              <button class="add-task-btn" @click="openAddExisting(list)">+ Add Existing</button>
+            </div>
             <button class="assign-shift-btn" @click="openAssignShift(list)">⟶ Assign to Shift</button>
           </div>
         </div>
@@ -195,6 +198,50 @@
       </div>
     </Transition>
 
+    <!-- Add Existing Task modal -->
+    <Transition name="modal">
+      <div v-if="addExistingModal.open" class="modal-overlay" @click.self="addExistingModal.open = false">
+        <div class="modal modal-lg">
+          <h3 class="modal-title">Add Existing Tasks to "{{ addExistingModal.list?.name }}"</h3>
+          <input v-model="addExistingModal.search" class="search-input" placeholder="Search tasks…" style="margin-bottom:14px;width:100%;" />
+          <div class="existing-task-list">
+            <div v-if="filteredAvailable.length === 0" class="no-tasks" style="padding:20px;text-align:center;">
+              {{ addExistingModal.search ? 'No matching tasks.' : 'All tasks are already in this list.' }}
+            </div>
+            <label
+              v-for="task in filteredAvailable"
+              :key="task.id_task"
+              class="existing-task-row"
+              :class="{ selected: addExistingModal.selectedIds.includes(task.id_task) }"
+            >
+              <input
+                type="checkbox"
+                :value="task.id_task"
+                v-model="addExistingModal.selectedIds"
+                class="task-checkbox"
+              />
+              <div class="existing-task-info">
+                <span class="task-name">{{ task.name }}</span>
+                <span class="task-desc">{{ task.description }}</span>
+              </div>
+              <span v-if="task.id_taskList" class="list-badge" style="flex-shrink:0;">{{ listName(task.id_taskList) }}</span>
+            </label>
+          </div>
+          <p v-if="addExistingModal.error" class="modal-error">{{ addExistingModal.error }}</p>
+          <div class="modal-actions">
+            <button class="cancel-btn" @click="addExistingModal.open = false">Cancel</button>
+            <button
+              class="confirm-btn"
+              :disabled="addExistingModal.saving || addExistingModal.selectedIds.length === 0"
+              @click="saveAddExisting"
+            >
+              {{ addExistingModal.saving ? 'Adding…' : `Add ${addExistingModal.selectedIds.length || ''} Task${addExistingModal.selectedIds.length !== 1 ? 's' : ''}` }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <!-- Delete confirm -->
     <Transition name="modal">
       <div v-if="deleteConfirm.open" class="modal-overlay" @click.self="deleteConfirm.open = false">
@@ -299,6 +346,47 @@ async function saveAssignShift() {
     assignModal.value.error = err.response?.data?.message || err.message || "Assignment failed.";
   } finally {
     assignModal.value.saving = false;
+  }
+}
+
+// ── Add Existing Tasks ────────────────────────────────────────────────────────
+const addExistingModal = ref({ open: false, list: null, selectedIds: [], search: "", saving: false, error: "" });
+
+function openAddExisting(list) {
+  addExistingModal.value = { open: true, list, selectedIds: [], search: "", saving: false, error: "" };
+}
+
+const filteredAvailable = computed(() => {
+  const listId = addExistingModal.value.list?.id_taskList;
+  const q = addExistingModal.value.search.toLowerCase();
+  return tasks.value.filter(t => {
+    if (t.id_taskList === listId) return false;
+    if (q) return `${t.name} ${t.description}`.toLowerCase().includes(q);
+    return true;
+  });
+});
+
+async function saveAddExisting() {
+  addExistingModal.value.saving = true;
+  addExistingModal.value.error = "";
+  const listId = addExistingModal.value.list.id_taskList;
+  try {
+    await Promise.all(
+      addExistingModal.value.selectedIds.map(id => {
+        const task = tasks.value.find(t => t.id_task === id);
+        return apiClient.put(`/tasks/${id}`, { ...task, id_taskList: listId });
+      })
+    );
+    // Update local state
+    addExistingModal.value.selectedIds.forEach(id => {
+      const idx = tasks.value.findIndex(t => t.id_task === id);
+      if (idx !== -1) tasks.value[idx] = { ...tasks.value[idx], id_taskList: listId };
+    });
+    addExistingModal.value.open = false;
+  } catch (err) {
+    addExistingModal.value.error = err.response?.data?.message || err.message || "Failed to add tasks.";
+  } finally {
+    addExistingModal.value.saving = false;
   }
 }
 
@@ -445,9 +533,23 @@ async function executeDelete() {
 .task-actions { display: flex; gap: 4px; margin-left: auto; }
 .no-tasks { padding: 12px 14px; font-size: 12px; color: #334155; font-style: italic; background: #080810; }
 
-.add-task-btn { background: none; border: 1px dashed #1e2a3a; color: #475569; width: 100%; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s, color 0.15s; }
+.list-btn-row { display: flex; gap: 8px; margin-bottom: 0; }
+.list-btn-row .add-task-btn { flex: 1; margin-bottom: 0; }
+.add-task-btn { background: none; border: 1px dashed #1e2a3a; color: #475569; width: 100%; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s, color 0.15s; margin-bottom: 0; }
 .add-task-btn:hover { border-color: #FF1744; color: #FF1744; }
-.assign-shift-btn { background: none; border: 1px dashed #1e3a2e; color: #334155; width: 100%; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; margin-top: 8px; transition: border-color 0.15s, color 0.15s; }
+.modal-lg { width: 520px; }
+.existing-task-list { max-height: 300px; overflow-y: auto; border: 1px solid #1e2a3a; border-radius: 8px; margin-bottom: 14px; }
+.existing-task-list::-webkit-scrollbar { width: 4px; }
+.existing-task-list::-webkit-scrollbar-thumb { background: #1e1e2e; border-radius: 4px; }
+.existing-task-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #111827; transition: background 0.12s; }
+.existing-task-row:last-child { border-bottom: none; }
+.existing-task-row:hover { background: #0d0d18; }
+.existing-task-row.selected { background: #1a0508; }
+.task-checkbox { accent-color: #FF1744; width: 15px; height: 15px; flex-shrink: 0; cursor: pointer; }
+.existing-task-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.existing-task-info .task-name { font-size: 13px; font-weight: 500; color: #e2e8f0; }
+.existing-task-info .task-desc { font-size: 12px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.assign-shift-btn { background: none; border: 1px dashed #1e3a2e; color: #334155; width: 100%; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; margin-top: 8px; transition: border-color 0.15s, color 0.15s; display: block; }
 .assign-shift-btn:hover { border-color: #22c55e; color: #22c55e; }
 .form-hint { font-size: 11px; color: #475569; font-style: italic; margin-top: 4px; }
 
