@@ -1426,7 +1426,8 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 /* ── Full modal ── */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 300; backdrop-filter: blur(4px); }
 .modal { background: #13131f; border: 1px solid #221014; border-radius: 14px; padding: 28px; width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
-.modal-title { font-size: 18px; font-weight: 700; color: #e2e8f0; margin-bottom: 20px; }
+.modal-title { font-size: 18px; font-weight: 700; color: #e2e8f0; margin-bottom: 0; }
+.modal:not(.stm-modal) .modal-title { margin-bottom: 20px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 .modal-cancel { background: none; border: 1px solid #221014; color: #64748b; padding: 8px 18px; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 13px; }
 .modal-confirm { background: #FF1744; border: none; color: #000; padding: 8px 18px; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 700; transition: background 0.15s; }
@@ -1531,6 +1532,58 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
   transition: background 0.15s, color 0.15s;
 }
 .manage-btn:hover { background: #FF1744; color: #fff; }
+
+/* ── Shift Task Lists Modal ── */
+.stm-modal { width: 480px; max-height: 80vh; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.stm-header { display: flex; align-items: flex-start; justify-content: space-between; padding: 24px 24px 16px; border-bottom: 1px solid #1a1a2e; flex-shrink: 0; }
+.stm-header .modal-title { margin-bottom: 4px; }
+.stm-sub { font-size: 12px; color: #475569; font-family: 'DM Mono', monospace; }
+.stm-close { background: none; border: none; color: #475569; font-size: 14px; cursor: pointer; padding: 4px 6px; border-radius: 6px; transition: color 0.15s, background 0.15s; flex-shrink: 0; margin-top: 2px; }
+.stm-close:hover { color: #FF1744; background: #1a0508; }
+.stm-error { margin: 12px 24px 0; padding: 8px 12px; background: #2a1515; border: 1px solid #3a2020; border-radius: 8px; color: #EF4444; font-size: 12px; }
+.stm-loading { display: flex; align-items: center; gap: 10px; padding: 32px 24px; color: #475569; font-size: 13px; }
+.stm-spinner { width: 18px; height: 18px; border: 2px solid #1a1a2e; border-top-color: #FF1744; border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
+
+.stm-lists { flex: 1; overflow-y: auto; padding: 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+.stm-lists::-webkit-scrollbar { width: 4px; }
+.stm-lists::-webkit-scrollbar-thumb { background: #1e1e2e; border-radius: 4px; }
+
+.stm-list-card { background: #0d0d14; border: 1px solid #1a1a2e; border-radius: 10px; overflow: hidden; }
+.stm-list-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 8px; }
+.stm-list-meta { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.stm-list-name { font-size: 13px; font-weight: 600; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stm-progress { font-size: 11px; font-weight: 600; font-family: 'DM Mono', monospace; color: #475569; background: #13131f; border: 1px solid #1e2a3a; padding: 2px 8px; border-radius: 100px; flex-shrink: 0; }
+.stm-remove-btn { background: none; border: none; color: #334155; font-size: 12px; cursor: pointer; width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; flex-shrink: 0; }
+.stm-remove-btn:hover { background: #2a1515; color: #EF4444; }
+
+.stm-prog-bar { height: 3px; background: #1a1a2e; margin: 0 14px 10px; border-radius: 2px; overflow: hidden; }
+.stm-prog-fill { height: 100%; background: #FF1744; border-radius: 2px; transition: width 0.3s ease; }
+
+.stm-tasks { display: flex; flex-direction: column; }
+.stm-task-row { display: flex; align-items: center; gap: 10px; padding: 8px 14px; cursor: pointer; border-top: 1px solid #111827; transition: background 0.12s; }
+.stm-task-row:hover:not(.stm-task-disabled) { background: #0a0a18; }
+.stm-task-disabled { cursor: default; }
+.stm-checkbox { accent-color: #FF1744; width: 14px; height: 14px; flex-shrink: 0; cursor: pointer; }
+.stm-task-disabled .stm-checkbox { cursor: default; }
+.stm-task-name { font-size: 13px; color: #94a3b8; flex: 1; }
+.stm-task-name.done { color: #334155; text-decoration: line-through; }
+.stm-no-tasks { padding: 10px 14px; font-size: 12px; color: #334155; font-style: italic; border-top: 1px solid #111827; }
+
+.stm-empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 16px; gap: 6px; text-align: center; color: #475569; font-size: 13px; }
+.stm-empty-sub { font-size: 12px; color: #334155; }
+
+.stm-assign-section { padding: 14px 24px 20px; border-top: 1px solid #1a1a2e; flex-shrink: 0; background: #0d0d14; }
+.stm-assign-label { font-size: 10px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; }
+.stm-assign-row { display: flex; gap: 8px; }
+.stm-select { flex: 1; background: #0a0a14; border: 1px solid #1e2a3a; color: #e2e8f0; padding: 8px 10px; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; }
+.stm-select:focus { border-color: #FF1744; }
+.stm-select option { background: #13131f; }
+.stm-assign-btn { background: #FF1744; border: none; color: #fff; padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: background 0.15s; flex-shrink: 0; }
+.stm-assign-btn:hover { background: #FF4569; }
+.stm-assign-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.stm-hint { font-size: 11px; color: #475569; margin-top: 8px; font-style: italic; }
+.stm-link { color: #FF4569; cursor: pointer; text-decoration: underline; }
+.stm-link:hover { color: #FF1744; }
 
 /* ── Transitions ── */
 .modal-enter-active, .modal-leave-active { transition: opacity 0.2s, transform 0.2s; }
