@@ -79,6 +79,7 @@
             </div>
 
             <button class="add-task-btn" @click="openCreateTaskInList(list)">+ Add Task</button>
+            <button class="assign-shift-btn" @click="openAssignShift(list)">⟶ Assign to Shift</button>
           </div>
         </div>
       </div>
@@ -102,7 +103,7 @@
               <tr v-for="task in filteredTasks" :key="task.id_task">
                 <td class="task-name-cell">{{ task.name }}</td>
                 <td class="muted">{{ task.description }}</td>
-                <td><span class="list-badge">{{ listName(task.id_tasklist) }}</span></td>
+                <td><span class="list-badge">{{ listName(task.id_taskList) }}</span></td>
                 <td>
                   <div class="action-btns">
                     <button class="icon-action" @click="openEditTask(task)">✎</button>
@@ -149,8 +150,9 @@
               <input v-model="modal.data.description" type="text" placeholder="Short description of what to do" />
             </div>
             <div class="form-group">
-              <label>Task List</label>
-              <select v-model="modal.data.id_tasklist">
+              <label>Task List <span class="optional">(optional)</span></label>
+              <select v-model="modal.data.id_taskList">
+                <option :value="null">— None —</option>
                 <option v-for="l in taskLists" :key="l.id_taskList" :value="l.id_taskList">{{ l.name }}</option>
               </select>
             </div>
@@ -161,6 +163,32 @@
             <button class="cancel-btn" @click="closeModal">Cancel</button>
             <button class="confirm-btn" :disabled="modal.saving" @click="saveModal">
               {{ modal.saving ? 'Saving…' : modal.isEdit ? 'Save Changes' : 'Create' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Assign to Shift modal -->
+    <Transition name="modal">
+      <div v-if="assignModal.open" class="modal-overlay" @click.self="assignModal.open = false">
+        <div class="modal">
+          <h3 class="modal-title">Assign "{{ assignModal.list?.name }}" to a Shift</h3>
+          <div class="form-group">
+            <label>Select Shift</label>
+            <select v-model="assignModal.selectedShiftId">
+              <option :value="null" disabled>Pick a shift…</option>
+              <option v-for="s in upcomingShifts" :key="s.id_shift" :value="s.id_shift">
+                {{ s.date }} — {{ s.name }}
+              </option>
+            </select>
+            <p v-if="upcomingShifts.length === 0" class="form-hint">No upcoming shifts found.</p>
+          </div>
+          <p v-if="assignModal.error" class="modal-error">{{ assignModal.error }}</p>
+          <div class="modal-actions">
+            <button class="cancel-btn" @click="assignModal.open = false">Cancel</button>
+            <button class="confirm-btn" :disabled="assignModal.saving || !assignModal.selectedShiftId" @click="saveAssignShift">
+              {{ assignModal.saving ? 'Assigning…' : 'Assign' }}
             </button>
           </div>
         </div>
@@ -189,6 +217,7 @@
 import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import apiClient from "../services/services.js";
+import { getShiftTaskLists } from "../services/taskService.js";
 
 const router     = useRouter();
 const loading    = ref(false);
@@ -214,9 +243,66 @@ async function loadAll() {
     loading.value = false;
   }
 }
-onMounted(loadAll);
+onMounted(() => { loadAll(); loadShifts(); });
 
-const tasksForList = (id) => tasks.value.filter(t => t.id_tasklist === id);
+// ── Shifts (for task list assignment) ─────────────────────────────────────────
+const allShifts  = ref([]);
+const assignModal = ref({ open: false, list: null, selectedShiftId: null, saving: false, error: "" });
+
+const upcomingShifts = computed(() => {
+  const today = new Date().toISOString().slice(0, 10);
+  return allShifts.value
+    .filter(s => s.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date));
+});
+
+async function loadShifts() {
+  try {
+    const res = await apiClient.get("/shifts");
+    allShifts.value = res.data;
+  } catch { /* non-critical */ }
+}
+
+function openAssignShift(list) {
+  assignModal.value = {
+    open: true,
+    list,
+    selectedShiftId: upcomingShifts.value[0]?.id_shift ?? null,
+    saving: false,
+    error: "",
+  };
+}
+
+async function saveAssignShift() {
+  if (!assignModal.value.selectedShiftId) {
+    assignModal.value.error = "Please select a shift.";
+    return;
+  }
+  // Check if already assigned
+  try {
+    const existing = await getShiftTaskLists(assignModal.value.selectedShiftId);
+    if (existing.some(stl => stl.id_taskList === assignModal.value.list.id_taskList)) {
+      assignModal.value.error = "This task list is already assigned to that shift.";
+      return;
+    }
+  } catch { /* proceed anyway */ }
+
+  assignModal.value.saving = true;
+  assignModal.value.error = "";
+  try {
+    await apiClient.post("/shift-task-lists", {
+      id_shift:    assignModal.value.selectedShiftId,
+      id_taskList: assignModal.value.list.id_taskList,
+    });
+    assignModal.value.open = false;
+  } catch (err) {
+    assignModal.value.error = err.response?.data?.message || err.message || "Assignment failed.";
+  } finally {
+    assignModal.value.saving = false;
+  }
+}
+
+const tasksForList = (id) => tasks.value.filter(t => t.id_taskList === id);
 const listName     = (id) => { const l = taskLists.value.find(l => l.id_taskList === id); return l?.name || "—"; };
 const filteredTasks = computed(() => {
   const q = taskSearch.value.toLowerCase();
@@ -230,17 +316,17 @@ function openCreateModal() {
   if (activeTab.value === "lists") {
     modal.value = { open: true, type: "list", isEdit: false, data: { name: "", description: "" }, editId: null, saving: false, error: "" };
   } else {
-    modal.value = { open: true, type: "task", isEdit: false, data: { name: "", description: "", id_tasklist: taskLists.value[0]?.id_taskList || null }, editId: null, saving: false, error: "" };
+    modal.value = { open: true, type: "task", isEdit: false, data: { name: "", description: "", id_taskList: taskLists.value[0]?.id_taskList || null }, editId: null, saving: false, error: "" };
   }
 }
 function openCreateTaskInList(list) {
-  modal.value = { open: true, type: "task", isEdit: false, data: { name: "", description: "", id_tasklist: list.id_taskList }, editId: null, saving: false, error: "" };
+  modal.value = { open: true, type: "task", isEdit: false, data: { name: "", description: "", id_taskList: list.id_taskList }, editId: null, saving: false, error: "" };
 }
 function openEditList(list) {
   modal.value = { open: true, type: "list", isEdit: true, data: { name: list.name, description: list.description || "" }, editId: list.id_taskList, saving: false, error: "" };
 }
 function openEditTask(task) {
-  modal.value = { open: true, type: "task", isEdit: true, data: { name: task.name, description: task.description, id_tasklist: task.id_tasklist }, editId: task.id_task, saving: false, error: "" };
+  modal.value = { open: true, type: "task", isEdit: true, data: { name: task.name, description: task.description, id_taskList: task.id_taskList }, editId: task.id_task, saving: false, error: "" };
 }
 function closeModal() { modal.value.open = false; }
 
@@ -259,7 +345,7 @@ async function saveModal() {
         taskLists.value.push(res.data);
       }
     } else {
-      if (!data.name || !data.description || !data.id_tasklist) throw new Error("Name, description, and task list are required.");
+      if (!data.name || !data.description) throw new Error("Name and description are required.");
       if (isEdit) {
         await apiClient.put(`/tasks/${editId}`, data);
         const idx = tasks.value.findIndex(t => t.id_task === editId);
@@ -361,6 +447,9 @@ async function executeDelete() {
 
 .add-task-btn { background: none; border: 1px dashed #1e2a3a; color: #475569; width: 100%; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s, color 0.15s; }
 .add-task-btn:hover { border-color: #FF1744; color: #FF1744; }
+.assign-shift-btn { background: none; border: 1px dashed #1e3a2e; color: #334155; width: 100%; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; margin-top: 8px; transition: border-color 0.15s, color 0.15s; }
+.assign-shift-btn:hover { border-color: #22c55e; color: #22c55e; }
+.form-hint { font-size: 11px; color: #475569; font-style: italic; margin-top: 4px; }
 
 .table-wrap { border-radius: 12px; border: 1px solid #1a1a2e; overflow: hidden; max-width: 900px; }
 .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
