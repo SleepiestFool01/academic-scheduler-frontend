@@ -4,10 +4,15 @@
   </v-app>
 </template>
 
-<script>
-export default {
-  name: "App",
-};
+<script setup>
+import { onMounted } from "vue";
+import { useTheme } from "./composables/useTheme.js";
+
+// Initialize theme from localStorage on app mount
+const { isDark } = useTheme();
+onMounted(() => {
+  document.documentElement.setAttribute("data-theme", isDark.value ? "dark" : "light");
+});
 </script>
 
 <style>
@@ -16,7 +21,6 @@ body,
 #app {
   height: 100%;
   margin: 0;
-  background: linear-gradient(135deg, #1e88e5, #64b5f6);
   font-family: "Roboto", sans-serif;
 }
 </style>

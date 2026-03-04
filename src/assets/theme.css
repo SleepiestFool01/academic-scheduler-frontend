@@ -1,0 +1,143 @@
+/* ═══════════════════════════════════════════════
+   Scheduler — Design Tokens
+   Dark theme is default; set [data-theme="light"]
+   on <html> to switch.
+═══════════════════════════════════════════════ */
+
+:root,
+[data-theme="dark"] {
+  /* Backgrounds */
+  --bg-page:       #0a0a0f;
+  --bg-surface:    #0d0d14;
+  --bg-card:       #080810;
+  --bg-input:      #0a0a14;
+  --bg-modal:      #13131f;
+  --bg-panel:      #0f0f1a;
+  --bg-hover:      #120a0c;
+  --bg-active:     #1a0508;
+  --bg-overlay:    rgba(10, 10, 15, 0.85);
+  --bg-moverlay:   rgba(0, 0, 0, 0.70);
+  --bg-soverlay:   rgba(0, 0, 0, 0.40);
+
+  /* Borders */
+  --bdr-subtle:    #1a1a2e;
+  --bdr-accent:    #221014;
+  --bdr-medium:    #1e2a3a;
+  --bdr-strong:    #1e2638;
+  --bdr-faint:     #1c1b2a;
+  --bdr-pop:       #1f0508;
+
+  /* Text */
+  --tx-primary:    #e2e8f0;
+  --tx-heading:    #f1f5f9;
+  --tx-secondary:  #94a3b8;
+  --tx-muted:      #64748b;
+  --tx-faint:      #475569;
+  --tx-dim:        #4a5568;
+  --tx-ghost:      #334155;
+  --tx-label-dim:  #3d4a5c;
+  --tx-faintest:   #2d3748;
+  --tx-faded:      #282838;
+
+  /* Accent (red) */
+  --accent:         #EF4444;
+  --accent-hover:   #ff0033;
+  --accent-bg:      rgba(255, 23, 68, 0.10);
+  --accent-border:  rgba(255, 23, 68, 0.30);
+  --accent-subtle:  rgba(255, 23, 68, 0.05);
+  --accent-drag:    rgba(255, 23, 68, 0.03);
+
+  /* Feedback */
+  --err-bg:         #2a1515;
+  --err-border:     #3a2020;
+  --err-text:       #EF4444;
+  --ok-text:        #22c55e;
+  --ok-bg:          rgba(16, 185, 129, 0.15);
+  --ok-bg-h:        rgba(16, 185, 129, 0.25);
+  --warn-text:      #FFC107;
+  --warn-bg:        rgba(255, 193, 7, 0.15);
+  --deny-bg:        rgba(239, 68, 68, 0.15);
+  --deny-bg-h:      rgba(239, 68, 68, 0.25);
+  --danger-btn:     #7f1d1d;
+  --danger-btn-h:   #991b1b;
+
+  /* Tasks button (blue tones) */
+  --tasks-bg:       #1a2a3e;
+  --tasks-bg-h:     #1a3a5e;
+  --tasks-tx:       #7dd3fc;
+  --tasks-tx-h:     #bae6fd;
+
+  /* Misc */
+  --scrollbar:      #1e1e2e;
+  --hour-even:      rgba(255, 255, 255, 0.012);
+  --today-badge-tx: #000;
+}
+
+/* ── Light theme ── */
+[data-theme="light"] {
+  /* Backgrounds — warm off-white/cream tones */
+  --bg-page:       #f5f2ee;
+  --bg-surface:    #edeae2;
+  --bg-card:       #e7e3db;
+  --bg-input:      #dedad2;
+  --bg-modal:      #faf8f5;
+  --bg-panel:      #f2efe8;
+  --bg-hover:      #e2ddd4;
+  --bg-active:     #f0ddd8;
+  --bg-overlay:    rgba(240, 236, 230, 0.90);
+  --bg-moverlay:   rgba(0, 0, 0, 0.45);
+  --bg-soverlay:   rgba(0, 0, 0, 0.25);
+
+  /* Borders */
+  --bdr-subtle:    #ccc9c0;
+  --bdr-accent:    #e0cfc8;
+  --bdr-medium:    #b8b4ac;
+  --bdr-strong:    #c4c0b8;
+  --bdr-faint:     #d4d0c8;
+  --bdr-pop:       #e8d0c8;
+
+  /* Text */
+  --tx-primary:    #1c1a28;
+  --tx-heading:    #110f1e;
+  --tx-secondary:  #4a5060;
+  --tx-muted:      #5c6370;
+  --tx-faint:      #6b7280;
+  --tx-dim:        #7a8290;
+  --tx-ghost:      #8a9098;
+  --tx-label-dim:  #9098a4;
+  --tx-faintest:   #9aa2ae;
+  --tx-faded:      #a4aab4;
+
+  /* Accent (same red, slightly deeper hover for legibility on light) */
+  --accent:         #8f1517;
+  --accent-hover:   #d4102e;
+  --accent-bg:      rgba(255, 23, 68, 0.08);
+  --accent-border:  rgba(255, 23, 68, 0.22);
+  --accent-subtle:  rgba(255, 23, 68, 0.06);
+  --accent-drag:    rgba(255, 23, 68, 0.04);
+
+  /* Feedback */
+  --err-bg:         #fde8e8;
+  --err-border:     #f8b4b4;
+  --err-text:       #dc2626;
+  --ok-text:        #16a34a;
+  --ok-bg:          rgba(22, 163, 74, 0.12);
+  --ok-bg-h:        rgba(22, 163, 74, 0.22);
+  --warn-text:      #b45309;
+  --warn-bg:        rgba(180, 83, 9, 0.10);
+  --deny-bg:        rgba(220, 38, 38, 0.10);
+  --deny-bg-h:      rgba(220, 38, 38, 0.20);
+  --danger-btn:     #b91c1c;
+  --danger-btn-h:   #991b1b;
+
+  /* Tasks button */
+  --tasks-bg:       #dff0fa;
+  --tasks-bg-h:     #cce5f5;
+  --tasks-tx:       #0284c7;
+  --tasks-tx-h:     #0369a1;
+
+  /* Misc */
+  --scrollbar:      #c0bdb5;
+  --hour-even:      rgba(0, 0, 0, 0.015);
+  --today-badge-tx: #fff;
+}
