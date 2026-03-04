@@ -23,8 +23,8 @@
   --bdr-subtle:    #1a1a2e;
   --bdr-accent:    #221014;
   --bdr-medium:    #1e2a3a;
-  --bdr-strong:    #111827;
-  --bdr-faint:     #0f1117;
+  --bdr-strong:    #1e2638;
+  --bdr-faint:     #1c1b2a;
   --bdr-pop:       #1f0508;
 
   /* Text */
@@ -40,8 +40,8 @@
   --tx-faded:      #282838;
 
   /* Accent (red) */
-  --accent:         #FF1744;
-  --accent-hover:   #FF4569;
+  --accent:         #EF4444;
+  --accent-hover:   #ff0033;
   --accent-bg:      rgba(255, 23, 68, 0.10);
   --accent-border:  rgba(255, 23, 68, 0.30);
   --accent-subtle:  rgba(255, 23, 68, 0.05);
@@ -70,6 +70,7 @@
   /* Misc */
   --scrollbar:      #1e1e2e;
   --hour-even:      rgba(255, 255, 255, 0.012);
+  --today-badge-tx: #000;
 }
 
 /* ── Light theme ── */
@@ -108,7 +109,7 @@
   --tx-faded:      #a4aab4;
 
   /* Accent (same red, slightly deeper hover for legibility on light) */
-  --accent:         #FF1744;
+  --accent:         #8f1517;
   --accent-hover:   #d4102e;
   --accent-bg:      rgba(255, 23, 68, 0.08);
   --accent-border:  rgba(255, 23, 68, 0.22);
@@ -138,4 +139,5 @@
   /* Misc */
   --scrollbar:      #c0bdb5;
   --hour-even:      rgba(0, 0, 0, 0.015);
+  --today-badge-tx: #fff;
 }

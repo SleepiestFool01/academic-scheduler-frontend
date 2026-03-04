@@ -1243,7 +1243,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .mini-cal-cell { text-align: center; font-size: 11px; padding: 3px 1px; border-radius: 4px; cursor: pointer; color: var(--tx-dim); font-family: 'DM Mono', monospace; transition: background 0.12s; }
 .mini-cal-cell:hover { background: var(--bdr-subtle); color: var(--tx-secondary); }
 .mini-cal-cell.in-week { background: var(--bg-active); color: var(--tasks-tx); }
-.mini-cal-cell.today { background: var(--accent) !important; color: #000 !important; font-weight: 700; }
+.mini-cal-cell.today { background: var(--accent) !important; color: var(--today-badge-tx) !important; font-weight: 700; }
 .mini-cal-cell.empty { cursor: default; }
 .sidebar-section { margin-bottom: 20px; }
 .sidebar-label { font-size: 11px; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 8px; }
@@ -1319,7 +1319,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .day-number { font-size: 18px; font-family: 'DM Mono', monospace; color: var(--tx-muted); width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-weight: 500; }
 .day-month-label { font-size: 11px; color: var(--tx-dim); font-style: italic; }
 .day-header.today .day-letter { color: var(--accent); }
-.day-header.today .day-number { background: var(--accent); color: #000; font-weight: 700; }
+.day-header.today .day-number { background: var(--accent); color: var(--today-badge-tx); font-weight: 700; }
 
 .cal-body { flex: 1; overflow-y: auto; overflow-x: hidden; }
 .cal-body::-webkit-scrollbar { width: 6px; }
@@ -1395,7 +1395,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
   border-radius: 50%;
 }
 .month-cell--faded .month-cell-num { color: var(--tx-faded); }
-.month-cell-num.today-badge { background: var(--accent); color: #000; font-weight: 700; }
+.month-cell-num.today-badge { background: var(--accent); color: var(--today-badge-tx); font-weight: 700; }
 
 .month-shifts { display: flex; flex-direction: column; gap: 3px; }
 
