@@ -63,7 +63,7 @@
           <div v-for="d in ['S','M','T','W','R','F','S']" :key="d" class="mini-cal-day-label">{{ d }}</div>
           <div v-for="pad in startPad" :key="'pad-' + pad" class="mini-cal-cell empty"></div>
           <div v-for="day in daysInMonth" :key="day" class="mini-cal-cell"
-            :class="{ today: isToday(day), 'in-week': isInCurrentWeek(day) }"
+            :class="{ today: isToday(day), 'in-week': isInCurrentWeek(day), 'selected-day': isSelectedDay(day) }"
             @click="jumpToDay(day)">{{ day }}</div>
         </div>
 
@@ -133,6 +133,7 @@
         ════════════════════════════════════ -->
         <Transition name="view-fade" mode="out-in">
         <div v-if="calView === 'Day'" key="day" class="cal-grid-wrapper">
+          <div class="cal-body" ref="calBody">
           <div class="cal-header-row">
             <div class="time-gutter"></div>
             <div class="day-header single-day" :class="{ today: isTodayDate(dayViewDate) }">
@@ -141,7 +142,6 @@
               <span class="day-month-label">{{ dayViewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) }}</span>
             </div>
           </div>
-          <div class="cal-body" ref="calBody">
             <div class="cal-inner">
               <div class="time-column">
                 <div v-for="hour in hours" :key="hour" class="time-slot-label">{{ formatHour(hour) }}</div>
@@ -169,6 +169,7 @@
              WEEK VIEW
         ════════════════════════════════════ -->
         <div v-else-if="calView === 'Week'" key="week" class="cal-grid-wrapper">
+          <div class="cal-body" ref="calBody">
           <div class="cal-header-row">
             <div class="time-gutter"></div>
             <div v-for="(date, i) in weekDates" :key="i" class="day-header"
@@ -178,7 +179,6 @@
               <span class="day-number">{{ date.getDate() }}</span>
             </div>
           </div>
-          <div class="cal-body" ref="calBody">
             <div class="cal-inner">
               <div class="time-column">
                 <div v-for="hour in hours" :key="hour" class="time-slot-label">{{ formatHour(hour) }}</div>
@@ -822,13 +822,22 @@ function jumpToDay(day) {
   const d      = weekDates.value[0];
   const target = new Date(d.getFullYear(), d.getMonth(), day);
   const today  = new Date();
-  weekOffset.value = Math.round((target - today) / (7 * 86400000));
+  today.setHours(0, 0, 0, 0);
+  dayOffset.value  = Math.round((target - today) / 86400000);
+  calView.value    = 'Day';
 }
 
 // ── Mini-cal helpers ───────────────────────────────────────────────────────────
 function isToday(day) {
   const t = new Date(), d = weekDates.value[0];
   return t.getDate() === day && t.getMonth() === d.getMonth() && t.getFullYear() === d.getFullYear();
+}
+function isSelectedDay(day) {
+  if (calView.value !== 'Day') return false;
+  const ref = weekDates.value[0];
+  return dayViewDate.value.getDate() === day
+    && dayViewDate.value.getMonth() === ref.getMonth()
+    && dayViewDate.value.getFullYear() === ref.getFullYear();
 }
 function isInCurrentWeek(day) {
   return weekDates.value.some(d => d.getDate() === day && d.getMonth() === weekDates.value[0].getMonth());
@@ -1243,6 +1252,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .mini-cal-cell { text-align: center; font-size: 11px; padding: 3px 1px; border-radius: 4px; cursor: pointer; color: var(--tx-dim); font-family: 'DM Mono', monospace; transition: background 0.12s; }
 .mini-cal-cell:hover { background: var(--bdr-subtle); color: var(--tx-secondary); }
 .mini-cal-cell.in-week { background: var(--bg-active); color: var(--tasks-tx); }
+.mini-cal-cell.selected-day { background: var(--accent-bg); color: var(--accent); font-weight: 600; outline: 1px solid var(--accent-border); }
 .mini-cal-cell.today { background: var(--accent) !important; color: var(--today-badge-tx) !important; font-weight: 700; }
 .mini-cal-cell.empty { cursor: default; }
 .sidebar-section { margin-bottom: 20px; }
@@ -1303,7 +1313,8 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 
 /* ── Shared time-grid (Day + Week) ── */
 .cal-grid-wrapper { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.cal-header-row { display: flex; border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0; background: var(--bg-surface); }
+.cal-body { flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; }
+.cal-header-row { display: flex; border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0; background: var(--bg-surface); position: sticky; top: 0; z-index: 2; }
 .time-gutter { width: 60px; flex-shrink: 0; }
 
 .day-header {
@@ -1321,7 +1332,6 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .day-header.today .day-letter { color: var(--accent); }
 .day-header.today .day-number { background: var(--accent); color: var(--today-badge-tx); font-weight: 700; }
 
-.cal-body { flex: 1; overflow-y: auto; overflow-x: hidden; }
 .cal-body::-webkit-scrollbar { width: 6px; }
 .cal-body::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
 .cal-inner { display: flex; min-height: fit-content; }
