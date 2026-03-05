@@ -80,6 +80,12 @@
                 <td>
                   <div class="action-btns">
                     <button class="icon-action" title="Edit" @click="openEditEmployee(emp)">✎</button>
+                    <button class="icon-action" title="Manage Positions" @click="openManagePositions(emp)">
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                        <circle cx="8" cy="5" r="2.5" stroke="currentColor" stroke-width="1.5"/>
+                        <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                      </svg>
+                    </button>
                     <button class="icon-action danger" title="Delete" @click="confirmDelete('employee', emp)">✕</button>
                   </div>
                 </td>
@@ -243,6 +249,47 @@
       </div>
     </Transition>
 
+    <!-- ── Manage Positions ── -->
+    <Transition name="modal">
+      <div v-if="posModal.open" class="modal-overlay" @click.self="posModal.open = false">
+        <div class="modal modal-lg">
+          <h3 class="modal-title">{{ posModal.employee?.fName }} {{ posModal.employee?.lName }} — Positions</h3>
+
+          <div v-if="posModal.loading" class="pos-modal-loading">
+            <div class="loading-spinner sm"></div>
+          </div>
+
+          <template v-else>
+            <div v-if="posModal.assigned.length === 0" class="pos-empty">No positions assigned yet.</div>
+            <div v-else class="assigned-pos-list">
+              <div v-for="row in posModal.assigned" :key="row.id_positionEmployee" class="assigned-pos-row">
+                <span class="pos-tag">{{ row.position?.name || `Position #${row.id_position}` }}</span>
+                <span v-if="row.position?.avgPayRate" class="pos-tag-pay">${{ Number(row.position.avgPayRate).toFixed(2) }}/hr</span>
+                <button class="icon-action danger sm" title="Remove" @click="removePosition(row)">✕</button>
+              </div>
+            </div>
+
+            <div class="add-pos-row">
+              <select v-model="posModal.selectedPosId" class="pos-select">
+                <option value="">— Add a position —</option>
+                <option v-for="pos in unassignedPositions" :key="pos.id_position" :value="pos.id_position">
+                  {{ pos.name }}
+                </option>
+              </select>
+              <button class="primary-btn" :disabled="!posModal.selectedPosId || posModal.assigning" @click="addPosition">
+                {{ posModal.assigning ? 'Adding…' : 'Add' }}
+              </button>
+            </div>
+            <p v-if="posModal.error" class="modal-error">{{ posModal.error }}</p>
+          </template>
+
+          <div class="modal-actions">
+            <button class="cancel-btn" @click="posModal.open = false">Close</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <!-- ── Delete confirmation ── -->
     <Transition name="modal">
       <div v-if="deleteConfirm.open" class="modal-overlay" @click.self="deleteConfirm.open = false">
@@ -264,15 +311,23 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
+import Utils from "../config/utils.js";
 import {
   employeeService,
   shiftService,
   timeStrToHour,
   fmtHour,
 } from "../services/employeeManagementService.js";
+import {
+  getPositions,
+  getEmployeePositions,
+  assignPositionEmployee,
+  removePositionEmployee,
+} from "../services/departmentService.js";
 
 const router      = useRouter();
 const route       = useRoute();
+const currentUser = ref(Utils.getStore("user"));
 const activeTab   = ref(route.query.tab || "Employees");
 const loading     = ref(false);
 const apiError    = ref("");
@@ -280,8 +335,9 @@ const empSearch   = ref("");
 const shiftSearch = ref("");
 
 // ── Data ──────────────────────────────────────────────────────────────────────
-const employees = ref([]);
-const shifts    = ref([]);
+const employees  = ref([]);
+const shifts     = ref([]);
+const positions  = ref([]);
 
 const COLORS = ["#FF1744","#C0392B","#E8724A","#9B6B9B","#4A90A4","#C8973A","#D4756B","#6C8EAD"];
 const COLOR_PRESETS = ["#FF1744","#C0392B","#E8724A","#F0E6D3","#9B6B9B","#4A90A4","#22c55e","#f59e0b","#6366f1","#ec4899","#14b8a6","#D4756B"];
@@ -310,13 +366,16 @@ async function loadAll() {
   loading.value  = true;
   apiError.value = "";
   try {
-    const [empRes, shiftRes, assignRes] = await Promise.all([
+    const deptId = currentUser.value?.id_department;
+    const [empRes, shiftRes, assignRes, posRes] = await Promise.all([
       employeeService.getAll(),
       shiftService.getAll(),
       shiftService.getAssignments(),
+      deptId ? getPositions(deptId) : Promise.resolve({ data: [] }),
     ]);
 
     employees.value = empRes.data;
+    positions.value = posRes.data || [];
     assignColors(empRes.data);
 
     const shiftMap = {};
@@ -383,7 +442,7 @@ function openCreateModal() {
   modal.value = {
     open: true, type, isEdit: false, saving: false, error: "",
     data: type === "employee"
-      ? { fName: "", lName: "", email: "", role: "Employee", bio: "", color: null }
+      ? { fName: "", lName: "", email: "", role: "Employee", bio: "", color: null, id_department: currentUser.value?.id_department ?? null }
       : { id_employee: employees.value[0]?.id_employee || null, date: "", startTime: "09:00", endTime: "17:00", notes: "" },
     editId: null,
   };
@@ -486,6 +545,56 @@ async function saveModal() {
     modal.value.error = err.message || "Save failed.";
   } finally {
     modal.value.saving = false;
+  }
+}
+
+// ── Manage Positions modal ────────────────────────────────────────────────────
+const posModal = ref({
+  open: false, employee: null,
+  assigned: [], selectedPosId: "", loading: false, assigning: false, error: "",
+});
+
+const unassignedPositions = computed(() => {
+  const assignedIds = new Set(posModal.value.assigned.map(r => r.id_position));
+  return positions.value.filter(p => !assignedIds.has(p.id_position));
+});
+
+async function openManagePositions(emp) {
+  posModal.value = { open: true, employee: emp, assigned: [], selectedPosId: "", loading: true, assigning: false, error: "" };
+  try {
+    const res = await getEmployeePositions(emp.id_employee);
+    posModal.value.assigned = res.data || [];
+  } catch {
+    posModal.value.error = "Could not load positions.";
+  } finally {
+    posModal.value.loading = false;
+  }
+}
+
+async function addPosition() {
+  const id_position = Number(posModal.value.selectedPosId);
+  if (!id_position) return;
+  posModal.value.assigning = true;
+  posModal.value.error = "";
+  try {
+    const res = await assignPositionEmployee({ id_employee: posModal.value.employee.id_employee, id_position });
+    const pos = positions.value.find(p => p.id_position === id_position);
+    posModal.value.assigned.push({ ...res.data, position: pos || null });
+    posModal.value.selectedPosId = "";
+  } catch (err) {
+    posModal.value.error = err.message || "Failed to assign position.";
+  } finally {
+    posModal.value.assigning = false;
+  }
+}
+
+async function removePosition(row) {
+  const id_position = row.id_position;
+  try {
+    await removePositionEmployee(posModal.value.employee.id_employee, id_position);
+    posModal.value.assigned = posModal.value.assigned.filter(r => r.id_position !== id_position);
+  } catch (err) {
+    posModal.value.error = err.message || "Failed to remove.";
   }
 }
 
@@ -683,6 +792,28 @@ async function executeDelete() {
 .confirm-btn.danger:hover { background: var(--danger-btn-h); }
 .modal-enter-active, .modal-leave-active { transition: opacity 0.2s, transform 0.2s; }
 .modal-enter-from, .modal-leave-to { opacity: 0; transform: scale(0.96); }
+
+.modal-lg { width: 480px; }
+.pos-modal-loading { display: flex; justify-content: center; padding: 20px 0; }
+.loading-spinner.sm { width: 22px; height: 22px; border-width: 2px; }
+.pos-empty { font-size: 13px; color: var(--tx-ghost); font-style: italic; padding: 12px 0; }
+.assigned-pos-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.assigned-pos-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg-input); border: 1px solid var(--bdr-subtle);
+  border-radius: 8px; padding: 8px 12px;
+}
+.pos-tag { font-size: 13px; font-weight: 600; color: var(--tx-primary); flex: 1; }
+.pos-tag-pay { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--tx-faint); }
+.icon-action.sm { width: 22px; height: 22px; font-size: 11px; }
+.add-pos-row { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+.pos-select {
+  flex: 1; background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary);
+  padding: 8px 10px; border-radius: 8px; font-size: 13px;
+  font-family: 'DM Sans', sans-serif; outline: none;
+}
+.pos-select:focus { border-color: var(--accent); }
+.pos-select option { background: var(--bg-modal); }
 
 .color-picker-row { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
 .color-swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; transition: transform 0.12s, border-color 0.12s; flex-shrink: 0; }

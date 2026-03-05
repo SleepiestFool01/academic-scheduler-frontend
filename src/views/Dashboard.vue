@@ -150,6 +150,21 @@
                 :class="{ 'is-dragging-col': drag.active && drag.dayIndex === 0 }"
                 @mousedown.prevent="onColumnMouseDown($event, 0)">
                 <div v-for="hour in hours" :key="hour" class="hour-cell"></div>
+                <!-- Hours of operation markers -->
+                <template v-for="entry in hoursLinesForDate(dayViewDate)" :key="entry.key">
+                  <div class="hours-op-line open" :style="{ top: entry.openPx + 'px' }">
+                    <span class="hours-line-label">Open {{ entry.openLabel }}</span>
+                  </div>
+                  <div class="hours-op-line close" :style="{ top: entry.closePx + 'px' }">
+                    <span class="hours-line-label">Close {{ entry.closeLabel }}</span>
+                  </div>
+                </template>
+                <!-- Department event blocks -->
+                <div v-for="ev in eventsForDate(dayViewDate)" :key="'ev-' + ev.id_event"
+                  class="event-block" :style="eventBlockStyle(ev)">
+                  <div class="event-block-title">{{ ev.title }}</div>
+                  <div class="event-block-time">{{ fmtHour(ev.startHour) }} – {{ fmtHour(ev.endHour) }}</div>
+                </div>
                 <div v-if="drag.active && drag.dayIndex === 0" class="ghost-block" :style="ghostStyle">
                   <span class="ghost-label">{{ ghostLabel }}</span>
                 </div>
@@ -187,6 +202,21 @@
                 :class="{ 'is-dragging-col': drag.active && drag.dayIndex === colIdx }"
                 @mousedown.prevent="onColumnMouseDown($event, colIdx)">
                 <div v-for="hour in hours" :key="hour" class="hour-cell"></div>
+                <!-- Hours of operation markers -->
+                <template v-for="entry in hoursLinesForDate(date)" :key="entry.key">
+                  <div class="hours-op-line open" :style="{ top: entry.openPx + 'px' }">
+                    <span class="hours-line-label">Open {{ entry.openLabel }}</span>
+                  </div>
+                  <div class="hours-op-line close" :style="{ top: entry.closePx + 'px' }">
+                    <span class="hours-line-label">Close {{ entry.closeLabel }}</span>
+                  </div>
+                </template>
+                <!-- Department event blocks -->
+                <div v-for="ev in eventsForDate(date)" :key="'ev-' + ev.id_event"
+                  class="event-block" :style="eventBlockStyle(ev)">
+                  <div class="event-block-title">{{ ev.title }}</div>
+                  <div class="event-block-time">{{ fmtHour(ev.startHour) }} – {{ fmtHour(ev.endHour) }}</div>
+                </div>
                 <div v-if="drag.active && drag.dayIndex === colIdx" class="ghost-block" :style="ghostStyle">
                   <span class="ghost-label">{{ ghostLabel }}</span>
                 </div>
@@ -222,6 +252,11 @@
               @click="drillToMonthDay(day)">
               <span class="month-cell-num" :class="{ 'today-badge': isMonthToday(day) }">{{ day }}</span>
               <div class="month-shifts">
+                <div v-for="ev in eventsForMonthDay(day)" :key="'ev-' + ev.id_event"
+                  class="month-event-pill">
+                  <span class="month-event-dot"></span>
+                  <span class="month-event-name">{{ ev.title }}</span>
+                </div>
                 <div v-for="shift in shiftsForMonthDay(day)" :key="shift.id"
                   class="month-shift-pill"
                   :style="{ background: getEmployeeColor(shift.employee) }"
@@ -476,6 +511,7 @@ import {
   deleteShift  as apiDeleteShift,
   fetchSwapRequests,
 } from "../services/schedulingService.js";
+import { getCalendarEntries, getEvents } from "../services/departmentService.js";
 import {
   fetchTaskLists,
   fetchTasks,
@@ -488,7 +524,7 @@ import {
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const CELL_HEIGHT    = 60;
-const CAL_START_HOUR = 7;
+const CAL_START_HOUR = 0;   // full 24-hour grid
 const SNAP_MINUTES   = 15;
 const MAX_PILLS      = 3;
 const DAY_NAMES      = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -503,6 +539,7 @@ const router = useRouter();
 
 function handleTabClick(tab) {
   const routes = {
+    Department: "/department",
     Employees:  "/manage",
     Shifts:     "/manage?tab=Shifts",
     Tradeboard: "/tradeboard",
@@ -545,9 +582,15 @@ const calBody        = ref(null);
 const loading = ref(true);
 const apiError = ref(null);
 
-const tabs        = ["Schedules", "Employees", "Shifts", "Tradeboard", "Tasks", "Requests"];
+const tabs = computed(() => {
+  const base = ["Schedules", "Employees", "Shifts", "Tradeboard", "Tasks", "Requests"];
+  if (currentUser.value?.role === "Manager" || currentUser.value?.role === "Admin") {
+    base.splice(1, 0, "Department");
+  }
+  return base;
+});
 const dayLetters  = ["S","M","T","W","R","F","S"];
-const hours       = Array.from({ length: 13 }, (_, i) => i + CAL_START_HOUR);
+const hours       = Array.from({ length: 24 }, (_, i) => i);
 
 // ── Live data (populated from API on mount) ────────────────────────────────────
 // employees: [{ id_employee, fName, lName, email, color, name }]
@@ -557,6 +600,8 @@ const employeeMap  = ref({});
 
 const shifts          = ref([]);
 const pendingRequests = ref([]);
+const calendarHours   = ref([]); // hours of operation from department calendar
+const deptEvents      = ref([]); // department events
 
 // ── Task state ─────────────────────────────────────────────────────────────────
 const taskLists = ref([]);
@@ -711,7 +756,7 @@ const selectedShiftDateLabel = computed(() => {
 //  2. Sort by startHour, then merge overlapping intervals
 //  3. The "gaps" are the holes between CAL_START_HOUR and CAL_END_HOUR not covered by any shift
 //  4. Only emit days that actually have at least one gap
-const CAL_END_HOUR = CAL_START_HOUR + 13; // 7 AM + 13 hours = 8 PM
+const CAL_END_HOUR = 24;
 
 const computedOpenShifts = computed(() => {
   const result = [];
@@ -859,8 +904,64 @@ function isMonthSelected(day) {
 
 // ── Formatting ─────────────────────────────────────────────────────────────────
 function formatHour(h) {
+  if (h === 0)  return "12 AM";
   if (h === 12) return "12 PM";
   return h < 12 ? `${h} AM` : `${h - 12} PM`;
+}
+
+function parseTimeToHour(timeStr) {
+  if (!timeStr) return 0;
+  const [h, m] = timeStr.split(":").map(Number);
+  return h + m / 60;
+}
+
+function hoursLinesForDate(date) {
+  const dayName = DAY_NAMES[date.getDay()];
+  return calendarHours.value
+    .filter(e => e.dayOfWeek === dayName)
+    .map(e => ({
+      key:        e.id_hours_of_operation,
+      openPx:     parseTimeToHour(e.startTime) * CELL_HEIGHT,
+      closePx:    parseTimeToHour(e.endTime)   * CELL_HEIGHT,
+      openLabel:  fmtHour(parseTimeToHour(e.startTime)),
+      closeLabel: fmtHour(parseTimeToHour(e.endTime)),
+    }));
+}
+
+function eventsForDate(date) {
+  const dateStr = dateToKey(date);
+  return deptEvents.value
+    .filter(ev => ev.start_time && new Date(ev.start_time).toISOString().slice(0, 10) === dateStr)
+    .map(ev => {
+      const s = new Date(ev.start_time);
+      const e = new Date(ev.end_time || ev.start_time);
+      const startHour = s.getHours() + s.getMinutes() / 60;
+      const endHour   = Math.max(e.getHours() + e.getMinutes() / 60, startHour + 0.5);
+      return { ...ev, startHour, endHour };
+    });
+}
+
+function eventBlockStyle(ev) {
+  return {
+    position: "absolute",
+    top:    `${ev.startHour * CELL_HEIGHT}px`,
+    height: `${Math.max((ev.endHour - ev.startHour) * CELL_HEIGHT - 3, 22)}px`,
+    left: "3px", right: "3px",
+    background: "rgba(74,144,164,0.18)",
+    border: "1px solid rgba(74,144,164,0.5)",
+    borderLeft: "3px solid #4A90A4",
+    borderRadius: "6px",
+    padding: "4px 8px",
+    overflow: "hidden",
+    zIndex: 1,
+    pointerEvents: "none",
+  };
+}
+
+function eventsForMonthDay(day) {
+  const d   = monthViewDate.value;
+  const key = dateToKey(new Date(d.getFullYear(), d.getMonth(), day));
+  return deptEvents.value.filter(ev => ev.start_time && new Date(ev.start_time).toISOString().slice(0, 10) === key);
 }
 function fmtHour(h) {
   const total  = Math.round(h * 60);
@@ -976,6 +1077,12 @@ async function loadAll() {
     }
     shifts.value = await fetchShiftsWithAssignments(map);
     pendingRequests.value = await fetchSwapRequests(map);
+    // Load hours of operation + events for this user's department (non-blocking)
+    const deptId = currentUser.value?.id_department;
+    if (deptId) {
+      getCalendarEntries(deptId).then(r => { calendarHours.value = r.data || []; }).catch(() => {});
+      getEvents(deptId).then(r => { deptEvents.value = r.data || []; }).catch(() => {});
+    }
     loadMyTasks(); // async, non-blocking — populates employee sidebar
   } catch (err) {
     apiError.value = err.message;
@@ -1188,9 +1295,9 @@ async function loadMyTasks() {
 // ── Lifecycle ──────────────────────────────────────────────────────────────────
 onMounted(async () => {
   await loadAll();
-  if (calBody.value) calBody.value.scrollTop = CELL_HEIGHT;
+  if (calBody.value) calBody.value.scrollTop = 7 * CELL_HEIGHT; // scroll to 7am
 });
-watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrollTop = CELL_HEIGHT; }, 50); });
+watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrollTop = 7 * CELL_HEIGHT; }, 50); });
 </script>
 
 <style scoped>
@@ -1351,8 +1458,36 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .shift-employee { font-size: 12px; font-weight: 700; color: rgba(0,0,0,0.85); line-height: 1.2; }
 .shift-time { font-size: 10px; color: rgba(0,0,0,0.6); font-family: 'DM Mono', monospace; }
 
+.event-block { position: absolute; left: 3px; right: 3px; border-radius: 6px; overflow: hidden; z-index: 1; }
+.event-block-title { font-size: 11px; font-weight: 700; color: #4A90A4; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event-block-time  { font-size: 9px; color: rgba(74,144,164,0.8); font-family: 'DM Mono', monospace; }
+
+.month-event-pill {
+  display: flex; align-items: center; gap: 5px;
+  border-radius: 4px; padding: 2px 6px; overflow: hidden;
+  background: rgba(74,144,164,0.15); border-left: 2px solid #4A90A4;
+}
+.month-event-dot  { width: 5px; height: 5px; border-radius: 50%; background: #4A90A4; flex-shrink: 0; }
+.month-event-name { font-size: 11px; font-weight: 600; color: #4A90A4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+
 .current-time-line { position: absolute; left: 0; right: 0; height: 2px; background: #EF4444; z-index: 5; box-shadow: 0 0 8px #EF444488; pointer-events: none; }
 .current-time-line::before { content: ''; position: absolute; left: -4px; top: -4px; width: 10px; height: 10px; background: #EF4444; border-radius: 50%; }
+
+/* ── Hours of operation marker lines ── */
+.hours-op-line {
+  position: absolute; left: 0; right: 0; height: 2px;
+  z-index: 4; pointer-events: none; overflow: visible;
+}
+.hours-op-line.open  { background: rgba(34, 197, 94, 0.65); box-shadow: 0 0 6px rgba(34,197,94,0.3); }
+.hours-op-line.close { background: rgba(248, 113, 113, 0.65); box-shadow: 0 0 6px rgba(248,113,113,0.3); }
+.hours-line-label {
+  position: absolute; right: 6px; bottom: 4px;
+  font-size: 9px; font-family: 'DM Mono', monospace; font-weight: 600;
+  white-space: nowrap; padding: 1px 5px; border-radius: 3px;
+  pointer-events: none; line-height: 13px;
+}
+.hours-op-line.open  .hours-line-label { color: rgb(34,197,94);   background: rgba(34,197,94,0.12); }
+.hours-op-line.close .hours-line-label { color: rgb(248,113,113); background: rgba(248,113,113,0.12); }
 
 /* ══════════════════════════════════
    MONTH VIEW
