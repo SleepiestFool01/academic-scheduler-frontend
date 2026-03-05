@@ -20,11 +20,11 @@
   --bg-soverlay:   rgba(0, 0, 0, 0.40);
 
   /* Borders */
-  --bdr-subtle:    #1a1a2e;
+  --bdr-subtle:    #3a3a58;
   --bdr-accent:    #221014;
-  --bdr-medium:    #1e2a3a;
-  --bdr-strong:    #1e2638;
-  --bdr-faint:     #1c1b2a;
+  --bdr-medium:    #3a4e68;
+  --bdr-strong:    #455678;
+  --bdr-faint:     #3e3d60;
   --bdr-pop:       #1f0508;
 
   /* Text */
@@ -33,11 +33,11 @@
   --tx-secondary:  #94a3b8;
   --tx-muted:      #64748b;
   --tx-faint:      #475569;
-  --tx-dim:        #4a5568;
-  --tx-ghost:      #334155;
-  --tx-label-dim:  #3d4a5c;
-  --tx-faintest:   #2d3748;
-  --tx-faded:      #282838;
+  --tx-dim:        #6a7585;
+  --tx-ghost:      #506070;
+  --tx-label-dim:  #5d6e84;
+  --tx-faintest:   #637080;
+  --tx-faded:      #4e4e6a;
 
   /* Accent (red) */
   --accent:         #EF4444;
