@@ -1037,14 +1037,10 @@ function snap(rawHour) {
   return Math.max(CAL_START_HOUR, Math.min(CAL_START_HOUR + hours.length, s));
 }
 function getHourFromEvent(e, colEl) {
-  // Use the scrollable container's top, not the column element's top.
-  // colEl.getBoundingClientRect().top is viewport-relative and already reflects scroll position,
-  // so adding scrollTop on top of it was double-counting the offset and shifting the ghost block up.
-  // Instead: take mouse position relative to the container's viewport top, then add scrollTop
-  // to get the true pixel offset within the full scrollable content.
-  const containerRect = calBody.value.getBoundingClientRect();
-  const scrollY       = calBody.value.scrollTop;
-  const relY          = e.clientY - containerRect.top + scrollY;
+  // getBoundingClientRect().top is already viewport-relative and accounts for scroll,
+  // so e.clientY - colRect.top gives the exact pixel offset within the column directly.
+  const colRect = colEl.getBoundingClientRect();
+  const relY    = e.clientY - colRect.top;
   return snap(CAL_START_HOUR + relY / CELL_HEIGHT);
 }
 
