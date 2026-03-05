@@ -19,11 +19,26 @@
         <h1 class="page-title">Requests</h1>
       </div>
       <div class="nav-tabs">
-        <button class="nav-tab" :class="{ active: activeTab === 'pending' }" @click="activeTab = 'pending'">
-          Pending
-          <span v-if="pendingRequests.length > 0" class="tab-badge">{{ pendingRequests.length }}</span>
-        </button>
-        <button class="nav-tab" :class="{ active: activeTab === 'all' }" @click="activeTab = 'all'">All</button>
+        <!-- Time Off tabs -->
+        <template v-if="requestType === 'timeoff'">
+          <button class="nav-tab" :class="{ active: activeTab === 'pending' }" @click="activeTab = 'pending'">
+            Pending
+            <span v-if="pendingRequests.length > 0" class="tab-badge">{{ pendingRequests.length }}</span>
+          </button>
+          <button class="nav-tab" :class="{ active: activeTab === 'all' }" @click="activeTab = 'all'">All</button>
+        </template>
+        <!-- Dept Access tabs -->
+        <template v-else>
+          <button class="nav-tab" :class="{ active: deptTab === 'pending' }" @click="deptTab = 'pending'">
+            Pending
+            <span v-if="pendingDeptRequests.length > 0" class="tab-badge">{{ pendingDeptRequests.length }}</span>
+          </button>
+          <button class="nav-tab" :class="{ active: deptTab === 'all' }" @click="deptTab = 'all'">All</button>
+        </template>
+      </div>
+      <div class="nav-type-switch">
+        <button class="type-btn" :class="{ active: requestType === 'timeoff' }" @click="requestType = 'timeoff'">Time Off</button>
+        <button v-if="isAdminOrManager" class="type-btn" :class="{ active: requestType === 'deptaccess' }" @click="loadDeptRequests(); requestType = 'deptaccess'">Dept Access</button>
       </div>
     </div>
 
@@ -34,61 +49,114 @@
     <div v-if="apiError" class="error-banner">{{ apiError }}<button class="retry-btn" @click="loadAll">Retry</button></div>
 
     <div class="content">
-      <div class="panel-header">
-        <div>
-          <h2 class="panel-title">{{ activeTab === 'pending' ? 'Pending Requests' : 'All Requests' }}</h2>
-          <p class="panel-sub">Employee time-off and availability requests</p>
+
+      <!-- ════ TIME OFF ════ -->
+      <template v-if="requestType === 'timeoff'">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">{{ activeTab === 'pending' ? 'Pending Requests' : 'All Requests' }}</h2>
+            <p class="panel-sub">Employee time-off and availability requests</p>
+          </div>
+          <input v-model="search" class="search-input" placeholder="Search by employee…" />
         </div>
-        <input v-model="search" class="search-input" placeholder="Search by employee…" />
-      </div>
 
-      <!-- Empty state -->
-      <div v-if="displayedRequests.length === 0" class="empty-card">
-        <p class="empty-icon">{{ activeTab === 'pending' ? '✓' : '📭' }}</p>
-        <p class="empty-title">{{ activeTab === 'pending' ? 'No pending requests' : 'No requests yet' }}</p>
-        <p class="empty-sub">{{ activeTab === 'pending' ? 'All caught up!' : 'Employee requests will appear here.' }}</p>
-      </div>
+        <div v-if="displayedRequests.length === 0" class="empty-card">
+          <p class="empty-icon">{{ activeTab === 'pending' ? '✓' : '📭' }}</p>
+          <p class="empty-title">{{ activeTab === 'pending' ? 'No pending requests' : 'No requests yet' }}</p>
+          <p class="empty-sub">{{ activeTab === 'pending' ? 'All caught up!' : 'Employee requests will appear here.' }}</p>
+        </div>
 
-      <!-- Requests list -->
-      <div v-else class="requests-list">
-        <div v-for="req in displayedRequests" :key="req.id_personalAvailability" class="request-card">
-          <div class="request-card-left">
-            <div class="emp-avatar" :style="{ background: colorFor(req.id_employee) }">
-              {{ initialsFor(req.id_employee) }}
+        <div v-else class="requests-list">
+          <div v-for="req in displayedRequests" :key="req.id_personalAvailability" class="request-card">
+            <div class="request-card-left">
+              <div class="emp-avatar" :style="{ background: colorFor(req.id_employee) }">
+                {{ initialsFor(req.id_employee) }}
+              </div>
+              <div class="request-info">
+                <p class="request-emp">{{ nameFor(req.id_employee) }}</p>
+                <p class="request-type">Time Off Request</p>
+              </div>
             </div>
-            <div class="request-info">
-              <p class="request-emp">{{ nameFor(req.id_employee) }}</p>
-              <p class="request-type">Time Off Request</p>
-            </div>
-          </div>
 
-          <div class="request-dates">
-            <div class="date-block">
-              <span class="date-label">From</span>
-              <span class="date-val mono">{{ req.startDate }}</span>
-              <span class="time-val mono">{{ fmtTime(req.startTime) }}</span>
+            <div class="request-dates">
+              <div class="date-block">
+                <span class="date-label">From</span>
+                <span class="date-val mono">{{ req.startDate }}</span>
+                <span class="time-val mono">{{ fmtTime(req.startTime) }}</span>
+              </div>
+              <div class="date-arrow">→</div>
+              <div class="date-block">
+                <span class="date-label">To</span>
+                <span class="date-val mono">{{ req.endDate }}</span>
+                <span class="time-val mono">{{ fmtTime(req.endTime) }}</span>
+              </div>
             </div>
-            <div class="date-arrow">→</div>
-            <div class="date-block">
-              <span class="date-label">To</span>
-              <span class="date-val mono">{{ req.endDate }}</span>
-              <span class="time-val mono">{{ fmtTime(req.endTime) }}</span>
-            </div>
-          </div>
 
-          <div class="request-actions">
-            <span class="status-badge" :class="req.status">{{ req.status }}</span>
-            <template v-if="req.status === 'pending'">
-              <button class="approve-btn" @click="updateRequest(req, 'approved')">✓ Approve</button>
-              <button class="deny-btn"    @click="updateRequest(req, 'denied')">✕ Deny</button>
-            </template>
-            <button class="icon-action danger" title="Delete" @click="confirmDelete(req)">✕</button>
+            <div class="request-actions">
+              <span class="status-badge" :class="req.status">{{ req.status }}</span>
+              <template v-if="req.status === 'pending'">
+                <button class="approve-btn" @click="updateRequest(req, 'approved')">✓ Approve</button>
+                <button class="deny-btn"    @click="updateRequest(req, 'denied')">✕ Deny</button>
+              </template>
+              <button class="icon-action danger" title="Delete" @click="confirmDelete(req)">✕</button>
+            </div>
           </div>
         </div>
-      </div>
+      </template>
+
+      <!-- ════ DEPT ACCESS ════ -->
+      <template v-else>
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">{{ deptTab === 'pending' ? 'Pending Department Requests' : 'All Department Requests' }}</h2>
+            <p class="panel-sub">Manager requests to access additional departments</p>
+          </div>
+          <input v-model="deptSearch" class="search-input" placeholder="Search by manager…" />
+        </div>
+
+        <div v-if="deptLoading" class="loading-inline">
+          <div class="loading-spinner"></div>
+        </div>
+
+        <div v-else-if="displayedDeptRequests.length === 0" class="empty-card">
+          <p class="empty-icon">{{ deptTab === 'pending' ? '✓' : '📭' }}</p>
+          <p class="empty-title">{{ deptTab === 'pending' ? 'No pending requests' : 'No requests yet' }}</p>
+          <p class="empty-sub">{{ deptTab === 'pending' ? 'All caught up!' : 'Department access requests will appear here.' }}</p>
+        </div>
+
+        <div v-else class="requests-list">
+          <div v-for="req in displayedDeptRequests" :key="req.id_departmentAccessRequest" class="request-card">
+            <div class="request-card-left">
+              <div class="emp-avatar" :style="{ background: colorFor(req.id_employeeRequester) }">
+                {{ initialsFor(req.id_employeeRequester) }}
+              </div>
+              <div class="request-info">
+                <p class="request-emp">{{ nameFor(req.id_employeeRequester) }}</p>
+                <p class="request-type">Department Access Request</p>
+              </div>
+            </div>
+
+            <div class="dept-req-info">
+              <span class="dept-req-label">Department</span>
+              <span class="dept-req-name">{{ deptNameById(req.id_department) }}</span>
+              <span v-if="req.message" class="dept-req-message">"{{ req.message }}"</span>
+            </div>
+
+            <div class="request-actions">
+              <span class="status-badge" :class="req.status">{{ req.status }}</span>
+              <template v-if="req.status === 'Pending'">
+                <button class="approve-btn" @click="approveDeptRequest(req)">✓ Approve</button>
+                <button class="deny-btn"    @click="denyDeptRequest(req)">✕ Deny</button>
+              </template>
+              <button class="icon-action danger" title="Delete" @click="confirmDeleteDeptReq(req)">✕</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
     </div>
 
-    <!-- Delete confirm -->
+    <!-- Delete confirm (time off) -->
     <Transition name="modal">
       <div v-if="deleteConfirm.open" class="modal-overlay" @click.self="deleteConfirm.open = false">
         <div class="modal">
@@ -103,6 +171,22 @@
         </div>
       </div>
     </Transition>
+
+    <!-- Delete confirm (dept access) -->
+    <Transition name="modal">
+      <div v-if="deleteDeptConfirm.open" class="modal-overlay" @click.self="deleteDeptConfirm.open = false">
+        <div class="modal">
+          <h3 class="modal-title">Delete this request?</h3>
+          <p class="modal-body-text">This will permanently remove the department access request.</p>
+          <div class="modal-actions">
+            <button class="cancel-btn" @click="deleteDeptConfirm.open = false">Cancel</button>
+            <button class="confirm-btn danger" :disabled="deleteDeptConfirm.saving" @click="executeDeptDelete">
+              {{ deleteDeptConfirm.saving ? 'Deleting…' : 'Delete' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -112,37 +196,50 @@ import { useRouter } from "vue-router";
 import Utils from "../config/utils.js";
 import apiClient from "../services/services.js";
 import { timeStrToHour, fmtHour } from "../services/employeeManagementService.js";
+import {
+  getDepartmentAccessRequests,
+  updateDepartmentAccessRequest,
+  deleteDepartmentAccessRequest,
+  getAllDepartments,
+} from "../services/departmentService.js";
 
 const router      = useRouter();
 const loading     = ref(false);
 const apiError    = ref("");
 const activeTab   = ref("pending");
 const search      = ref("");
+const requestType = ref("timeoff"); // "timeoff" | "deptaccess"
+
+const currentUser       = ref(Utils.getStore("user"));
+const isAdminOrManager  = computed(() =>
+  currentUser.value?.role === "Admin" || currentUser.value?.role === "Manager"
+);
 
 const employees    = ref([]);
 const availability = ref([]);
 const empMap       = ref({});
+const allDepts     = ref([]);
 
 const COLORS = ["#FF1744","#C0392B","#E8724A","#9B6B9B","#4A90A4","#C8973A","#D4756B","#6C8EAD"];
 function colorFor(id)    { return COLORS[(id || 0) % COLORS.length]; }
 function nameFor(id)     { const e = empMap.value[id]; return e ? `${e.fName} ${e.lName}` : `Employee #${id}`; }
 function initialsFor(id) { const e = empMap.value[id]; return e ? `${e.fName[0]}${e.lName[0]}` : "?"; }
 function fmtTime(t)      { if (!t) return "—"; return fmtHour(timeStrToHour(t)); }
+function deptNameById(id) { return allDepts.value.find(d => d.id_department === Number(id))?.name || `Dept #${id}`; }
 
 async function loadAll() {
   loading.value = true; apiError.value = "";
   try {
-    const [empRes, availRes] = await Promise.all([
+    const [empRes, availRes, deptRes] = await Promise.all([
       apiClient.get("/employees"),
       apiClient.get("/personal-availability"),
+      getAllDepartments(),
     ]);
     employees.value = empRes.data;
     empMap.value = {};
     for (const e of empRes.data) empMap.value[e.id_employee] = e;
+    allDepts.value = deptRes.data || [];
 
-    // Add a local status field for manager approval workflow
-    // (personalAvailability model doesn't have status — we track it locally
-    // and could extend the model later to persist it)
     availability.value = availRes.data.map(a => ({ ...a, status: "pending" }));
   } catch (err) {
     apiError.value = "Could not load data: " + (err.message || "Network error");
@@ -185,6 +282,75 @@ async function executeDelete() {
     deleteConfirm.value.open = false;
   } finally {
     deleteConfirm.value.saving = false;
+  }
+}
+
+// ── Department Access Requests ─────────────────────────────────────────────────
+const deptRequests  = ref([]);
+const deptLoading   = ref(false);
+const deptTab       = ref("pending");
+const deptSearch    = ref("");
+
+async function loadDeptRequests() {
+  deptLoading.value = true;
+  try {
+    const res = await getDepartmentAccessRequests({});
+    deptRequests.value = res.data || [];
+  } catch { /* silent */ } finally {
+    deptLoading.value = false;
+  }
+}
+
+const pendingDeptRequests = computed(() =>
+  deptRequests.value.filter(r => r.status === "Pending")
+);
+
+const displayedDeptRequests = computed(() => {
+  let list = deptTab.value === "pending" ? pendingDeptRequests.value : deptRequests.value;
+  const q = deptSearch.value.toLowerCase();
+  if (q) list = list.filter(r => nameFor(r.id_employeeRequester).toLowerCase().includes(q));
+  return list;
+});
+
+async function approveDeptRequest(req) {
+  try {
+    await updateDepartmentAccessRequest(req.id_departmentAccessRequest, { status: "Approved" });
+    const idx = deptRequests.value.findIndex(r => r.id_departmentAccessRequest === req.id_departmentAccessRequest);
+    if (idx !== -1) deptRequests.value[idx] = { ...deptRequests.value[idx], status: "Approved" };
+  } catch (err) {
+    apiError.value = "Approve failed: " + (err.message || "Unknown error");
+  }
+}
+
+async function denyDeptRequest(req) {
+  try {
+    await updateDepartmentAccessRequest(req.id_departmentAccessRequest, { status: "Denied" });
+    const idx = deptRequests.value.findIndex(r => r.id_departmentAccessRequest === req.id_departmentAccessRequest);
+    if (idx !== -1) deptRequests.value[idx] = { ...deptRequests.value[idx], status: "Denied" };
+  } catch (err) {
+    apiError.value = "Deny failed: " + (err.message || "Unknown error");
+  }
+}
+
+const deleteDeptConfirm = ref({ open: false, item: null, saving: false });
+
+function confirmDeleteDeptReq(req) {
+  deleteDeptConfirm.value = { open: true, item: req, saving: false };
+}
+
+async function executeDeptDelete() {
+  deleteDeptConfirm.value.saving = true;
+  try {
+    await deleteDepartmentAccessRequest(deleteDeptConfirm.value.item.id_departmentAccessRequest);
+    deptRequests.value = deptRequests.value.filter(
+      r => r.id_departmentAccessRequest !== deleteDeptConfirm.value.item.id_departmentAccessRequest
+    );
+    deleteDeptConfirm.value.open = false;
+  } catch (err) {
+    apiError.value = "Delete failed: " + err.message;
+    deleteDeptConfirm.value.open = false;
+  } finally {
+    deleteDeptConfirm.value.saving = false;
   }
 }
 </script>
@@ -271,4 +437,24 @@ async function executeDelete() {
 .confirm-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .modal-enter-active, .modal-leave-active { transition: opacity 0.2s, transform 0.2s; }
 .modal-enter-from, .modal-leave-to { opacity: 0; transform: scale(0.96); }
+
+/* ── Request type switch ── */
+.nav-type-switch { margin-left: auto; display: flex; gap: 2px; background: var(--bg-page); border: 1px solid var(--bdr-subtle); border-radius: 8px; padding: 3px; }
+.type-btn { padding: 4px 14px; background: transparent; border: none; color: var(--tx-muted); font-family: 'DM Sans', sans-serif; font-size: 12px; cursor: pointer; border-radius: 6px; transition: background 0.15s, color 0.15s; }
+.type-btn:hover  { background: var(--bdr-subtle); color: var(--tx-secondary); }
+.type-btn.active { background: var(--bg-surface); color: var(--accent); font-weight: 600; }
+
+/* ── Dept request info ── */
+.dept-req-info { display: flex; flex-direction: column; gap: 3px; flex: 1; }
+.dept-req-label { font-size: 10px; color: var(--tx-ghost); text-transform: uppercase; letter-spacing: 0.08em; }
+.dept-req-name  { font-size: 14px; font-weight: 600; color: var(--tx-primary); }
+.dept-req-message { font-size: 12px; color: var(--tx-muted); font-style: italic; }
+
+/* ── Status badge ── */
+.status-badge.Pending  { background: var(--warn-bg);  color: var(--warn-text); }
+.status-badge.Approved { background: var(--ok-bg);    color: var(--ok-text); }
+.status-badge.Denied   { background: var(--deny-bg);  color: var(--err-text); }
+
+/* ── Loading inline ── */
+.loading-inline { display: flex; justify-content: center; padding: 40px; }
 </style>
