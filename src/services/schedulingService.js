@@ -44,7 +44,7 @@ function timeStrToHour(t) {
 /**
  * Format a fractional hour → display label ("9:30am")
  */
-function fmtHour(h) {
+export function fmtHour(h) {
   const total  = Math.round(h * 60);
   const hr     = Math.floor(total / 60);
   const min    = total % 60;
@@ -79,31 +79,19 @@ export async function fetchEmployees() {
  * Fetch all shifts and all shift assignments, then JOIN them client-side
  * into the flat shape Dashboard.vue uses for rendering calendar blocks.
  *
- * Returned shape per block:
- * {
- *   id,                  — id_shiftAssignment  (unique key per calendar block)
- *   id_shift,            — for update / delete of the Shift row
- *   id_shiftAssignment,  — for delete of the ShiftAssignment row
- *   id_employee,
- *   employee,            — "fName lName"
- *   date,                — "YYYY-MM-DD"
- *   dayIndex,            — 0–6 (day of week, derived from date)
- *   startHour,           — fractional hour e.g. 9.5
- *   endHour,
- *   startLabel,          — "9:30am"
- *   endLabel,
- *   notes,               — shift.description
- * }
+ * Unassigned shifts (no ShiftAssignment row) are also included, using
+ * the shift's own date field, with employee = "" and id_employee = null.
  *
- * @param {Object} employeeMap  { [id_employee]: employeeObject }
+ * @param {Object} employeeMap   { [id_employee]: employeeObject }
+ * @param {Object} positionMap   { [id_position]: positionObject }  (optional)
  */
-export async function fetchShiftsWithAssignments(employeeMap) {
+export async function fetchShiftsWithAssignments(employeeMap, positionMap = {}) {
   const [shiftsRes, assignRes] = await Promise.all([
     apiClient.get(SHIFTS),
     apiClient.get(ASSIGNMENTS),
   ]);
 
-  const shiftDefs   = shiftsRes.data;   // [{ id_shift, name, description, day, date, startTime, endTime }]
+  const shiftDefs   = shiftsRes.data;   // [{ id_shift, name, description, day, date, startTime, endTime, id_position }]
   const assignments = assignRes.data;   // [{ id_shiftAssignment, id_shift, id_employee, date }]
 
   // Fast lookup for shift definitions
@@ -111,18 +99,20 @@ export async function fetchShiftsWithAssignments(employeeMap) {
   for (const s of shiftDefs) shiftById[s.id_shift] = s;
 
   const result = [];
+  const assignedShiftIds = new Set();
 
   for (const a of assignments) {
     const s   = shiftById[a.id_shift];
     const emp = employeeMap[a.id_employee];
     if (!s || !emp) continue;   // orphaned rows — skip gracefully
 
-    const startHour = timeStrToHour(s.startTime);
-    const endHour   = timeStrToHour(s.endTime);
+    assignedShiftIds.add(s.id_shift);
 
-    // Derive dayIndex from the assignment's concrete date (not the shift template day)
-    const [y, mo, d] = a.date.split("-").map(Number);
-    const dayIndex   = new Date(y, mo - 1, d).getDay();
+    const startHour    = timeStrToHour(s.startTime);
+    const endHour      = timeStrToHour(s.endTime);
+    const [y, mo, d]   = a.date.split("-").map(Number);
+    const dayIndex     = new Date(y, mo - 1, d).getDay();
+    const positionName = positionMap[s.id_position]?.name || "";
 
     result.push({
       id:                 a.id_shiftAssignment,
@@ -137,6 +127,36 @@ export async function fetchShiftsWithAssignments(employeeMap) {
       startLabel:         fmtHour(startHour),
       endLabel:           fmtHour(endHour),
       notes:              s.description || "",
+      id_position:        s.id_position || null,
+      positionName,
+    });
+  }
+
+  // Include unassigned shifts (no ShiftAssignment row)
+  for (const s of shiftDefs) {
+    if (assignedShiftIds.has(s.id_shift) || !s.date) continue;
+
+    const startHour    = timeStrToHour(s.startTime);
+    const endHour      = timeStrToHour(s.endTime);
+    const [y, mo, d]   = s.date.split("-").map(Number);
+    const dayIndex     = new Date(y, mo - 1, d).getDay();
+    const positionName = positionMap[s.id_position]?.name || "";
+
+    result.push({
+      id:                 `shift-${s.id_shift}`,
+      id_shift:           s.id_shift,
+      id_shiftAssignment: null,
+      id_employee:        null,
+      employee:           "",
+      date:               s.date,
+      dayIndex,
+      startHour,
+      endHour,
+      startLabel:         fmtHour(startHour),
+      endLabel:           fmtHour(endHour),
+      notes:              s.description || "",
+      id_position:        s.id_position || null,
+      positionName,
     });
   }
 
@@ -144,59 +164,75 @@ export async function fetchShiftsWithAssignments(employeeMap) {
 }
 
 /**
- * Create a new shift + immediately assign it to an employee.
- *
- * Steps:
- *  1. POST /shifts        — create the Shift definition
- *  2. POST /shiftAssignments — assign the employee to it with the specific date
- *
- * Returns the fully normalized calendar block ready to push into shifts.value.
+ * Create a new shift, optionally assigning it to an employee.
+ * If id_employee is omitted the shift is saved unassigned.
  *
  * @param {Object} params
- * @param {number} params.id_employee
- * @param {string} params.date          "YYYY-MM-DD"
- * @param {number} params.startHour     fractional hour
- * @param {number} params.endHour       fractional hour
- * @param {string} params.notes         optional description
- * @param {string} params.employeeName  used as the shift name label
+ * @param {number|null} params.id_employee   null = unassigned
+ * @param {string}      params.date          "YYYY-MM-DD"
+ * @param {number}      params.startHour     fractional hour
+ * @param {number}      params.endHour       fractional hour
+ * @param {string}      params.notes         optional description
+ * @param {string}      params.positionName  used in the shift name label
+ * @param {number|null} params.id_position
  */
 export async function createShift({
-  id_employee,
+  id_employee = null,
   date,
   startHour,
   endHour,
   notes,
-  employeeName,
+  positionName = "",
+  id_position = null,
 }) {
   const [y, mo, d] = date.split("-").map(Number);
   const dowInt     = new Date(y, mo - 1, d).getDay();
 
+  const label = positionName || "Shift";
+
   // 1. Create Shift row
-  const shiftPayload = {
-    name:        `${employeeName} – ${fmtHour(startHour)}`,
+  const { data: newShift } = await apiClient.post(SHIFTS, {
+    name:        `${label} – ${fmtHour(startHour)}`,
     description: notes || "",
     day:         DAY_ENUM[dowInt],
     date,
     startTime:   hourToTimeStr(startHour),
     endTime:     hourToTimeStr(endHour),
-  };
-  const { data: newShift } = await apiClient.post(SHIFTS, shiftPayload);
+    id_position,
+  });
 
-  // 2. Create ShiftAssignment row
-  const assignPayload = {
-    id_employee,
-    id_shift: newShift.id_shift,
-    date,
-  };
-  const { data: newAssignment } = await apiClient.post(ASSIGNMENTS, assignPayload);
+  // 2. Optionally create ShiftAssignment
+  if (id_employee) {
+    const { data: newAssignment } = await apiClient.post(ASSIGNMENTS, {
+      id_employee,
+      id_shift: newShift.id_shift,
+      date,
+    });
+    return {
+      id:                 newAssignment.id_shiftAssignment,
+      id_shift:           newShift.id_shift,
+      id_shiftAssignment: newAssignment.id_shiftAssignment,
+      id_employee,
+      employee:           "",   // caller supplies display name
+      date,
+      dayIndex:           dowInt,
+      startHour,
+      endHour,
+      startLabel:         fmtHour(startHour),
+      endLabel:           fmtHour(endHour),
+      notes:              notes || "",
+      id_position,
+      positionName,
+    };
+  }
 
-  // 3. Return normalized block
+  // Unassigned
   return {
-    id:                 newAssignment.id_shiftAssignment,
+    id:                 `shift-${newShift.id_shift}`,
     id_shift:           newShift.id_shift,
-    id_shiftAssignment: newAssignment.id_shiftAssignment,
-    id_employee,
-    employee:           employeeName,
+    id_shiftAssignment: null,
+    id_employee:        null,
+    employee:           "",
     date,
     dayIndex:           dowInt,
     startHour,
@@ -204,33 +240,52 @@ export async function createShift({
     startLabel:         fmtHour(startHour),
     endLabel:           fmtHour(endHour),
     notes:              notes || "",
+    id_position,
+    positionName,
   };
 }
 
 /**
- * Update an existing shift's time window and/or description.
- * Only the Shift row is updated — the assignment (employee + date) stays.
+ * Create a ShiftAssignment (assign an employee to an existing shift).
+ */
+export async function createAssignment(id_shift, id_employee, date) {
+  const { data } = await apiClient.post(ASSIGNMENTS, { id_shift, id_employee, date });
+  return data;
+}
+
+/**
+ * Delete a ShiftAssignment without deleting the Shift itself.
+ */
+export async function deleteAssignment(id_shiftAssignment) {
+  await apiClient.delete(`${ASSIGNMENTS}/${id_shiftAssignment}`);
+}
+
+/**
+ * Update an existing shift's time window, description, and/or position.
  *
  * @param {number} id_shift
- * @param {Object} fields  { startHour, endHour, notes }
+ * @param {Object} fields  { startHour, endHour, notes, id_position? }
  */
-export async function updateShift(id_shift, { startHour, endHour, notes }) {
+export async function updateShift(id_shift, { startHour, endHour, notes, id_position }) {
   await apiClient.put(`${SHIFTS}/${id_shift}`, {
     startTime:   hourToTimeStr(startHour),
     endTime:     hourToTimeStr(endHour),
     description: notes || "",
+    ...(id_position !== undefined && { id_position }),
   });
 }
 
 /**
  * Delete a shift from the calendar.
- * Deletes the ShiftAssignment first (FK constraint), then the Shift definition.
+ * Deletes the ShiftAssignment first if present, then the Shift definition.
  *
- * @param {number} id_shiftAssignment
- * @param {number} id_shift
+ * @param {number|null} id_shiftAssignment  null for unassigned shifts
+ * @param {number}      id_shift
  */
 export async function deleteShift(id_shiftAssignment, id_shift) {
-  await apiClient.delete(`${ASSIGNMENTS}/${id_shiftAssignment}`);
+  if (id_shiftAssignment) {
+    await apiClient.delete(`${ASSIGNMENTS}/${id_shiftAssignment}`);
+  }
   await apiClient.delete(`${SHIFTS}/${id_shift}`);
 }
 
