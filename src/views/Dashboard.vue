@@ -77,7 +77,7 @@
             <p class="sidebar-label underline-link" @click="activeTab = 'Shifts'">Open Shifts</p>
             <span class="open-shifts-week">this week</span>
           </div>
-          <div v-if="computedOpenShifts.length === 0" class="sidebar-empty">All hours covered</div>
+          <div v-if="computedOpenShifts.length === 0" class="sidebar-empty">No open shifts this week</div>
           <div v-for="s in computedOpenShifts" :key="s.key" class="open-shift-item">
             <span class="open-shift-day">{{ s.dayLabel }}</span>
             <div class="open-shift-gaps">
@@ -114,6 +114,7 @@
 
       <!-- ── Main Calendar ── -->
       <main class="cal-main">
+        <div v-if="deptName" class="dept-name-bar">{{ deptName }}</div>
         <div class="cal-toolbar">
           <div class="cal-nav-group">
             <button class="toolbar-btn" @click="navigate(-1)">‹</button>
@@ -171,7 +172,7 @@
                 <div v-for="shift in dayViewShifts" :key="shift.id"
                   class="shift-block" :style="shiftStyle(shift)"
                   @mousedown.stop @click.stop="selectShift(shift, $event)">
-                  <div class="shift-employee">{{ shift.employee }}</div>
+                  <div class="shift-employee">{{ shift.positionName }}{{ shift.employee ? ' – ' + shift.employee : '' }}</div>
                   <div class="shift-time">{{ shift.startLabel }} – {{ shift.endLabel }}</div>
                 </div>
                 <div v-if="isTodayDate(dayViewDate)" class="current-time-line" :style="{ top: currentTimePx + 'px' }"></div>
@@ -223,7 +224,7 @@
                 <div v-for="shift in shiftsForWeekDay(colIdx)" :key="shift.id"
                   class="shift-block" :style="shiftStyle(shift)"
                   @mousedown.stop @click.stop="selectShift(shift, $event)">
-                  <div class="shift-employee">{{ shift.employee }}</div>
+                  <div class="shift-employee">{{ shift.positionName }}{{ shift.employee ? ' – ' + shift.employee : '' }}</div>
                   <div class="shift-time">{{ shift.startLabel }} – {{ shift.endLabel }}</div>
                 </div>
                 <div v-if="isTodayDate(date)" class="current-time-line" :style="{ top: currentTimePx + 'px' }"></div>
@@ -262,7 +263,7 @@
                   :style="{ background: getEmployeeColor(shift.employee) }"
                   @click.stop="selectShiftFromMonth(shift, day, $event)">
                   <span class="pill-dot"></span>
-                  <span class="pill-name">{{ shift.employee }}</span>
+                  <span class="pill-name">{{ shift.positionName || shift.employee }}</span>
                   <span class="pill-time">{{ shift.startLabel }}</span>
                 </div>
                 <div v-if="extraShiftCount(day) > 0" class="month-shift-more">+{{ extraShiftCount(day) }} more</div>
@@ -287,8 +288,16 @@
         </div>
         <div class="qc-date-label">{{ quickCreate.dateLabel }}</div>
         <div class="form-group">
-          <label>Employee</label>
+          <label>Position</label>
+          <select v-model="quickCreate.id_position">
+            <option :value="null" disabled>— Select a position —</option>
+            <option v-for="p in positions" :key="p.id_position" :value="p.id_position">{{ p.name }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Employee <span class="label-optional">(optional)</span></label>
           <select v-model="quickCreate.employee">
+            <option value="">— Unassigned —</option>
             <option v-for="e in employees" :key="e.name" :value="e.name">{{ e.name }}</option>
           </select>
         </div>
@@ -313,8 +322,16 @@
         <div class="modal">
           <h2 class="modal-title">{{ editingShiftId ? 'Edit Shift' : 'Add Shift' }}</h2>
           <div class="form-group">
-            <label>Employee</label>
-            <select v-model="newShift.employee">
+            <label>Position</label>
+            <select v-model="newShift.id_position">
+              <option :value="null" disabled>— Select a position —</option>
+              <option v-for="p in positions" :key="p.id_position" :value="p.id_position">{{ p.name }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Employee <span class="label-optional">(optional)</span></label>
+            <select v-model="newShift.employee" @change="newShift.id_employee = employees.find(e => e.name === newShift.employee)?.id_employee ?? null">
+              <option value="">— Unassigned —</option>
               <option v-for="e in employees" :key="e.name" :value="e.name">{{ e.name }}</option>
             </select>
           </div>
@@ -445,7 +462,7 @@
       <div v-if="selectedShift" class="shift-popover" :style="popoverStyle" @mousedown.stop>
         <button class="popover-close" @click="selectedShift = null">✕</button>
         <div class="popover-dot" :style="{ background: getEmployeeColor(selectedShift.employee) }"></div>
-        <div class="popover-employee">{{ selectedShift.employee }}</div>
+        <div class="popover-employee">{{ [selectedShift.positionName, selectedShift.employee].filter(Boolean).join(' – ') }}</div>
         <div class="popover-time">{{ selectedShift.startLabel }} – {{ selectedShift.endLabel }}</div>
         <div class="popover-day">{{ selectedShiftDateLabel }}</div>
         <div v-if="selectedShift.notes" class="popover-notes">{{ selectedShift.notes }}</div>
@@ -506,12 +523,14 @@ const { isDark, toggleTheme } = useTheme();
 import {
   fetchEmployees,
   fetchShiftsWithAssignments,
-  createShift  as apiCreateShift,
-  updateShift  as apiUpdateShift,
-  deleteShift  as apiDeleteShift,
+  createShift      as apiCreateShift,
+  updateShift      as apiUpdateShift,
+  deleteShift      as apiDeleteShift,
+  createAssignment  as apiCreateAssignment,
+  deleteAssignment  as apiDeleteAssignment,
   fetchSwapRequests,
 } from "../services/schedulingService.js";
-import { getCalendarEntries, getEvents } from "../services/departmentService.js";
+import { getDepartment, getCalendarEntries, getEvents, getPositions } from "../services/departmentService.js";
 import {
   fetchTaskLists,
   fetchTasks,
@@ -602,6 +621,8 @@ const shifts          = ref([]);
 const pendingRequests = ref([]);
 const calendarHours   = ref([]); // hours of operation from department calendar
 const deptEvents      = ref([]); // department events
+const deptName        = ref('');
+const positions       = ref([]);
 
 // ── Task state ─────────────────────────────────────────────────────────────────
 const taskLists = ref([]);
@@ -631,11 +652,11 @@ const userInitials = computed(() => {
   return `${u.fName?.[0] ?? ""}${u.lName?.[0] ?? ""}`.toUpperCase() || "??";
 });
 
-const newShift = ref({ employee: "", id_employee: null, dayIndex: 0, startTime: "09:00", endTime: "17:00", notes: "" });
+const newShift = ref({ employee: "", id_employee: null, id_position: null, dayIndex: 0, startTime: "09:00", endTime: "17:00", notes: "" });
 
 // Drag state
 const drag = ref({ active: false, dayIndex: null, startHour: null, currentHour: null, colEl: null });
-const quickCreate = ref({ visible: false, dayIndex: null, date: null, startHour: null, endHour: null, startLabel: "", endLabel: "", startTime: "", endTime: "", dateLabel: "", employee: "", notes: "", style: {} });
+const quickCreate = ref({ visible: false, dayIndex: null, date: null, startHour: null, endHour: null, startLabel: "", endLabel: "", startTime: "", endTime: "", dateLabel: "", id_position: null, employee: "", notes: "", style: {} });
 
 // ── Date helpers ───────────────────────────────────────────────────────────────
 function dateKey(weekOff, dayIdx) {
@@ -758,43 +779,62 @@ const selectedShiftDateLabel = computed(() => {
 //  4. Only emit days that actually have at least one gap
 const CAL_END_HOUR = 24;
 
+const DAY_NAMES_FULL = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+function businessHoursForDate(date) {
+  const dayName = DAY_NAMES_FULL[date.getDay()];
+  const entry   = calendarHours.value.find(h => h.dayOfWeek === dayName);
+  if (!entry) return null;
+  return { start: fromTimeInput(entry.startTime), end: fromTimeInput(entry.endTime) };
+}
+
 const computedOpenShifts = computed(() => {
   const result = [];
   const abbr   = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-  weekDates.value.forEach((date, colIdx) => {
+  weekDates.value.forEach(date => {
+    const biz = businessHoursForDate(date);
+    if (!biz) return; // no business hours defined for this day — skip
+
     const key        = dateToKey(date);
     const dayShifts  = shifts.value.filter(s => s.date === key);
+    const assigned   = dayShifts.filter(s => s.id_employee);
+    const unassigned = dayShifts.filter(s => !s.id_employee);
 
-    // Build sorted, merged coverage intervals
-    const intervals = dayShifts
-      .map(s => ({ start: s.startHour, end: s.endHour }))
-      .sort((a, b) => a.start - b.start);
-
+    // Build coverage from assigned shifts only, clamped to business hours
     const merged = [];
-    for (const iv of intervals) {
-      if (!merged.length || iv.start > merged[merged.length - 1].end) {
-        merged.push({ ...iv });
-      } else {
-        merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, iv.end);
-      }
+    for (const iv of assigned
+      .map(s => ({ start: Math.max(s.startHour, biz.start), end: Math.min(s.endHour, biz.end) }))
+      .filter(iv => iv.start < iv.end)
+      .sort((a, b) => a.start - b.start)) {
+      if (!merged.length || iv.start > merged[merged.length - 1].end) merged.push({ ...iv });
+      else merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, iv.end);
     }
 
-    // Find gaps between CAL_START_HOUR and CAL_END_HOUR
-    const gaps   = [];
-    let cursor   = CAL_START_HOUR;
-
+    // Time gaps within business hours only
+    const gapItems = [];
+    let cursor = biz.start;
     for (const { start, end } of merged) {
-      if (start > cursor) gaps.push({ start: cursor, end: start });
+      if (start > cursor) gapItems.push({ sortHour: cursor, label: `${fmtHour(cursor)} – ${fmtHour(start)}` });
       cursor = Math.max(cursor, end);
     }
-    if (cursor < CAL_END_HOUR) gaps.push({ start: cursor, end: CAL_END_HOUR });
+    if (cursor < biz.end) gapItems.push({ sortHour: cursor, label: `${fmtHour(cursor)} – ${fmtHour(biz.end)}` });
 
-    if (gaps.length > 0) {
+    // Unassigned shifts that fall within business hours
+    const unassignedItems = unassigned
+      .filter(s => s.startHour < biz.end && s.endHour > biz.start)
+      .map(s => ({
+        sortHour: s.startHour,
+        label: s.positionName ? `${s.positionName}  ${fmtHour(s.startHour)} – ${fmtHour(s.endHour)}` : `${fmtHour(s.startHour)} – ${fmtHour(s.endHour)}`,
+      }));
+
+    const items = [...gapItems, ...unassignedItems].sort((a, b) => a.sortHour - b.sortHour);
+
+    if (items.length > 0) {
       result.push({
-        key:      key,
+        key,
         dayLabel: abbr[date.getDay()],
-        gaps:     gaps.map(g => `${fmtHour(g.start)} – ${fmtHour(g.end)}`),
+        gaps:     items.map(i => i.label),
         isToday:  isTodayDate(date),
       });
     }
@@ -997,14 +1037,10 @@ function snap(rawHour) {
   return Math.max(CAL_START_HOUR, Math.min(CAL_START_HOUR + hours.length, s));
 }
 function getHourFromEvent(e, colEl) {
-  // Use the scrollable container's top, not the column element's top.
-  // colEl.getBoundingClientRect().top is viewport-relative and already reflects scroll position,
-  // so adding scrollTop on top of it was double-counting the offset and shifting the ghost block up.
-  // Instead: take mouse position relative to the container's viewport top, then add scrollTop
-  // to get the true pixel offset within the full scrollable content.
-  const containerRect = calBody.value.getBoundingClientRect();
-  const scrollY       = calBody.value.scrollTop;
-  const relY          = e.clientY - containerRect.top + scrollY;
+  // getBoundingClientRect().top is already viewport-relative and accounts for scroll,
+  // so e.clientY - colRect.top gives the exact pixel offset within the column directly.
+  const colRect = colEl.getBoundingClientRect();
+  const relY    = e.clientY - colRect.top;
   return snap(CAL_START_HOUR + relY / CELL_HEIGHT);
 }
 
@@ -1044,7 +1080,8 @@ function onGlobalMouseUp(e) {
     startLabel: fmtHour(startHour), endLabel: fmtHour(endHour),
     startTime:  toTimeInput(startHour), endTime: toTimeInput(endHour),
     dateLabel,
-    employee: employees.value[0]?.name ?? "",
+    id_position: positions.value[0]?.id_position ?? null,
+    employee: "",
     notes: "",
     style: { left: `${px}px`, top: `${py}px` },
   };
@@ -1075,11 +1112,17 @@ async function loadAll() {
       newShift.value.employee    = empList[0].name;
       newShift.value.id_employee = empList[0].id_employee;
     }
-    shifts.value = await fetchShiftsWithAssignments(map);
+    const deptId = currentUser.value?.id_department;
+    // Load positions first so positionMap is ready for the shift JOIN
+    if (deptId) {
+      try { positions.value = (await getPositions(deptId)).data || []; } catch { /* non-critical */ }
+    }
+    const positionMap = Object.fromEntries(positions.value.map(p => [p.id_position, p]));
+    shifts.value = await fetchShiftsWithAssignments(map, positionMap);
     pendingRequests.value = await fetchSwapRequests(map);
     // Load hours of operation + events for this user's department (non-blocking)
-    const deptId = currentUser.value?.id_department;
     if (deptId) {
+      getDepartment(deptId).then(r => { deptName.value = r.data?.name || ''; }).catch(() => {});
       getCalendarEntries(deptId).then(r => { calendarHours.value = r.data || []; }).catch(() => {});
       getEvents(deptId).then(r => { deptEvents.value = r.data || []; }).catch(() => {});
     }
@@ -1094,16 +1137,23 @@ async function loadAll() {
 
 // ── Shift CRUD (API-backed) ────────────────────────────────────────────────────
 async function confirmQuickCreate() {
-  const qc        = quickCreate.value;
-  const startHour = fromTimeInput(qc.startTime);
-  const endHour   = fromTimeInput(qc.endTime);
-  const emp       = employees.value.find(e => e.name === qc.employee);
-  if (!emp) { alert("Please select a valid employee."); return; }
+  const qc = quickCreate.value;
+  if (!qc.id_position) { alert("Please select a position."); return; }
+  const startHour  = fromTimeInput(qc.startTime);
+  const endHour    = fromTimeInput(qc.endTime);
+  const emp        = employees.value.find(e => e.name === qc.employee);
+  const posName    = positions.value.find(p => p.id_position === qc.id_position)?.name || "";
   try {
     const block = await apiCreateShift({
-      id_employee: emp.id_employee, date: dateToKey(qc.date),
-      startHour, endHour, notes: qc.notes, employeeName: emp.name,
+      id_employee:  emp?.id_employee ?? null,
+      date:         dateToKey(qc.date),
+      startHour, endHour,
+      notes:        qc.notes,
+      positionName: posName,
+      id_position:  qc.id_position,
     });
+    block.employee     = emp?.name || "";
+    block.positionName = posName;
     shifts.value.push(block);
     quickCreate.value.visible = false;
   } catch (err) { alert("Error saving shift: " + err.message); }
@@ -1127,7 +1177,7 @@ function editShift() {
   const s = selectedShift.value;
   if (!s) return;
   editingShiftId.value = s.id;
-  newShift.value = { employee: s.employee, id_employee: s.id_employee, dayIndex: s.dayIndex, startTime: toTimeInput(s.startHour), endTime: toTimeInput(s.endHour), notes: s.notes || "" };
+  newShift.value = { employee: s.employee, id_employee: s.id_employee, id_position: s.id_position || null, dayIndex: s.dayIndex, startTime: toTimeInput(s.startHour), endTime: toTimeInput(s.endHour), notes: s.notes || "" };
   selectedShift.value = null;
   showAddModal.value  = true;
 }
@@ -1142,31 +1192,56 @@ async function deleteShift(id) {
 }
 function openBlankModal() {
   editingShiftId.value = null;
-  const first = employees.value[0];
-  newShift.value = { employee: first?.name ?? "", id_employee: first?.id_employee ?? null, dayIndex: 0, startTime: "09:00", endTime: "17:00", notes: "" };
+  newShift.value = { employee: "", id_employee: null, id_position: positions.value[0]?.id_position ?? null, dayIndex: 0, startTime: "09:00", endTime: "17:00", notes: "" };
   showAddModal.value = true;
 }
 async function addShift() {
-  const startHour = fromTimeInput(newShift.value.startTime);
-  const endHour   = fromTimeInput(newShift.value.endTime);
+  if (!newShift.value.id_position) { alert("Please select a position."); return; }
+  const startHour    = fromTimeInput(newShift.value.startTime);
+  const endHour      = fromTimeInput(newShift.value.endTime);
+  const posName      = positions.value.find(p => p.id_position === newShift.value.id_position)?.name || "";
+
   if (editingShiftId.value) {
     const existing = shifts.value.find(s => s.id === editingShiftId.value);
     if (!existing) return;
     try {
-      await apiUpdateShift(existing.id_shift, { startHour, endHour, notes: newShift.value.notes });
+      await apiUpdateShift(existing.id_shift, { startHour, endHour, notes: newShift.value.notes, id_position: newShift.value.id_position });
       const idx = shifts.value.findIndex(s => s.id === editingShiftId.value);
-      if (idx !== -1) shifts.value[idx] = { ...shifts.value[idx], startHour, endHour, startLabel: fmtHour(startHour), endLabel: fmtHour(endHour), notes: newShift.value.notes };
+      let updated = { ...shifts.value[idx], startHour, endHour, startLabel: fmtHour(startHour), endLabel: fmtHour(endHour), notes: newShift.value.notes, id_position: newShift.value.id_position, positionName: posName };
+      const prevEmpId = existing.id_employee;
+      const nextEmpId = newShift.value.id_employee || null;
+      if (prevEmpId && !nextEmpId) {
+        // Unassign: delete the assignment row
+        await apiDeleteAssignment(existing.id_shiftAssignment);
+        updated = { ...updated, id: `shift-${existing.id_shift}`, id_shiftAssignment: null, id_employee: null, employee: "" };
+      } else if (!prevEmpId && nextEmpId) {
+        // Assign for the first time
+        const emp = employees.value.find(e => e.id_employee === nextEmpId);
+        const assignment = await apiCreateAssignment(existing.id_shift, nextEmpId, existing.date);
+        updated = { ...updated, id: assignment.id_shiftAssignment, id_shiftAssignment: assignment.id_shiftAssignment, id_employee: nextEmpId, employee: emp?.name || "" };
+      } else if (prevEmpId && nextEmpId && prevEmpId !== nextEmpId) {
+        // Switch employee: delete old assignment, create new one
+        await apiDeleteAssignment(existing.id_shiftAssignment);
+        const emp = employees.value.find(e => e.id_employee === nextEmpId);
+        const assignment = await apiCreateAssignment(existing.id_shift, nextEmpId, existing.date);
+        updated = { ...updated, id: assignment.id_shiftAssignment, id_shiftAssignment: assignment.id_shiftAssignment, id_employee: nextEmpId, employee: emp?.name || "" };
+      }
+      shifts.value[idx] = updated;
     } catch (err) { alert("Error updating shift: " + err.message); return; }
     editingShiftId.value = null;
   } else {
     const emp = employees.value.find(e => e.name === newShift.value.employee);
-    if (!emp) { alert("Please select a valid employee."); return; }
     try {
       const block = await apiCreateShift({
-        id_employee: emp.id_employee,
-        date: dateKey(weekOffset.value, Number(newShift.value.dayIndex)),
-        startHour, endHour, notes: newShift.value.notes, employeeName: emp.name,
+        id_employee:  emp?.id_employee ?? null,
+        date:         dateKey(weekOffset.value, Number(newShift.value.dayIndex)),
+        startHour, endHour,
+        notes:        newShift.value.notes,
+        positionName: posName,
+        id_position:  newShift.value.id_position,
       });
+      block.employee     = emp?.name || "";
+      block.positionName = posName;
       shifts.value.push(block);
     } catch (err) { alert("Error creating shift: " + err.message); return; }
   }
@@ -1405,6 +1480,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 
 /* ── Main ── */
 .cal-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.dept-name-bar { padding: 10px 20px 0; font-size: 18px; font-weight: 700; letter-spacing: 0.02em; color: var(--tx-heading); font-family: 'DM Sans', sans-serif; flex-shrink: 0; }
 .cal-toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0; }
 .cal-nav-group { display: flex; align-items: center; gap: 8px; flex: 1; }
 .toolbar-btn { background: var(--bdr-subtle); border: none; color: var(--tx-secondary); width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; transition: background 0.15s; }

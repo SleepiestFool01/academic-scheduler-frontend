@@ -70,43 +70,62 @@ export const shiftService = {
   },
 
   /**
-   * Create a shift definition + assignment atomically.
-   * @param {{ id_employee, date, startHour, endHour, notes, employeeName }} p
+   * Create a shift definition, optionally assigning it to an employee.
+   * @param {{ id_employee?, date, startHour, endHour, notes, positionName, id_position? }} p
    */
-  async createAndAssign({ id_employee, date, startHour, endHour, notes, employeeName }) {
+  async createAndAssign({ id_employee = null, date, startHour, endHour, notes, positionName = "", id_position = null }) {
     const [y, mo, d] = date.split("-").map(Number);
     const dow = new Date(y, mo - 1, d).getDay();
+    const label = positionName || "Shift";
 
     const { data: shift } = await apiClient.post("/shifts", {
-      name:        `${employeeName} – ${fmtHour(startHour)}`,
+      name:        `${label} – ${fmtHour(startHour)}`,
       description: notes || "",
       day:         DAY_ENUM[dow],
       date,
       startTime:   hourToTimeStr(startHour),
       endTime:     hourToTimeStr(endHour),
+      id_position,
     });
 
-    const { data: assignment } = await apiClient.post("/shift-assignments", {
-      id_employee,
-      id_shift: shift.id_shift,
-      date,
-    });
+    if (id_employee) {
+      const { data: assignment } = await apiClient.post("/shift-assignments", {
+        id_employee,
+        id_shift: shift.id_shift,
+        date,
+      });
+      return { shift, assignment };
+    }
 
-    return { shift, assignment };
+    return { shift, assignment: null };
+  },
+
+  /** Create a ShiftAssignment for an existing shift */
+  async createAssignment(id_shift, id_employee, date) {
+    const { data } = await apiClient.post("/shift-assignments", { id_shift, id_employee, date });
+    return data;
+  },
+
+  /** Delete a ShiftAssignment without deleting the Shift */
+  async deleteAssignment(id_shiftAssignment) {
+    await apiClient.delete(`/shift-assignments/${id_shiftAssignment}`);
   },
 
   /** PUT /shifts/:id */
-  update(id_shift, { startHour, endHour, notes }) {
+  update(id_shift, { startHour, endHour, notes, id_position }) {
     return apiClient.put(`/shifts/${id_shift}`, {
       startTime:   hourToTimeStr(startHour),
       endTime:     hourToTimeStr(endHour),
       description: notes || "",
+      ...(id_position !== undefined && { id_position }),
     });
   },
 
-  /** DELETE assignment then shift */
+  /** DELETE assignment (if any) then shift */
   async remove(id_shiftAssignment, id_shift) {
-    await apiClient.delete(`/shift-assignments/${id_shiftAssignment}`);
+    if (id_shiftAssignment) {
+      await apiClient.delete(`/shift-assignments/${id_shiftAssignment}`);
+    }
     await apiClient.delete(`/shifts/${id_shift}`);
   },
 };

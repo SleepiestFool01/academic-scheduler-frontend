@@ -112,6 +112,7 @@
           <table class="data-table">
             <thead>
               <tr>
+                <th>Position</th>
                 <th>Employee</th>
                 <th>Date</th>
                 <th>Start</th>
@@ -121,13 +122,14 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="s in filteredShifts" :key="s.id_shiftAssignment">
+              <tr v-for="s in filteredShifts" :key="s.id_shiftAssignment ?? s.id_shift">
+                <td class="muted small">{{ s.positionName || '—' }}</td>
                 <td>
                   <div class="emp-name-cell">
                     <div class="emp-avatar" :style="{ background: empColorById(s.id_employee) }">
                       {{ initialsById(s.id_employee) }}
                     </div>
-                    {{ s.employee }}
+                    {{ s.employee || 'Unassigned' }}
                   </div>
                 </td>
                 <td class="mono">{{ s.date }}</td>
@@ -142,7 +144,7 @@
                 </td>
               </tr>
               <tr v-if="filteredShifts.length === 0">
-                <td colspan="6" class="empty-row">No shifts found.</td>
+                <td colspan="7" class="empty-row">No shifts found.</td>
               </tr>
             </tbody>
           </table>
@@ -210,8 +212,16 @@
           <template v-if="modal.type === 'shift'">
             <h3 class="modal-title">{{ modal.isEdit ? 'Edit Shift' : 'Add Shift' }}</h3>
             <div class="form-group">
-              <label>Employee</label>
+              <label>Position</label>
+              <select v-model="modal.data.id_position">
+                <option :value="null" disabled>— Select a position —</option>
+                <option v-for="p in positions" :key="p.id_position" :value="p.id_position">{{ p.name }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Employee <span class="optional">(optional)</span></label>
               <select v-model="modal.data.id_employee">
+                <option :value="null">— Unassigned —</option>
                 <option v-for="e in employees" :key="e.id_employee" :value="e.id_employee">
                   {{ e.fName }} {{ e.lName }}
                 </option>
@@ -382,11 +392,15 @@ async function loadAll() {
     for (const s of shiftRes.data) shiftMap[s.id_shift] = s;
     const empMap = {};
     for (const e of empRes.data) empMap[e.id_employee] = e;
+    const posMap = {};
+    for (const p of (posRes.data || [])) posMap[p.id_position] = p;
 
-    shifts.value = assignRes.data.map(a => {
+    const assignedShiftIds = new Set();
+    const joined = assignRes.data.map(a => {
       const s   = shiftMap[a.id_shift];
       const emp = empMap[a.id_employee];
       if (!s || !emp) return null;
+      assignedShiftIds.add(s.id_shift);
       const startHour = timeStrToHour(s.startTime);
       const endHour   = timeStrToHour(s.endTime);
       return {
@@ -402,8 +416,36 @@ async function loadAll() {
         notes:       s.description || "",
         startTime:   s.startTime?.slice(0, 5) || "09:00",
         endTime:     s.endTime?.slice(0, 5)   || "17:00",
+        id_position: s.id_position || null,
+        positionName: posMap[s.id_position]?.name || "",
       };
     }).filter(Boolean);
+
+    // Include unassigned shifts
+    const unassigned = shiftRes.data
+      .filter(s => !assignedShiftIds.has(s.id_shift) && s.date)
+      .map(s => {
+        const startHour = timeStrToHour(s.startTime);
+        const endHour   = timeStrToHour(s.endTime);
+        return {
+          id_shiftAssignment: null,
+          id_shift:    s.id_shift,
+          id_employee: null,
+          employee:    "",
+          date:        s.date,
+          startLabel:  fmtHour(startHour),
+          endLabel:    fmtHour(endHour),
+          startHour,
+          endHour,
+          notes:       s.description || "",
+          startTime:   s.startTime?.slice(0, 5) || "09:00",
+          endTime:     s.endTime?.slice(0, 5)   || "17:00",
+          id_position: s.id_position || null,
+          positionName: posMap[s.id_position]?.name || "",
+        };
+      });
+
+    shifts.value = [...joined, ...unassigned];
 
   } catch (err) {
     apiError.value = "Could not load data: " + (err.message || "Network error");
@@ -427,7 +469,7 @@ const filteredShifts = computed(() => {
   const q = shiftSearch.value.toLowerCase();
   if (!q) return shifts.value;
   return shifts.value.filter(s =>
-    `${s.employee} ${s.date}`.toLowerCase().includes(q)
+    `${s.positionName} ${s.employee} ${s.date}`.toLowerCase().includes(q)
   );
 });
 
@@ -443,7 +485,7 @@ function openCreateModal() {
     open: true, type, isEdit: false, saving: false, error: "",
     data: type === "employee"
       ? { fName: "", lName: "", email: "", role: "Employee", bio: "", color: null, id_department: currentUser.value?.id_department ?? null }
-      : { id_employee: employees.value[0]?.id_employee || null, date: "", startTime: "09:00", endTime: "17:00", notes: "" },
+      : { id_position: positions.value[0]?.id_position || null, id_employee: null, date: "", startTime: "09:00", endTime: "17:00", notes: "" },
     editId: null,
   };
 }
@@ -460,7 +502,8 @@ function openEditShift(s) {
   modal.value = {
     open: true, type: "shift", isEdit: true, saving: false, error: "",
     data: {
-      id_employee: s.id_employee,
+      id_position: s.id_position || null,
+      id_employee: s.id_employee || null,
       date:        s.date,
       startTime:   s.startTime,
       endTime:     s.endTime,
@@ -491,43 +534,62 @@ async function saveModal() {
         assignColors(employees.value);
       }
     } else if (type === "shift") {
-      if (!data.id_employee || !data.date || !data.startTime || !data.endTime)
-        throw new Error("Employee, date, start time and end time are required.");
+      if (!data.id_position || !data.date || !data.startTime || !data.endTime)
+        throw new Error("Position, date, start time and end time are required.");
 
       const toHour = t => { const [h, m] = t.split(":").map(Number); return h + m / 60; };
       const startHour = toHour(data.startTime);
       const endHour   = toHour(data.endTime);
       if (endHour <= startHour) throw new Error("End time must be after start time.");
 
-      const emp = employees.value.find(e => e.id_employee == data.id_employee);
-      const employeeName = emp ? `${emp.fName} ${emp.lName}` : "Employee";
+      const emp          = data.id_employee ? employees.value.find(e => e.id_employee == data.id_employee) : null;
+      const employeeName = emp ? `${emp.fName} ${emp.lName}` : "";
+      const pos          = positions.value.find(p => p.id_position == data.id_position);
+      const positionName = pos?.name || "";
 
       if (isEdit) {
-        await shiftService.update(editId.id_shift, { startHour, endHour, notes: data.notes });
+        await shiftService.update(editId.id_shift, { startHour, endHour, notes: data.notes, id_position: data.id_position });
         const idx = shifts.value.findIndex(s => s.id_shift === editId.id_shift);
         if (idx !== -1) {
-          shifts.value[idx] = {
+          let updated = {
             ...shifts.value[idx],
             startHour, endHour,
-            startLabel: fmtHour(startHour),
-            endLabel:   fmtHour(endHour),
-            notes:      data.notes,
-            startTime:  data.startTime,
-            endTime:    data.endTime,
+            startLabel:   fmtHour(startHour),
+            endLabel:     fmtHour(endHour),
+            notes:        data.notes,
+            startTime:    data.startTime,
+            endTime:      data.endTime,
+            id_position:  data.id_position,
+            positionName,
           };
+          const prevEmpId = shifts.value[idx].id_employee;
+          const nextEmpId = data.id_employee ? Number(data.id_employee) : null;
+          if (prevEmpId && !nextEmpId) {
+            await shiftService.deleteAssignment(editId.id_shiftAssignment);
+            updated = { ...updated, id_shiftAssignment: null, id_employee: null, employee: "" };
+          } else if (!prevEmpId && nextEmpId) {
+            const assignment = await shiftService.createAssignment(editId.id_shift, nextEmpId, data.date);
+            updated = { ...updated, id_shiftAssignment: assignment.id_shiftAssignment, id_employee: nextEmpId, employee: employeeName };
+          } else if (prevEmpId && nextEmpId && prevEmpId !== nextEmpId) {
+            await shiftService.deleteAssignment(editId.id_shiftAssignment);
+            const assignment = await shiftService.createAssignment(editId.id_shift, nextEmpId, data.date);
+            updated = { ...updated, id_shiftAssignment: assignment.id_shiftAssignment, id_employee: nextEmpId, employee: employeeName };
+          }
+          shifts.value[idx] = updated;
         }
       } else {
         const { shift, assignment } = await shiftService.createAndAssign({
-          id_employee: Number(data.id_employee),
-          date:        data.date,
+          id_employee:  data.id_employee ? Number(data.id_employee) : null,
+          date:         data.date,
           startHour, endHour,
-          notes:       data.notes,
-          employeeName,
+          notes:        data.notes,
+          positionName,
+          id_position:  data.id_position,
         });
         shifts.value.push({
-          id_shiftAssignment: assignment.id_shiftAssignment,
+          id_shiftAssignment: assignment?.id_shiftAssignment || null,
           id_shift:    shift.id_shift,
-          id_employee: Number(data.id_employee),
+          id_employee: data.id_employee ? Number(data.id_employee) : null,
           employee:    employeeName,
           date:        data.date,
           startLabel:  fmtHour(startHour),
@@ -536,6 +598,8 @@ async function saveModal() {
           notes:       data.notes || "",
           startTime:   data.startTime,
           endTime:     data.endTime,
+          id_position: data.id_position,
+          positionName,
         });
       }
     }
