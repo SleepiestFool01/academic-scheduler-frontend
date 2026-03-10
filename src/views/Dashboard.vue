@@ -498,6 +498,47 @@
           <span class="profile-role-badge" :class="currentUser?.role?.toLowerCase()">{{ currentUser?.role }}</span>
         </div>
         <div class="profile-divider"></div>
+        <button class="profile-btn" @click="">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <!-- Profile icon body -->
+            <path
+              d="M4 21 A8 8 0 0 1 20 21"
+              stroke="currentColor"
+              stroke-width="2"
+              fill="none"
+            />
+            <!-- Profile icon head -->
+            <circle
+              cx="12"
+              cy="7.5"
+              r="5"
+              stroke="currentColor"
+              stroke-width="2"
+            />
+          </svg>
+          Profile
+        </button>
+        <button class="settings-btn" @click="">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <!-- Gear icon teeth -->
+            <path
+              d="M19.4 12a7.4 7.4 0 0 0-.1-1l2-1.6-2-3.5-2.4 1a7.7 7.7 0 0 0-1.7-1l-.4-2.6h-4l-.4 2.6a7.7 7.7 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.6a7.4 7.4 0 0 0 0 2l-2 1.6 2 3.5 2.4-1a7.7 7.7 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.7 7.7 0 0 0 1.7-1l2.4 1 2-3.5-2-1.6c.07-.33.1-.66.1-1z"
+              stroke="currentColor"
+              stroke-width="2"
+              fill="none"
+              stroke-linejoin="round"
+            />
+            <!-- Gear icon hole -->
+            <circle
+              cx="12.75"
+              cy="12"
+              r="3"
+              stroke="currentColor"
+              stroke-width="2"
+            />
+          </svg>
+          Settings
+        </button>
         <button class="logout-btn" @click="logout">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -1745,6 +1786,34 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .info-label { color: var(--tx-faint); }
 .info-val { color: var(--tx-secondary); }
 .mono { font-family: 'DM Mono', monospace; }
+.profile-btn {
+  margin: 28px 24px 14px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: rgba(239,68,68,0.08);
+  border: 1px solid rgba(239,68,68,0.25);
+  color: #EF4444;
+  padding: 12px; border-radius: 10px;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px; font-weight: 600;
+  transition: background 0.15s, border-color 0.15s;
+  width: calc(100% - 48px);
+}
+.profile-btn:hover { background: rgba(239,68,68,0.16); border-color: rgba(239,68,68,0.45); }
+.settings-btn {
+  margin: 14px 24px auto;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: rgba(239,68,68,0.08);
+  border: 1px solid rgba(239,68,68,0.25);
+  color: #EF4444;
+  padding: 12px; border-radius: 10px;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px; font-weight: 600;
+  transition: background 0.15s, border-color 0.15s;
+  width: calc(100% - 48px);
+}
+.settings-btn:hover { background: rgba(239,68,68,0.16); border-color: rgba(239,68,68,0.45); }
 .logout-btn {
   margin: auto 24px 28px;
   display: flex; align-items: center; justify-content: center; gap: 8px;
