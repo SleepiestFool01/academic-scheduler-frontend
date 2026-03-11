@@ -1789,9 +1789,9 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .profile-btn {
   margin: 28px 24px 14px;
   display: flex; align-items: center; justify-content: center; gap: 8px;
-  background: rgba(239,68,68,0.08);
-  border: 1px solid rgba(239,68,68,0.25);
-  color: #EF4444;
+  background: none;
+  border: 1px solid var(--bdr-subtle);
+  color: var(--tx-muted);
   padding: 12px; border-radius: 10px;
   cursor: pointer;
   font-family: 'DM Sans', sans-serif;
@@ -1799,13 +1799,13 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
   transition: background 0.15s, border-color 0.15s;
   width: calc(100% - 48px);
 }
-.profile-btn:hover { background: rgba(239,68,68,0.16); border-color: rgba(239,68,68,0.45); }
+.profile-btn:hover { background: var(--bdr-subtle); border-color: var(--bdr-strong); }
 .settings-btn {
   margin: 14px 24px auto;
   display: flex; align-items: center; justify-content: center; gap: 8px;
-  background: rgba(239,68,68,0.08);
-  border: 1px solid rgba(239,68,68,0.25);
-  color: #EF4444;
+  background: none;
+  border: 1px solid var(--bdr-subtle);
+  color: var(--tx-muted);
   padding: 12px; border-radius: 10px;
   cursor: pointer;
   font-family: 'DM Sans', sans-serif;
@@ -1813,7 +1813,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
   transition: background 0.15s, border-color 0.15s;
   width: calc(100% - 48px);
 }
-.settings-btn:hover { background: rgba(239,68,68,0.16); border-color: rgba(239,68,68,0.45); }
+.settings-btn:hover { background: var(--bdr-subtle); border-color: var(--bdr-strong); }
 .logout-btn {
   margin: auto 24px 28px;
   display: flex; align-items: center; justify-content: center; gap: 8px;
