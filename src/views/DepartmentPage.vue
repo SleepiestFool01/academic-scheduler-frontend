@@ -220,34 +220,41 @@
             <div class="panel-header">
               <div>
                 <h2 class="panel-title">Hours of Operation</h2>
-                <p class="panel-sub">{{ calendarEntries.length }} entr{{ calendarEntries.length !== 1 ? 'ies' : 'y' }}</p>
+                <p class="panel-sub">
+                  {{ groupedBySeasons.length }} season{{ groupedBySeasons.length !== 1 ? 's' : '' }}
+                  <span v-if="activeSeason" class="active-season-badge">{{ activeSeason }} active</span>
+                </p>
               </div>
-              <button class="primary-btn" @click="openCreateHours">+ Add Hours</button>
+              <button class="primary-btn" @click="openCreateSeason">+ Create Season</button>
             </div>
-            <div v-if="calendarEntries.length === 0" class="empty-state">No hours configured yet.</div>
-            <div v-else class="table-wrap">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Name</th><th>Day</th><th>Season</th><th>Open</th><th>Close</th><th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="entry in calendarEntries" :key="entry.id_hours_of_operation">
-                    <td>{{ entry.name || '—' }}</td>
-                    <td><span class="day-badge">{{ entry.dayOfWeek }}</span></td>
-                    <td>{{ entry.season || '—' }}</td>
-                    <td class="mono">{{ fmtTime(entry.startTime) }}</td>
-                    <td class="mono">{{ fmtTime(entry.endTime) }}</td>
-                    <td>
-                      <div class="action-btns">
-                        <button class="icon-action" @click="openEditHours(entry)">✎</button>
-                        <button class="icon-action danger" @click="confirmDeleteHours(entry)">✕</button>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            <div v-if="groupedBySeasons.length === 0" class="empty-state">No seasons configured yet. Create a season to set your hours of operation.</div>
+            <div v-else class="seasons-grid">
+              <div v-for="group in groupedBySeasons" :key="group.name" class="season-card"
+                :class="{ 'season-card--active': group.name === activeSeason }">
+                <div class="season-card-header">
+                  <div class="season-name-row">
+                    <span class="season-name">{{ group.name }}</span>
+                    <span v-if="group.name === activeSeason" class="active-chip">Active</span>
+                  </div>
+                  <div class="action-btns">
+                    <button class="icon-action" title="Edit Hours" @click="openSeasonHoursModal(group.name)">✎</button>
+                    <button class="icon-action danger" title="Delete Season" @click="confirmDeleteSeason(group.name)">✕</button>
+                  </div>
+                </div>
+                <div class="season-days">
+                  <div v-for="day in DAYS" :key="day" class="season-day-row">
+                    <span class="season-day-label">{{ day.slice(0, 3) }}</span>
+                    <span v-if="getEntryForSeasonDay(group.name, day)" class="season-day-hours mono">
+                      {{ fmtTime(getEntryForSeasonDay(group.name, day).startTime) }} – {{ fmtTime(getEntryForSeasonDay(group.name, day).endTime) }}
+                    </span>
+                    <span v-else class="season-day-closed">Closed</span>
+                  </div>
+                </div>
+                <div class="season-card-footer">
+                  <button v-if="group.name !== activeSeason" class="set-active-btn" @click="setActiveSeason(group.name)">Set Active</button>
+                  <button v-else class="set-active-btn active-set" @click="setActiveSeason('')">Deactivate</button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -430,46 +437,51 @@
       </Transition>
 
       <!-- ══════════════════════════════════════
-           HOURS MODAL
+           CREATE SEASON MODAL
       ══════════════════════════════════════ -->
       <Transition name="modal">
-        <div v-if="hoursModal.open" class="modal-overlay" @click.self="hoursModal.open = false">
+        <div v-if="createSeasonModal.open" class="modal-overlay" @click.self="createSeasonModal.open = false">
           <div class="modal">
-            <h3 class="modal-title">{{ hoursModal.isEdit ? 'Edit Hours' : 'Add Hours' }}</h3>
+            <h3 class="modal-title">Create Season</h3>
             <div class="form-group">
-              <label>Name <span class="optional">(optional)</span></label>
-              <input v-model="hoursModal.data.name" type="text" placeholder="e.g. Regular Hours" />
+              <label>Season Name</label>
+              <input v-model="createSeasonModal.name" type="text" placeholder="e.g. Fall 2024, Summer, Finals Week" @keyup.enter="submitCreateSeason" />
             </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Day</label>
-                <select v-model="hoursModal.data.dayOfWeek">
-                  <option v-for="d in DAYS" :key="d" :value="d">{{ d }}</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>Season <span class="optional">(optional)</span></label>
-                <select v-model="hoursModal.data.season">
-                  <option value="">— None —</option>
-                  <option v-for="s in SEASONS" :key="s" :value="s">{{ s }}</option>
-                </select>
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Open</label>
-                <input v-model="hoursModal.data.startTime" type="time" />
-              </div>
-              <div class="form-group">
-                <label>Close</label>
-                <input v-model="hoursModal.data.endTime" type="time" />
-              </div>
-            </div>
-            <p v-if="hoursModal.error" class="modal-error">{{ hoursModal.error }}</p>
+            <p v-if="createSeasonModal.error" class="modal-error">{{ createSeasonModal.error }}</p>
             <div class="modal-actions">
-              <button class="cancel-btn" @click="hoursModal.open = false">Cancel</button>
-              <button class="confirm-btn" :disabled="hoursModal.saving" @click="saveHours">
-                {{ hoursModal.saving ? 'Saving…' : hoursModal.isEdit ? 'Save Changes' : 'Create' }}
+              <button class="cancel-btn" @click="createSeasonModal.open = false">Cancel</button>
+              <button class="confirm-btn" @click="submitCreateSeason">Next: Set Hours</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- ══════════════════════════════════════
+           SEASON HOURS MODAL
+      ══════════════════════════════════════ -->
+      <Transition name="modal">
+        <div v-if="seasonHoursModal.open" class="modal-overlay" @click.self="seasonHoursModal.open = false">
+          <div class="modal modal-wide">
+            <h3 class="modal-title">{{ seasonHoursModal.seasonName }} — Hours</h3>
+            <div class="season-hours-table">
+              <div class="season-hours-header">
+                <span>Day</span><span>Open</span><span>Opens</span><span>Closes</span>
+              </div>
+              <div v-for="row in seasonHoursModal.days" :key="row.day" class="season-hours-row">
+                <span class="shm-day">{{ row.day }}</span>
+                <label class="shm-toggle">
+                  <input type="checkbox" v-model="row.open" />
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </label>
+                <input v-model="row.startTime" type="time" :disabled="!row.open" class="shm-time" />
+                <input v-model="row.endTime" type="time" :disabled="!row.open" class="shm-time" />
+              </div>
+            </div>
+            <p v-if="seasonHoursModal.error" class="modal-error">{{ seasonHoursModal.error }}</p>
+            <div class="modal-actions">
+              <button class="cancel-btn" @click="seasonHoursModal.open = false">Cancel</button>
+              <button class="confirm-btn" :disabled="seasonHoursModal.saving" @click="saveSeasonHours">
+                {{ seasonHoursModal.saving ? 'Saving…' : 'Save Hours' }}
               </button>
             </div>
           </div>
@@ -594,7 +606,6 @@ const userInitials = computed(() => {
 // ── Constants ──────────────────────────────────────────────────────────────────
 const TABS    = ["Overview", "Positions", "Hours", "Events", "Settings"];
 const DAYS    = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-const SEASONS = ["Fall","Winter","Spring","Summer","Finals"];
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const activeTab      = ref("Overview");
@@ -721,7 +732,7 @@ async function loadDeptData(id) {
   } finally {
     loading.value = false;
   }
-  await loadBufferTime(id);
+  await Promise.all([loadBufferTime(id), loadActiveSeason(id)]);
 }
 
 function onDeptChange() {
@@ -921,39 +932,103 @@ async function removeEmp(row) {
   } catch (err) { empModal.value.error = err.message || "Failed to remove."; }
 }
 
-// ── Hours CRUD ────────────────────────────────────────────────────────────────
-const hoursModal = ref({ open: false, isEdit: false, data: {}, editId: null, saving: false, error: "" });
+// ── Season Hours ───────────────────────────────────────────────────────────────
+const groupedBySeasons = computed(() => {
+  const groups = {};
+  calendarEntries.value.forEach(entry => {
+    const s = entry.season || "Unassigned";
+    if (!groups[s]) groups[s] = [];
+    groups[s].push(entry);
+  });
+  return Object.entries(groups).map(([name, entries]) => ({ name, entries }));
+});
 
-function openCreateHours() {
-  hoursModal.value = { open: true, isEdit: false, saving: false, error: "", editId: null,
-    data: { name: "", dayOfWeek: "Monday", season: "", startTime: "08:00", endTime: "17:00" } };
+function getEntryForSeasonDay(seasonName, dayName) {
+  return calendarEntries.value.find(e =>
+    (e.season || "Unassigned") === seasonName && e.dayOfWeek === dayName
+  ) || null;
 }
-function openEditHours(entry) {
-  hoursModal.value = {
-    open: true, isEdit: true, saving: false, error: "",
-    data: { name: entry.name || "", dayOfWeek: entry.dayOfWeek || "Monday", season: entry.season || "", startTime: entry.startTime?.slice(0,5) || "08:00", endTime: entry.endTime?.slice(0,5) || "17:00" },
-    editId: entry.id_hours_of_operation,
+
+// ── Create Season Modal ────────────────────────────────────────────────────────
+const createSeasonModal = ref({ open: false, name: "", error: "" });
+
+function openCreateSeason() {
+  createSeasonModal.value = { open: true, name: "", error: "" };
+}
+function submitCreateSeason() {
+  const name = createSeasonModal.value.name.trim();
+  if (!name) { createSeasonModal.value.error = "Season name is required."; return; }
+  if (groupedBySeasons.value.some(g => g.name === name)) {
+    createSeasonModal.value.error = "A season with that name already exists."; return;
+  }
+  createSeasonModal.value.open = false;
+  openSeasonHoursModal(name);
+}
+
+// ── Season Hours Modal ─────────────────────────────────────────────────────────
+const seasonHoursModal = ref({ open: false, seasonName: "", saving: false, error: "", days: [] });
+
+function openSeasonHoursModal(seasonName) {
+  seasonHoursModal.value = {
+    open: true, seasonName, saving: false, error: "",
+    days: DAYS.map(day => {
+      const existing = getEntryForSeasonDay(seasonName, day);
+      return {
+        day,
+        open: !!existing,
+        startTime: existing?.startTime?.slice(0, 5) || "08:00",
+        endTime:   existing?.endTime?.slice(0, 5)   || "17:00",
+        existingId: existing?.id_hours_of_operation || null,
+      };
+    }),
   };
 }
-async function saveHours() {
-  const { isEdit, data, editId } = hoursModal.value;
-  if (!data.name?.trim()) { hoursModal.value.error = "Name is required."; return; }
-  if (!data.dayOfWeek) { hoursModal.value.error = "Day is required."; return; }
-  hoursModal.value.saving = true; hoursModal.value.error = "";
+
+async function saveSeasonHours() {
+  const { seasonName, days } = seasonHoursModal.value;
+  seasonHoursModal.value.saving = true;
+  seasonHoursModal.value.error  = "";
   try {
-    const payload = { name: data.name.trim(), dayOfWeek: data.dayOfWeek, season: data.season || null, startTime: data.startTime, endTime: data.endTime };
-    if (isEdit) {
-      await updateCalendarEntry(editId, payload);
-      const idx = calendarEntries.value.findIndex(e => e.id_hours_of_operation === editId);
-      if (idx !== -1) calendarEntries.value[idx] = { ...calendarEntries.value[idx], ...payload };
-    } else {
-      const res = await createCalendarEntry(payload);
-      calendarEntries.value.push(res.data);
+    for (const d of days) {
+      const seasonVal = seasonName === "Unassigned" ? null : seasonName;
+      if (d.open) {
+        const payload = {
+          name:          `${seasonName} – ${d.day}`,
+          dayOfWeek:     d.day,
+          season:        seasonVal,
+          startTime:     d.startTime,
+          endTime:       d.endTime,
+          id_department: selectedDeptId.value,
+        };
+        if (d.existingId) {
+          await updateCalendarEntry(d.existingId, payload);
+          const idx = calendarEntries.value.findIndex(e => e.id_hours_of_operation === d.existingId);
+          if (idx !== -1) calendarEntries.value[idx] = { ...calendarEntries.value[idx], ...payload };
+        } else {
+          const res = await createCalendarEntry(payload);
+          calendarEntries.value.push(res.data);
+          d.existingId = res.data.id_hours_of_operation;
+        }
+      } else if (d.existingId) {
+        await deleteCalendarEntry(d.existingId);
+        calendarEntries.value = calendarEntries.value.filter(e => e.id_hours_of_operation !== d.existingId);
+        d.existingId = null;
+      }
     }
-    hoursModal.value.open = false;
+    seasonHoursModal.value.open = false;
   } catch (err) {
-    hoursModal.value.error = err.message || "Save failed.";
-  } finally { hoursModal.value.saving = false; }
+    seasonHoursModal.value.error = err.message || "Save failed.";
+  } finally {
+    seasonHoursModal.value.saving = false;
+  }
+}
+
+function confirmDeleteSeason(seasonName) {
+  const entries = calendarEntries.value.filter(e => (e.season || "Unassigned") === seasonName);
+  deleteConfirm.value = {
+    open: true, type: "season", item: { seasonName, entries },
+    label: `season "${seasonName}" and all its hours`, saving: false,
+  };
 }
 
 // ── Events CRUD ───────────────────────────────────────────────────────────────
@@ -1018,7 +1093,6 @@ async function saveEvent() {
 const deleteConfirm = ref({ open: false, type: "", item: null, label: "", saving: false });
 
 function confirmDeletePosition(pos) { deleteConfirm.value = { open: true, type: "position", item: pos, label: `position "${pos.name}"`, saving: false }; }
-function confirmDeleteHours(entry)  { deleteConfirm.value = { open: true, type: "hours",    item: entry, label: `hours entry "${entry.name || entry.dayOfWeek}"`, saving: false }; }
 function confirmDeleteEvent(ev)     { deleteConfirm.value = { open: true, type: "event",    item: ev, label: `event "${ev.title}"`, saving: false }; }
 
 async function executeDelete() {
@@ -1028,9 +1102,13 @@ async function executeDelete() {
     if (type === "position") {
       await deletePosition(item.id_position);
       positions.value = positions.value.filter(p => p.id_position !== item.id_position);
-    } else if (type === "hours") {
-      await deleteCalendarEntry(item.id_hours_of_operation);
-      calendarEntries.value = calendarEntries.value.filter(e => e.id_hours_of_operation !== item.id_hours_of_operation);
+    } else if (type === "season") {
+      for (const entry of item.entries) {
+        await deleteCalendarEntry(entry.id_hours_of_operation);
+      }
+      const ids = new Set(item.entries.map(e => e.id_hours_of_operation));
+      calendarEntries.value = calendarEntries.value.filter(e => !ids.has(e.id_hours_of_operation));
+      if (activeSeason.value === item.seasonName) await setActiveSeason("");
     } else if (type === "event") {
       await deleteEvent(item.id_event);
       events.value = events.value.filter(e => e.id_event !== item.id_event);
@@ -1040,6 +1118,46 @@ async function executeDelete() {
     apiError.value = "Delete failed: " + (err.message || "Unknown error");
     deleteConfirm.value.open = false;
   } finally { deleteConfirm.value.saving = false; }
+}
+
+// ── Settings: Active Season ───────────────────────────────────────────────────
+const ACTIVE_SEASON_KEY   = "Active Season";
+const activeSeason        = ref("");
+let   activeSeasonValueId = null;
+let   activeSeasonSettingId = null;
+
+async function loadActiveSeason(id) {
+  if (!id) return;
+  try {
+    const valRes = await getSettingValues(id);
+    const values = valRes.data || [];
+    const sv = values.find(v => v.name === ACTIVE_SEASON_KEY || v.key === "active_season");
+    if (sv) { activeSeasonValueId = sv.id_settingValue; activeSeasonSettingId = sv.id_setting; activeSeason.value = sv.value || ""; return; }
+    const settingsRes = await getSettings();
+    let setting = (settingsRes.data || []).find(s => s.name === ACTIVE_SEASON_KEY || s.key === "active_season");
+    if (!setting) {
+      const nr = await createSetting({ name: ACTIVE_SEASON_KEY, key: "active_season", type: "string" });
+      setting = nr.data;
+    }
+    activeSeasonSettingId = setting?.id_setting;
+    if (activeSeasonSettingId) {
+      const nvr = await createSettingValue({ id_setting: activeSeasonSettingId, id_department: id, value: "" });
+      activeSeasonValueId = nvr.data?.id_settingValue;
+    }
+    activeSeason.value = "";
+  } catch { activeSeason.value = ""; }
+}
+
+async function setActiveSeason(seasonName) {
+  try {
+    if (activeSeasonValueId) {
+      await updateSettingValue(activeSeasonValueId, seasonName);
+    } else if (activeSeasonSettingId) {
+      const res = await createSettingValue({ id_setting: activeSeasonSettingId, id_department: selectedDeptId.value, value: seasonName });
+      activeSeasonValueId = res.data?.id_settingValue;
+    }
+    activeSeason.value = seasonName;
+  } catch (err) { console.error("Failed to set active season:", err); }
 }
 
 // ── Settings: Buffer Time ─────────────────────────────────────────────────────
@@ -1311,7 +1429,72 @@ async function saveBufferTime() {
 .emp-select:focus { border-color: var(--accent); }
 .emp-select option { background: var(--bg-modal); }
 
-/* ── Hours table ── */
+/* ── Seasons grid ── */
+.seasons-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.season-card {
+  background: var(--bg-surface); border: 1px solid var(--bdr-subtle);
+  border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;
+  transition: border-color 0.15s;
+}
+.season-card:hover { border-color: var(--bdr-medium); }
+.season-card--active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.season-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.season-name-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.season-name { font-size: 16px; font-weight: 700; color: var(--tx-primary); }
+.active-chip { display: inline-block; padding: 2px 9px; border-radius: 100px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; background: var(--accent); color: #fff; }
+.active-season-badge { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; padding: 2px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; background: var(--accent); color: #fff; }
+.season-days { display: flex; flex-direction: column; gap: 4px; }
+.season-day-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.season-day-label { font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 600; color: var(--tx-muted); width: 30px; flex-shrink: 0; text-transform: uppercase; }
+.season-day-hours { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--tx-secondary); }
+.season-day-closed { font-size: 12px; color: var(--tx-ghost, #444); font-style: italic; }
+.season-card-footer { margin-top: auto; }
+.set-active-btn {
+  width: 100%; padding: 7px 0; border-radius: 8px;
+  border: 1px solid var(--bdr-medium); background: transparent;
+  color: var(--tx-secondary); font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.set-active-btn:hover { border-color: var(--accent); color: var(--accent); }
+.set-active-btn.active-set { border-color: var(--accent); color: var(--accent); background: rgba(255,23,68,0.06); }
+.set-active-btn.active-set:hover { background: rgba(255,23,68,0.12); }
+
+/* ── Season Hours Modal ── */
+.modal-wide { width: 620px !important; max-width: 96vw !important; }
+.season-hours-table { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--bdr-subtle); border-radius: 10px; overflow: visible; }
+.season-hours-header {
+  display: grid; grid-template-columns: 100px 52px 1fr 1fr;
+  padding: 8px 14px; background: var(--bg-input); border-radius: 10px 10px 0 0;
+  font-size: 11px; font-weight: 600; color: var(--tx-faint); text-transform: uppercase; letter-spacing: 0.07em;
+}
+.season-hours-row {
+  display: grid; grid-template-columns: 100px 52px 1fr 1fr;
+  align-items: center; padding: 10px 14px; gap: 10px;
+  border-top: 1px solid var(--bdr-subtle);
+}
+.shm-day { font-size: 13px; color: var(--tx-primary); font-weight: 500; }
+.shm-time {
+  background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary);
+  padding: 5px 8px; border-radius: 7px; font-size: 13px; font-family: 'DM Mono', monospace;
+  outline: none; width: 100%; transition: border-color 0.15s;
+}
+.shm-time:focus { border-color: var(--accent); }
+.shm-time:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* Toggle switch */
+.shm-toggle { position: relative; display: inline-block; width: 36px; height: 20px; cursor: pointer; }
+.shm-toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-track {
+  position: absolute; inset: 0; background: var(--bdr-medium); border-radius: 20px; transition: background 0.2s;
+}
+.shm-toggle input:checked + .toggle-track { background: var(--accent); }
+.toggle-thumb {
+  position: absolute; top: 3px; left: 3px;
+  width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: transform 0.2s;
+}
+.shm-toggle input:checked + .toggle-track .toggle-thumb { transform: translateX(16px); }
+
+/* ── Hours table (kept for back-compat if used elsewhere) ── */
 .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--bdr-subtle); }
 .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .data-table thead { background: var(--bg-surface); }
@@ -1368,7 +1551,7 @@ async function saveBufferTime() {
 
 /* ── Modals ── */
 .modal-overlay { position: fixed; inset: 0; background: var(--bg-moverlay); display: flex; align-items: center; justify-content: center; z-index: 300; backdrop-filter: blur(4px); }
-.modal { background: var(--bg-modal); border: 1px solid var(--bdr-medium); border-radius: 14px; padding: 28px; width: 420px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
+.modal { background: var(--bg-modal); border: 1px solid var(--bdr-medium); border-radius: 14px; padding: 28px; width: 420px; max-width: 96vw; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
 .modal-sm { width: 320px; }
 .modal-title { font-size: 18px; font-weight: 700; color: var(--tx-primary); margin-bottom: 8px; }
 .modal-desc  { font-size: 13px; color: var(--tx-muted); margin-bottom: 20px; }
