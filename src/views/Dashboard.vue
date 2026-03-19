@@ -558,6 +558,7 @@ const router = useRouter();
 
 function handleTabClick(tab) {
   const routes = {
+    Templates:  "/templates",
     Department: "/department",
     Employees:  "/manage",
     Shifts:     "/manage?tab=Shifts",
@@ -604,7 +605,7 @@ const apiError = ref(null);
 const tabs = computed(() => {
   const base = ["Schedules", "Employees", "Shifts", "Tradeboard", "Tasks", "Requests"];
   if (currentUser.value?.role === "Manager" || currentUser.value?.role === "Admin") {
-    base.splice(1, 0, "Department");
+    base.splice(1, 0, "Templates", "Department");
   }
   return base;
 });
