@@ -170,10 +170,14 @@
                   <span class="ghost-label">{{ ghostLabel }}</span>
                 </div>
                 <div v-for="shift in dayViewShifts" :key="shift.id"
-                  class="shift-block" :style="shiftStyle(shift)"
-                  @mousedown.stop @click.stop="selectShift(shift, $event)">
-                  <div class="shift-employee">{{ shift.positionName }}{{ shift.employee ? ' – ' + shift.employee : '' }}</div>
+                  class="shift-block"
+                  :data-shift-id="String(shift.id)"
+                  :style="shiftStyle(shift)"
+                  :class="{ 'shift-block--multi-selected': selectedShiftIds.has(String(shift.id)) }"
+                  @mousedown.stop @click.stop="onShiftBlockClick(shift, $event)">
+                  <div class="shift-employee">{{ shift.employee || 'Unassigned' }}</div>
                   <div class="shift-time">{{ shift.startLabel }} – {{ shift.endLabel }}</div>
+                  <div v-if="shift.positionName" class="shift-pos-badge">{{ shift.positionName }}</div>
                 </div>
                 <div v-if="isTodayDate(dayViewDate)" class="current-time-line" :style="{ top: currentTimePx + 'px' }"></div>
               </div>
@@ -222,10 +226,14 @@
                   <span class="ghost-label">{{ ghostLabel }}</span>
                 </div>
                 <div v-for="shift in shiftsForWeekDay(colIdx)" :key="shift.id"
-                  class="shift-block" :style="shiftStyle(shift)"
-                  @mousedown.stop @click.stop="selectShift(shift, $event)">
-                  <div class="shift-employee">{{ shift.positionName }}{{ shift.employee ? ' – ' + shift.employee : '' }}</div>
+                  class="shift-block"
+                  :data-shift-id="String(shift.id)"
+                  :style="shiftStyle(shift)"
+                  :class="{ 'shift-block--multi-selected': selectedShiftIds.has(String(shift.id)) }"
+                  @mousedown.stop @click.stop="onShiftBlockClick(shift, $event)">
+                  <div class="shift-employee">{{ shift.employee || 'Unassigned' }}</div>
                   <div class="shift-time">{{ shift.startLabel }} – {{ shift.endLabel }}</div>
+                  <div v-if="shift.positionName" class="shift-pos-badge">{{ shift.positionName }}</div>
                 </div>
                 <div v-if="isTodayDate(date)" class="current-time-line" :style="{ top: currentTimePx + 'px' }"></div>
               </div>
@@ -510,10 +518,30 @@
     </div>
   </Transition>
 
+  <!-- ── Rubber-band selection rect ── -->
+  <div v-if="rubberBand.active" class="rubber-band-rect" :style="{
+    left:   Math.min(rubberBand.startX, rubberBand.x) + 'px',
+    top:    Math.min(rubberBand.startY, rubberBand.y) + 'px',
+    width:  Math.abs(rubberBand.x - rubberBand.startX) + 'px',
+    height: Math.abs(rubberBand.y - rubberBand.startY) + 'px',
+  }"></div>
+
+  <!-- ── Multi-select toolbar ── -->
+  <Transition name="toolbar-anim">
+    <div v-if="selectedShiftIds.size > 0" class="selection-toolbar">
+      <span class="sel-count">{{ selectedShiftIds.size }} shift{{ selectedShiftIds.size !== 1 ? 's' : '' }} selected</span>
+      <div class="sel-divider"></div>
+      <button class="sel-btn" @click="copySelectedShifts" title="Copy (⌘C)">Copy</button>
+      <button class="sel-btn" @click="pasteDashShifts" :disabled="dashClipboard.length === 0" title="Paste (⌘V)">Paste</button>
+      <button class="sel-btn sel-btn--delete" @click="deleteSelectedShifts" title="Delete (Del)">Delete</button>
+      <button class="sel-btn sel-btn--clear" @click="clearSelection" title="Clear (Esc)">✕</button>
+    </div>
+  </Transition>
+
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import Utils from "../config/utils.js";
 import AuthServices from "../services/authServices.js";
@@ -660,6 +688,11 @@ const newShift = ref({ employee: "", id_employee: null, id_position: null, dayIn
 const drag = ref({ active: false, dayIndex: null, startHour: null, currentHour: null, colEl: null });
 const quickCreate = ref({ visible: false, dayIndex: null, date: null, startHour: null, endHour: null, startLabel: "", endLabel: "", startTime: "", endTime: "", dateLabel: "", id_position: null, employee: "", notes: "", style: {} });
 
+// ── Multi-select state ─────────────────────────────────────────────────────────
+const selectedShiftIds = ref(new Set()); // Set of String(shift.id) for type safety
+const rubberBand       = ref({ active: false, startX: 0, startY: 0, x: 0, y: 0 });
+const dashClipboard    = ref([]); // [{ date, startHour, endHour, id_position, positionName, id_employee, notes }]
+
 // ── Date helpers ───────────────────────────────────────────────────────────────
 function dateKey(weekOff, dayIdx) {
   // Returns YYYY-MM-DD for a given week offset + day index
@@ -801,14 +834,16 @@ const computedOpenShifts = computed(() => {
     const biz = businessHoursForDate(date);
     if (!biz) return; // no business hours defined for this day — skip
 
-    const key        = dateToKey(date);
-    const dayShifts  = shifts.value.filter(s => s.date === key);
-    const assigned   = dayShifts.filter(s => s.id_employee);
-    const unassigned = dayShifts.filter(s => !s.id_employee);
+    const key          = dateToKey(date);
+    const dayShifts    = shifts.value.filter(s => s.date === key);
+    const assigned     = dayShifts.filter(s => s.id_employee);
+    const unassigned   = dayShifts.filter(s => !s.id_employee);
 
-    // Build coverage from assigned shifts only, clamped to business hours
+    // Build coverage from ALL shifts (assigned + unassigned), clamped to business hours
+    // This prevents an unassigned shift from also showing up as a gap
+    const allCoverage = [...assigned, ...unassigned];
     const merged = [];
-    for (const iv of assigned
+    for (const iv of allCoverage
       .map(s => ({ start: Math.max(s.startHour, biz.start), end: Math.min(s.endHour, biz.end) }))
       .filter(iv => iv.start < iv.end)
       .sort((a, b) => a.start - b.start)) {
@@ -816,7 +851,7 @@ const computedOpenShifts = computed(() => {
       else merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, iv.end);
     }
 
-    // Time gaps within business hours only
+    // Time gaps within business hours not covered by any shift
     const gapItems = [];
     let cursor = biz.start;
     for (const { start, end } of merged) {
@@ -825,13 +860,10 @@ const computedOpenShifts = computed(() => {
     }
     if (cursor < biz.end) gapItems.push({ sortHour: cursor, label: `${fmtHour(cursor)} – ${fmtHour(biz.end)}` });
 
-    // Unassigned shifts that fall within business hours
+    // Unassigned shifts shown as open shift entries
     const unassignedItems = unassigned
       .filter(s => s.startHour < biz.end && s.endHour > biz.start)
-      .map(s => ({
-        sortHour: s.startHour,
-        label: s.positionName ? `${s.positionName}  ${fmtHour(s.startHour)} – ${fmtHour(s.endHour)}` : `${fmtHour(s.startHour)} – ${fmtHour(s.endHour)}`,
-      }));
+      .map(s => ({ sortHour: s.startHour, label: `${fmtHour(s.startHour)} – ${fmtHour(s.endHour)}` }));
 
     const items = [...gapItems, ...unassignedItems].sort((a, b) => a.sortHour - b.sortHour);
 
@@ -1025,16 +1057,66 @@ function toTimeInput(h) {
 }
 function fromTimeInput(t) { const [h, m] = t.split(":").map(Number); return h + m / 60; }
 
+// ── Overlap layout ─────────────────────────────────────────────────────────────
+// Returns a map of entry.id → { colIndex, totalCols } for Google Calendar-style
+// side-by-side rendering of concurrent shifts within a single day column.
+// Uses entry.id (unique per assignment row) so multiple employees on the same
+// shift definition each get their own tracked position.
+function computeOverlapLayout(dayShifts) {
+  const result = {};
+  if (!dayShifts.length) return result;
+  const sorted = [...dayShifts].sort((a, b) => a.startHour - b.startHour || String(a.id).localeCompare(String(b.id)));
+  const colEnds = [];
+  const assign  = {};
+  for (const s of sorted) {
+    let col = colEnds.findIndex(end => end <= s.startHour);
+    if (col === -1) col = colEnds.length;
+    colEnds[col] = s.endHour;
+    assign[s.id] = col;
+  }
+  for (const s of sorted) {
+    const concurrent = sorted.filter(o =>
+      o.id !== s.id &&
+      o.startHour < s.endHour &&
+      o.endHour   > s.startHour
+    );
+    const maxCol = concurrent.reduce((m, o) => Math.max(m, assign[o.id]), assign[s.id]);
+    result[s.id] = { colIndex: assign[s.id], totalCols: maxCol + 1 };
+  }
+  return result;
+}
+
+// Compute overlap layout for every date that has shifts loaded
+const shiftLayoutMap = computed(() => {
+  const byDate = {};
+  for (const s of shifts.value) {
+    if (!byDate[s.date]) byDate[s.date] = [];
+    byDate[s.date].push(s);
+  }
+  const result = {};
+  for (const dayShifts of Object.values(byDate)) {
+    Object.assign(result, computeOverlapLayout(dayShifts));
+  }
+  return result;
+});
+
 // ── Style helpers ──────────────────────────────────────────────────────────────
 function shiftStyle(shift) {
-  const color = getEmployeeColor(shift.employee);
+  const color  = getEmployeeColor(shift.employee);
+  const layout = shiftLayoutMap.value[shift.id] ?? { colIndex: 0, totalCols: 1 };
+  const GAP    = 3;
+  const pct    = 100 / layout.totalCols;
   return {
     position: "absolute",
     top:    `${(shift.startHour - CAL_START_HOUR) * CELL_HEIGHT}px`,
     height: `${Math.max((shift.endHour - shift.startHour) * CELL_HEIGHT - 3, 18)}px`,
-    left: "3px", right: "3px", background: color,
-    borderRadius: "6px", padding: "4px 8px", cursor: "pointer",
-    overflow: "hidden", zIndex: 2, boxShadow: `0 2px 12px ${color}44`, transition: "filter 0.15s",
+    left:   `calc(${layout.colIndex * pct}% + ${GAP}px)`,
+    width:  `calc(${pct}% - ${GAP * 2}px)`,
+    right:  "unset",
+    background: color,
+    borderRadius: "6px", padding: "4px 6px", cursor: "pointer",
+    overflow: "hidden", zIndex: layout.colIndex + 2,
+    boxShadow: `0 2px 12px ${color}44`, transition: "filter 0.15s",
   };
 }
 function getEmployeeColor(name) { return employees.value.find(e => e.name === name)?.color || "#3b82f6"; }
@@ -1055,16 +1137,29 @@ function getHourFromEvent(e, colEl) {
 // ── Drag handlers ──────────────────────────────────────────────────────────────
 function onColumnMouseDown(e, colIdx) {
   if (e.button !== 0) return;
+  if (e.metaKey || e.ctrlKey) {
+    rubberBand.value = { active: true, startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY };
+    return;
+  }
+  clearSelection();
   selectedShift.value       = null;
   quickCreate.value.visible = false;
   const startHour = getHourFromEvent(e, e.currentTarget);
   drag.value = { active: true, dayIndex: colIdx, startHour, currentHour: startHour, colEl: e.currentTarget };
 }
 function onGlobalMouseMove(e) {
+  if (rubberBand.value.active) {
+    rubberBand.value = { ...rubberBand.value, x: e.clientX, y: e.clientY };
+    return;
+  }
   if (!drag.value.active || !drag.value.colEl) return;
   drag.value.currentHour = getHourFromEvent(e, drag.value.colEl);
 }
 function onGlobalMouseUp(e) {
+  if (rubberBand.value.active) {
+    finalizeDashRubberBand();
+    return;
+  }
   if (!drag.value.active) return;
   const startHour = Math.min(drag.value.startHour, drag.value.currentHour);
   const endHour   = Math.max(drag.value.startHour, drag.value.currentHour) + SNAP_MINUTES / 60;
@@ -1379,11 +1474,140 @@ async function loadMyTasks() {
   myShiftTasks.value = results;
 }
 
+// ── Multi-select helpers ───────────────────────────────────────────────────────
+function toggleShiftSelection(id) {
+  const key = String(id);
+  const s = new Set(selectedShiftIds.value);
+  if (s.has(key)) s.delete(key); else s.add(key);
+  selectedShiftIds.value = s;
+}
+
+function clearSelection() {
+  selectedShiftIds.value = new Set();
+}
+
+function onShiftBlockClick(shift, e) {
+  if (e.metaKey || e.ctrlKey) {
+    toggleShiftSelection(shift.id);
+    return;
+  }
+  clearSelection();
+  selectShift(shift, e);
+}
+
+function finalizeDashRubberBand() {
+  const r      = rubberBand.value;
+  const left   = Math.min(r.startX, r.x);
+  const top    = Math.min(r.startY, r.y);
+  const right  = Math.max(r.startX, r.x);
+  const bottom = Math.max(r.startY, r.y);
+  if (right - left > 4 || bottom - top > 4) {
+    const blocks = document.querySelectorAll("[data-shift-id]");
+    const newSet = new Set(selectedShiftIds.value);
+    blocks.forEach(el => {
+      const rect = el.getBoundingClientRect();
+      if (rect.left < right && rect.right > left && rect.top < bottom && rect.bottom > top) {
+        newSet.add(el.dataset.shiftId);
+      }
+    });
+    selectedShiftIds.value = newSet;
+  }
+  rubberBand.value = { active: false, startX: 0, startY: 0, x: 0, y: 0 };
+}
+
+function copySelectedShifts() {
+  if (selectedShiftIds.value.size === 0) return;
+  const selected = shifts.value.filter(s => selectedShiftIds.value.has(String(s.id)));
+  dashClipboard.value = selected.map(s => ({
+    date:         s.date,
+    startHour:    s.startHour,
+    endHour:      s.endHour,
+    id_position:  s.id_position,
+    positionName: s.positionName,
+    id_employee:  s.id_employee,
+    notes:        s.notes || "",
+  }));
+}
+
+async function pasteDashShifts() {
+  if (dashClipboard.value.length === 0) return;
+  for (const item of dashClipboard.value) {
+    try {
+      const block = await apiCreateShift({
+        id_employee:  item.id_employee,
+        date:         item.date,
+        startHour:    item.startHour,
+        endHour:      item.endHour,
+        notes:        item.notes,
+        positionName: item.positionName,
+        id_position:  item.id_position,
+      });
+      const emp = item.id_employee ? employees.value.find(e => e.id_employee === item.id_employee) : null;
+      block.employee     = emp?.name || "";
+      block.positionName = item.positionName;
+      shifts.value.push(block);
+    } catch (err) { console.error("Paste shift failed:", err); }
+  }
+}
+
+async function deleteSelectedShifts() {
+  const count = selectedShiftIds.value.size;
+  if (count === 0) return;
+  if (count > 1 && !window.confirm(`Delete ${count} selected shifts?`)) return;
+  const ids = [...selectedShiftIds.value];
+  clearSelection();
+  for (const idStr of ids) {
+    const shift = shifts.value.find(s => String(s.id) === idStr);
+    if (shift) await deleteShift(shift.id);
+  }
+}
+
+function onDashKeydown(e) {
+  const meta = e.metaKey || e.ctrlKey;
+  if (meta && e.key === "a") {
+    // Only intercept if not in an input
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+    e.preventDefault();
+    // Select all shifts visible in current view
+    let visibleShifts = [];
+    if (calView.value === "Day") visibleShifts = dayViewShifts.value;
+    else if (calView.value === "Week") {
+      visibleShifts = weekDates.value.flatMap((_, i) => shiftsForWeekDay(i));
+    }
+    selectedShiftIds.value = new Set(visibleShifts.map(s => String(s.id)));
+    return;
+  }
+  if (meta && e.key === "c") {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    e.preventDefault();
+    copySelectedShifts();
+    return;
+  }
+  if (meta && e.key === "v") {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    e.preventDefault();
+    pasteDashShifts();
+    return;
+  }
+  if ((e.key === "Delete" || e.key === "Backspace") && selectedShiftIds.value.size > 0) {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+    e.preventDefault();
+    deleteSelectedShifts();
+    return;
+  }
+  if (e.key === "Escape" && selectedShiftIds.value.size > 0) {
+    clearSelection();
+    return;
+  }
+}
+
 // ── Lifecycle ──────────────────────────────────────────────────────────────────
 onMounted(async () => {
   await loadAll();
   if (calBody.value) calBody.value.scrollTop = 7 * CELL_HEIGHT; // scroll to 7am
+  window.addEventListener("keydown", onDashKeydown);
 });
+onUnmounted(() => { window.removeEventListener("keydown", onDashKeydown); });
 watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrollTop = 7 * CELL_HEIGHT; }, 50); });
 </script>
 
@@ -1541,10 +1765,11 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .ghost-block { border: 2px solid var(--accent); background: var(--accent-bg); border-radius: 6px; display: flex; align-items: flex-start; padding: 4px 8px; pointer-events: none; }
 .ghost-label { font-size: 11px; color: var(--accent); font-family: 'DM Mono', monospace; font-weight: 500; white-space: nowrap; }
 
-.shift-block { position: absolute; left: 3px; right: 3px; border-radius: 6px; padding: 5px 8px; cursor: pointer; overflow: hidden; z-index: 2; transition: filter 0.15s; }
+.shift-block { position: absolute; border-radius: 6px; padding: 5px 8px; cursor: pointer; overflow: hidden; z-index: 2; transition: filter 0.15s; }
 .shift-block:hover { filter: brightness(1.12); }
 .shift-employee { font-size: 12px; font-weight: 700; color: rgba(0,0,0,0.85); line-height: 1.2; }
 .shift-time { font-size: 10px; color: rgba(0,0,0,0.6); font-family: 'DM Mono', monospace; }
+.shift-pos-badge { font-size: 9px; color: rgba(0,0,0,0.5); margin-top: 2px; background: rgba(0,0,0,0.1); border-radius: 3px; padding: 1px 4px; display: inline-block; }
 
 .event-block { position: absolute; left: 3px; right: 3px; border-radius: 6px; overflow: hidden; z-index: 1; }
 .event-block-title { font-size: 11px; font-weight: 700; color: #4A90A4; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1843,6 +2068,55 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .my-task-bar { flex: 1; height: 4px; background: var(--bdr-subtle); border-radius: 2px; overflow: hidden; }
 .my-task-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s ease; }
 .my-task-count { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--tx-ghost); flex-shrink: 0; }
+
+/* ── Multi-selected shift block ── */
+.shift-block--multi-selected {
+  outline: 2px solid rgba(255,255,255,0.85);
+  outline-offset: -1px;
+}
+
+/* ── Rubber-band selection rect ── */
+.rubber-band-rect {
+  position: fixed;
+  border: 1.5px dashed var(--accent);
+  background: rgba(255, 23, 68, 0.08);
+  pointer-events: none;
+  z-index: 999;
+  border-radius: 3px;
+}
+
+/* ── Selection toolbar ── */
+.selection-toolbar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-modal);
+  border: 1px solid var(--bdr-faint);
+  border-radius: 12px;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 400;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+  white-space: nowrap;
+}
+.sel-count { font-size: 13px; color: var(--tx-primary); font-weight: 600; }
+.sel-divider { width: 1px; height: 16px; background: var(--bdr-faint); margin: 0 2px; }
+.sel-btn {
+  background: var(--bg-hover); border: 1px solid var(--bdr-faint); color: var(--tx-muted);
+  border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all 0.15s; font-family: 'DM Sans', sans-serif;
+}
+.sel-btn:disabled { opacity: .4; cursor: not-allowed; }
+.sel-btn:not(:disabled):hover { color: var(--tx-primary); border-color: var(--bdr-medium); }
+.sel-btn--delete { color: var(--accent); border-color: var(--accent-border); }
+.sel-btn--delete:not(:disabled):hover { background: var(--accent-bg); border-color: var(--accent); }
+.sel-btn--clear { background: none; border: none; color: var(--tx-faint); padding: 4px 8px; font-size: 15px; line-height: 1; }
+.sel-btn--clear:hover { color: var(--tx-primary); }
+.toolbar-anim-enter-active, .toolbar-anim-leave-active { transition: opacity .15s, transform .15s; }
+.toolbar-anim-enter-from, .toolbar-anim-leave-to { opacity: 0; transform: translateX(-50%) translateY(8px); }
 
 /* ── Transitions ── */
 .modal-enter-active, .modal-leave-active { transition: opacity 0.2s, transform 0.2s; }
