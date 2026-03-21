@@ -44,7 +44,9 @@
         <div class="cal-body" ref="calBody">
           <div class="cal-header-row">
             <div class="time-gutter"></div>
-            <div v-for="(day, i) in DAY_NAMES" :key="i" class="day-header">
+            <div v-for="(day, i) in DAY_NAMES" :key="i" class="day-header"
+              :class="{ 'paste-target-header': isPasteMode }"
+              @click="isPasteMode ? pasteToDay(i) : null">
               <span class="day-letter">{{ day }}</span>
             </div>
           </div>
@@ -56,8 +58,9 @@
               v-for="(day, colIdx) in DAY_NAMES"
               :key="colIdx"
               class="day-column"
-              :class="{ 'is-dragging-col': drag.active && drag.dayIndex === colIdx }"
-              @mousedown.prevent="onColumnMouseDown($event, colIdx)"
+              :class="{ 'is-dragging-col': drag.active && drag.dayIndex === colIdx, 'paste-target': isPasteMode }"
+              @mousedown.prevent="isPasteMode ? null : onColumnMouseDown($event, colIdx)"
+              @click="isPasteMode ? pasteToDay(colIdx) : null"
             >
               <div v-for="h in hours" :key="h" class="hour-cell"></div>
 
@@ -229,13 +232,20 @@
 
     <!-- ── Multi-select toolbar ── -->
     <Transition name="toolbar-anim">
-      <div v-if="selectedShiftIds.size > 0" class="selection-toolbar">
-        <span class="sel-count">{{ selectedShiftIds.size }} shift{{ selectedShiftIds.size !== 1 ? 's' : '' }} selected</span>
-        <div class="sel-divider"></div>
-        <button class="sel-btn" @click="copySelected" title="Copy (⌘C)">Copy</button>
-        <button class="sel-btn" @click="pasteShifts" :disabled="clipboard.length === 0" title="Paste (⌘V)">Paste</button>
-        <button class="sel-btn sel-btn--delete" @click="deleteSelectedShifts" title="Delete (Del)">Delete</button>
-        <button class="sel-btn sel-btn--clear" @click="clearSelection" title="Clear (Esc)">✕</button>
+      <div v-if="selectedShiftIds.size > 0 || isPasteMode" class="selection-toolbar" :class="{ 'paste-mode': isPasteMode }">
+        <template v-if="isPasteMode">
+          <span class="sel-count">Click a day to paste</span>
+          <div class="sel-divider"></div>
+          <button class="sel-btn sel-btn--clear" @click="isPasteMode = false" title="Cancel (Esc)">✕ Cancel</button>
+        </template>
+        <template v-else>
+          <span class="sel-count">{{ selectedShiftIds.size }} shift{{ selectedShiftIds.size !== 1 ? 's' : '' }} selected</span>
+          <div class="sel-divider"></div>
+          <button class="sel-btn" @click="copySelected" title="Copy (⌘C / Ctrl+C)">Copy</button>
+          <button class="sel-btn" @click="pasteShifts" :disabled="clipboard.length === 0" title="Paste (⌘V / Ctrl+V)">Paste</button>
+          <button class="sel-btn sel-btn--delete" @click="deleteSelectedShifts" title="Delete (Del)">Delete</button>
+          <button class="sel-btn sel-btn--clear" @click="clearSelection" title="Clear (Esc)">✕</button>
+        </template>
       </div>
     </Transition>
 
@@ -359,6 +369,66 @@ const qcLabelInput   = ref(null);
 const selectedShiftIds = ref(new Set()); // Set of id_templateShift (numbers)
 const rubberBand       = ref({ active: false, startX: 0, startY: 0, x: 0, y: 0 });
 const clipboard        = ref([]); // [{ dayOfWeek, startHour, endHour, label, id_position, id_employee }]
+const isPasteMode      = ref(false);
+const undoStack        = ref([]); // max 20; { type: 'create'|'delete'|'update', ... }
+
+function pushUndo(entry) {
+  undoStack.value.push(entry);
+  if (undoStack.value.length > 20) undoStack.value.shift();
+}
+
+async function undoLastAction() {
+  if (undoStack.value.length === 0) return;
+  const action = undoStack.value.pop();
+  if (action.type === 'create') {
+    for (const s of action.shifts) {
+      try {
+        await deleteTemplateShift(s.id_templateShift);
+        templateShifts.value = templateShifts.value.filter(ts => ts.id_templateShift !== s.id_templateShift);
+        delete shiftEmployeeMap.value[s.id_templateShift];
+      } catch (err) { console.error("Undo create failed:", err); }
+    }
+  } else if (action.type === 'delete') {
+    for (const s of action.shifts) {
+      try {
+        const created = await createTemplateShift({
+          id_template: id.value,
+          dayOfWeek:   s.dayOfWeek,
+          startHour:   s.startHour,
+          endHour:     s.endHour,
+          label:       s.label || "",
+          id_position: s.id_position,
+          notes:       s.notes || "",
+        });
+        templateShifts.value.push(created);
+        if (s.id_employee) {
+          try {
+            await addTemplateShiftEmployee({ id_templateShift: created.id_templateShift, id_employee: s.id_employee });
+            const emp = allEmployees.value.find(e => e.id_employee === s.id_employee);
+            if (emp) shiftEmployeeMap.value[created.id_templateShift] = emp;
+          } catch { /* non-critical */ }
+        }
+      } catch (err) { console.error("Undo delete failed:", err); }
+    }
+  } else if (action.type === 'update') {
+    const before = action.before;
+    try {
+      await updateTemplateShift(before.id_templateShift, {
+        label:       before.label,
+        id_position: before.id_position,
+        dayOfWeek:   before.dayOfWeek,
+        startHour:   before.startHour,
+        endHour:     before.endHour,
+        notes:       before.notes || "",
+      });
+      const idx = templateShifts.value.findIndex(s => s.id_templateShift === before.id_templateShift);
+      if (idx !== -1) templateShifts.value[idx] = { ...templateShifts.value[idx], ...before };
+      if (selectedShift.value?.id_templateShift === before.id_templateShift) {
+        selectedShift.value = templateShifts.value[idx];
+      }
+    } catch (err) { console.error("Undo update failed:", err); }
+  }
+}
 
 // ── Drag ──────────────────────────────────────────────────────────────────────
 const drag = ref({ active: false, dayIndex: 0, startHour: 0, currentHour: 0, colEl: null });
@@ -545,6 +615,7 @@ async function savePanelBasic() {
   panelEdit.value.saving = true;
   panelEdit.value.error  = "";
   panelEdit.value.saved  = false;
+  pushUndo({ type: 'update', before: { ...selectedShift.value } });
   try {
     const payload = {
       label:       panelEdit.value.label,
@@ -563,6 +634,7 @@ async function savePanelBasic() {
     panelEdit.value.saved = true;
     setTimeout(() => { panelEdit.value.saved = false; }, 2000);
   } catch (err) {
+    undoStack.value.pop();
     panelEdit.value.error = err.response?.data?.message || err.message || "Save failed.";
   } finally {
     panelEdit.value.saving = false;
@@ -708,12 +780,15 @@ async function syncRemoveTaskList(id_templateShift, id_taskList) {
 // ── Delete shift ──────────────────────────────────────────────────────────────
 async function deleteSelectedShift() {
   if (!selectedShift.value) return;
+  const snapshot = { ...selectedShift.value, id_employee: shiftEmployeeMap.value[selectedShift.value.id_templateShift]?.id_employee || null };
   const id_shift = selectedShift.value.id_templateShift;
   selectedShift.value = null;
+  pushUndo({ type: 'delete', shifts: [snapshot] });
   try {
     await deleteTemplateShift(id_shift);
     templateShifts.value = templateShifts.value.filter(s => s.id_templateShift !== id_shift);
   } catch (err) {
+    undoStack.value.pop();
     apiError.value = err.message || "Delete failed.";
   }
 }
@@ -891,7 +966,12 @@ function onWindowKeydown(e) {
   }
   if (meta && e.key === "v") {
     e.preventDefault();
-    pasteShifts();
+    if (clipboard.value.length > 0) isPasteMode.value = true;
+    return;
+  }
+  if (meta && e.key === "z") {
+    e.preventDefault();
+    undoLastAction();
     return;
   }
   if ((e.key === "Delete" || e.key === "Backspace") && selectedShiftIds.value.size > 0) {
@@ -900,9 +980,9 @@ function onWindowKeydown(e) {
     deleteSelectedShifts();
     return;
   }
-  if (e.key === "Escape" && selectedShiftIds.value.size > 0) {
-    clearSelection();
-    return;
+  if (e.key === "Escape") {
+    if (isPasteMode.value) { isPasteMode.value = false; return; }
+    if (selectedShiftIds.value.size > 0) { clearSelection(); return; }
   }
 }
 onMounted(()   => window.addEventListener("keydown",  onWindowKeydown));
@@ -961,13 +1041,25 @@ function copySelected() {
   }));
 }
 
-async function pasteShifts() {
+function pasteShifts() {
   if (clipboard.value.length === 0) return;
+  isPasteMode.value = true;
+}
+
+async function pasteToDay(targetColIdx) {
+  if (clipboard.value.length === 0) return;
+  isPasteMode.value = false;
+
+  const anchorDay = Math.min(...clipboard.value.map(item => item.dayOfWeek));
+  const offsetDays = targetColIdx - anchorDay;
+  const pastedShifts = [];
+
   for (const item of clipboard.value) {
+    const newDay = ((item.dayOfWeek + offsetDays) % 7 + 7) % 7;
     try {
       const created = await createTemplateShift({
         id_template: id.value,
-        dayOfWeek:   item.dayOfWeek,
+        dayOfWeek:   newDay,
         startHour:   item.startHour,
         endHour:     item.endHour,
         label:       item.label,
@@ -975,6 +1067,7 @@ async function pasteShifts() {
         notes:       "",
       });
       templateShifts.value.push(created);
+      pastedShifts.push(created);
       if (item.id_employee) {
         try {
           await addTemplateShiftEmployee({ id_templateShift: created.id_templateShift, id_employee: item.id_employee });
@@ -984,6 +1077,7 @@ async function pasteShifts() {
       }
     } catch (err) { console.error("Paste shift failed:", err); }
   }
+  if (pastedShifts.length > 0) pushUndo({ type: 'create', shifts: pastedShifts });
 }
 
 async function deleteSelectedShifts() {
@@ -991,6 +1085,9 @@ async function deleteSelectedShifts() {
   if (count === 0) return;
   if (count > 1 && !window.confirm(`Delete ${count} selected shifts?`)) return;
   const ids = [...selectedShiftIds.value];
+  const toDelete = ids.map(id => templateShifts.value.find(s => s.id_templateShift === id)).filter(Boolean);
+  const snapshots = toDelete.map(s => ({ ...s, id_employee: shiftEmployeeMap.value[s.id_templateShift]?.id_employee || null }));
+  pushUndo({ type: 'delete', shifts: snapshots });
   clearSelection();
   for (const shiftId of ids) {
     try {
@@ -1024,6 +1121,7 @@ async function confirmQuickCreate() {
       notes:        quickCreate.value.notes,
     });
     templateShifts.value.push(created);
+    pushUndo({ type: 'create', shifts: [created] });
 
     // Optionally assign an employee on creation
     const id_employee = Number(quickCreate.value.id_employee);
@@ -1351,6 +1449,14 @@ function fromTimeInput(t) {
 .sel-btn--clear:hover { color: var(--tx-primary); }
 .toolbar-anim-enter-active, .toolbar-anim-leave-active { transition: opacity .15s, transform .15s; }
 .toolbar-anim-enter-from, .toolbar-anim-leave-to { opacity: 0; transform: translateX(-50%) translateY(8px); }
+
+/* Paste mode */
+.selection-toolbar.paste-mode { background: rgba(30, 80, 160, 0.92); border-color: #4a90e2; }
+.selection-toolbar.paste-mode .sel-count { color: #c8deff; }
+.day-column.paste-target { cursor: copy; }
+.day-column.paste-target:hover { background: rgba(74, 144, 226, 0.08); }
+.day-header.paste-target-header { cursor: copy; }
+.day-header.paste-target-header:hover { background: rgba(74, 144, 226, 0.15); }
 
 /* ── Transitions ── */
 .popover-anim-enter-active, .popover-anim-leave-active { transition: opacity .12s, transform .12s; }

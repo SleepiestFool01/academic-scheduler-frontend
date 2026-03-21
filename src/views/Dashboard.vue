@@ -148,8 +148,9 @@
                 <div v-for="hour in hours" :key="hour" class="time-slot-label">{{ formatHour(hour) }}</div>
               </div>
               <div class="day-column"
-                :class="{ 'is-dragging-col': drag.active && drag.dayIndex === 0 }"
-                @mousedown.prevent="onColumnMouseDown($event, 0)">
+                :class="{ 'is-dragging-col': drag.active && drag.dayIndex === 0, 'paste-target': isPasteMode }"
+                @mousedown.prevent="isPasteMode ? null : onColumnMouseDown($event, 0)"
+                @click="isPasteMode ? pasteToDay(dayViewDate) : null">
                 <div v-for="hour in hours" :key="hour" class="hour-cell"></div>
                 <!-- Hours of operation markers -->
                 <template v-for="entry in hoursLinesForDate(dayViewDate)" :key="entry.key">
@@ -193,8 +194,8 @@
           <div class="cal-header-row">
             <div class="time-gutter"></div>
             <div v-for="(date, i) in weekDates" :key="i" class="day-header"
-              :class="{ today: isTodayDate(date) }"
-              @click="drillToDay(date)">
+              :class="{ today: isTodayDate(date), 'paste-target-header': isPasteMode }"
+              @click="isPasteMode ? pasteToDay(date) : drillToDay(date)">
               <span class="day-letter">{{ dayLetters[i] }}</span>
               <span class="day-number">{{ date.getDate() }}</span>
             </div>
@@ -204,8 +205,9 @@
                 <div v-for="hour in hours" :key="hour" class="time-slot-label">{{ formatHour(hour) }}</div>
               </div>
               <div v-for="(date, colIdx) in weekDates" :key="colIdx" class="day-column"
-                :class="{ 'is-dragging-col': drag.active && drag.dayIndex === colIdx }"
-                @mousedown.prevent="onColumnMouseDown($event, colIdx)">
+                :class="{ 'is-dragging-col': drag.active && drag.dayIndex === colIdx, 'paste-target': isPasteMode }"
+                @mousedown.prevent="isPasteMode ? null : onColumnMouseDown($event, colIdx)"
+                @click="isPasteMode ? pasteToDay(date) : null">
                 <div v-for="hour in hours" :key="hour" class="hour-cell"></div>
                 <!-- Hours of operation markers -->
                 <template v-for="entry in hoursLinesForDate(date)" :key="entry.key">
@@ -528,13 +530,20 @@
 
   <!-- ── Multi-select toolbar ── -->
   <Transition name="toolbar-anim">
-    <div v-if="selectedShiftIds.size > 0" class="selection-toolbar">
-      <span class="sel-count">{{ selectedShiftIds.size }} shift{{ selectedShiftIds.size !== 1 ? 's' : '' }} selected</span>
-      <div class="sel-divider"></div>
-      <button class="sel-btn" @click="copySelectedShifts" title="Copy (⌘C)">Copy</button>
-      <button class="sel-btn" @click="pasteDashShifts" :disabled="dashClipboard.length === 0" title="Paste (⌘V)">Paste</button>
-      <button class="sel-btn sel-btn--delete" @click="deleteSelectedShifts" title="Delete (Del)">Delete</button>
-      <button class="sel-btn sel-btn--clear" @click="clearSelection" title="Clear (Esc)">✕</button>
+    <div v-if="selectedShiftIds.size > 0 || isPasteMode" class="selection-toolbar" :class="{ 'paste-mode': isPasteMode }">
+      <template v-if="isPasteMode">
+        <span class="sel-count">Click a day to paste</span>
+        <div class="sel-divider"></div>
+        <button class="sel-btn sel-btn--clear" @click="isPasteMode = false" title="Cancel (Esc)">✕ Cancel</button>
+      </template>
+      <template v-else>
+        <span class="sel-count">{{ selectedShiftIds.size }} shift{{ selectedShiftIds.size !== 1 ? 's' : '' }} selected</span>
+        <div class="sel-divider"></div>
+        <button class="sel-btn" @click="copySelectedShifts" title="Copy (⌘C / Ctrl+C)">Copy</button>
+        <button class="sel-btn" @click="pasteDashShifts" :disabled="dashClipboard.length === 0" title="Paste (⌘V / Ctrl+V)">Paste</button>
+        <button class="sel-btn sel-btn--delete" @click="deleteSelectedShifts" title="Delete (Del)">Delete</button>
+        <button class="sel-btn sel-btn--clear" @click="clearSelection" title="Clear (Esc)">✕</button>
+      </template>
     </div>
   </Transition>
 
@@ -692,6 +701,55 @@ const quickCreate = ref({ visible: false, dayIndex: null, date: null, startHour:
 const selectedShiftIds = ref(new Set()); // Set of String(shift.id) for type safety
 const rubberBand       = ref({ active: false, startX: 0, startY: 0, x: 0, y: 0 });
 const dashClipboard    = ref([]); // [{ date, startHour, endHour, id_position, positionName, id_employee, notes }]
+const isPasteMode      = ref(false);
+const undoStack        = ref([]); // max 20; { type: 'create'|'delete'|'update', shifts: [...] | before/after }
+
+function pushUndo(entry) {
+  undoStack.value.push(entry);
+  if (undoStack.value.length > 20) undoStack.value.shift();
+}
+
+async function undoLastAction() {
+  if (undoStack.value.length === 0) return;
+  const action = undoStack.value.pop();
+  if (action.type === 'create') {
+    for (const s of action.shifts) {
+      try {
+        await apiDeleteShift(s.id_shiftAssignment, s.id_shift);
+        shifts.value = shifts.value.filter(sh => sh.id !== s.id);
+      } catch (err) { console.error("Undo create failed:", err); }
+    }
+  } else if (action.type === 'delete') {
+    for (const s of action.shifts) {
+      try {
+        const block = await apiCreateShift({
+          id_employee:  s.id_employee,
+          date:         s.date,
+          startHour:    s.startHour,
+          endHour:      s.endHour,
+          notes:        s.notes || "",
+          positionName: s.positionName,
+          id_position:  s.id_position,
+        });
+        block.employee     = s.employee || "";
+        block.positionName = s.positionName;
+        shifts.value.push(block);
+      } catch (err) { console.error("Undo delete failed:", err); }
+    }
+  } else if (action.type === 'update') {
+    const before = action.before;
+    try {
+      await apiUpdateShift(before.id_shift, {
+        startHour:   before.startHour,
+        endHour:     before.endHour,
+        notes:       before.notes,
+        id_position: before.id_position,
+      });
+      const idx = shifts.value.findIndex(s => s.id_shift === before.id_shift);
+      if (idx !== -1) shifts.value[idx] = { ...shifts.value[idx], startHour: before.startHour, endHour: before.endHour, startLabel: fmtHour(before.startHour), endLabel: fmtHour(before.endHour), notes: before.notes, id_position: before.id_position, positionName: before.positionName };
+    } catch (err) { console.error("Undo update failed:", err); }
+  }
+}
 
 // ── Date helpers ───────────────────────────────────────────────────────────────
 function dateKey(weekOff, dayIdx) {
@@ -1262,6 +1320,7 @@ async function confirmQuickCreate() {
     block.employee     = emp?.name || "";
     block.positionName = posName;
     shifts.value.push(block);
+    pushUndo({ type: 'create', shifts: [block] });
     quickCreate.value.visible = false;
   } catch (err) { alert("Error saving shift: " + err.message); }
 }
@@ -1292,10 +1351,14 @@ async function deleteShift(id) {
   const s = shifts.value.find(sh => sh.id === id);
   if (!s) return;
   try {
+    pushUndo({ type: 'delete', shifts: [{ ...s }] });
     await apiDeleteShift(s.id_shiftAssignment, s.id_shift);
     shifts.value        = shifts.value.filter(sh => sh.id !== id);
     selectedShift.value = null;
-  } catch (err) { alert("Error deleting shift: " + err.message); }
+  } catch (err) {
+    undoStack.value.pop();
+    alert("Error deleting shift: " + err.message);
+  }
 }
 function openBlankModal() {
   editingShiftId.value = null;
@@ -1311,6 +1374,7 @@ async function addShift() {
   if (editingShiftId.value) {
     const existing = shifts.value.find(s => s.id === editingShiftId.value);
     if (!existing) return;
+    pushUndo({ type: 'update', before: { ...existing } });
     try {
       await apiUpdateShift(existing.id_shift, { startHour, endHour, notes: newShift.value.notes, id_position: newShift.value.id_position });
       const idx = shifts.value.findIndex(s => s.id === editingShiftId.value);
@@ -1334,7 +1398,7 @@ async function addShift() {
         updated = { ...updated, id: assignment.id_shiftAssignment, id_shiftAssignment: assignment.id_shiftAssignment, id_employee: nextEmpId, employee: emp?.name || "" };
       }
       shifts.value[idx] = updated;
-    } catch (err) { alert("Error updating shift: " + err.message); return; }
+    } catch (err) { undoStack.value.pop(); alert("Error updating shift: " + err.message); return; }
     editingShiftId.value = null;
   } else {
     const emp = employees.value.find(e => e.name === newShift.value.employee);
@@ -1350,6 +1414,7 @@ async function addShift() {
       block.employee     = emp?.name || "";
       block.positionName = posName;
       shifts.value.push(block);
+      pushUndo({ type: 'create', shifts: [block] });
     } catch (err) { alert("Error creating shift: " + err.message); return; }
   }
   showAddModal.value = false;
@@ -1529,13 +1594,39 @@ function copySelectedShifts() {
   }));
 }
 
-async function pasteDashShifts() {
+function pasteDashShifts() {
   if (dashClipboard.value.length === 0) return;
+  isPasteMode.value = true;
+}
+
+function parseDateLocal(str) {
+  // Avoid UTC offset shifting by parsing YYYY-MM-DD as local time
+  const [y, m, d] = str.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+async function pasteToDay(targetDate) {
+  if (dashClipboard.value.length === 0) return;
+  isPasteMode.value = false;
+
+  // Find the anchor: earliest date in clipboard (parse as local time)
+  const anchorMs = Math.min(...dashClipboard.value.map(item => parseDateLocal(item.date).getTime()));
+  // Strip time from targetDate so we're comparing day-only
+  const targetDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+  const offsetDays = Math.round((targetDay.getTime() - anchorMs) / 86400000);
+  const pastedBlocks = [];
+
   for (const item of dashClipboard.value) {
+    const shiftDay = parseDateLocal(item.date);
+    const newDate = new Date(shiftDay.getFullYear(), shiftDay.getMonth(), shiftDay.getDate() + offsetDays);
+    const yyyy = newDate.getFullYear();
+    const mm   = String(newDate.getMonth() + 1).padStart(2, "0");
+    const dd   = String(newDate.getDate()).padStart(2, "0");
+    const dateStr = `${yyyy}-${mm}-${dd}`;
     try {
       const block = await apiCreateShift({
         id_employee:  item.id_employee,
-        date:         item.date,
+        date:         dateStr,
         startHour:    item.startHour,
         endHour:      item.endHour,
         notes:        item.notes,
@@ -1546,8 +1637,10 @@ async function pasteDashShifts() {
       block.employee     = emp?.name || "";
       block.positionName = item.positionName;
       shifts.value.push(block);
+      pastedBlocks.push(block);
     } catch (err) { console.error("Paste shift failed:", err); }
   }
+  if (pastedBlocks.length > 0) pushUndo({ type: 'create', shifts: pastedBlocks });
 }
 
 async function deleteSelectedShifts() {
@@ -1555,10 +1648,26 @@ async function deleteSelectedShifts() {
   if (count === 0) return;
   if (count > 1 && !window.confirm(`Delete ${count} selected shifts?`)) return;
   const ids = [...selectedShiftIds.value];
-  clearSelection();
-  for (const idStr of ids) {
-    const shift = shifts.value.find(s => String(s.id) === idStr);
-    if (shift) await deleteShift(shift.id);
+  // Snapshot all shifts before clearing selection (deleteShift also pushes individually,
+  // so we batch them into one undo entry here instead)
+  const toDelete = ids.map(idStr => shifts.value.find(s => String(s.id) === idStr)).filter(Boolean);
+  if (toDelete.length > 1) {
+    // Push one batch undo entry; suppress individual entries from deleteShift by temporarily
+    // routing through the API directly
+    pushUndo({ type: 'delete', shifts: toDelete.map(s => ({ ...s })) });
+    clearSelection();
+    for (const s of toDelete) {
+      try {
+        await apiDeleteShift(s.id_shiftAssignment, s.id_shift);
+        shifts.value = shifts.value.filter(sh => sh.id !== s.id);
+      } catch (err) { console.error("Delete failed:", err); }
+    }
+  } else {
+    clearSelection();
+    for (const idStr of ids) {
+      const shift = shifts.value.find(s => String(s.id) === idStr);
+      if (shift) await deleteShift(shift.id);
+    }
   }
 }
 
@@ -1586,7 +1695,13 @@ function onDashKeydown(e) {
   if (meta && e.key === "v") {
     if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
     e.preventDefault();
-    pasteDashShifts();
+    if (dashClipboard.value.length > 0) isPasteMode.value = true;
+    return;
+  }
+  if (meta && e.key === "z") {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    e.preventDefault();
+    undoLastAction();
     return;
   }
   if ((e.key === "Delete" || e.key === "Backspace") && selectedShiftIds.value.size > 0) {
@@ -1595,9 +1710,9 @@ function onDashKeydown(e) {
     deleteSelectedShifts();
     return;
   }
-  if (e.key === "Escape" && selectedShiftIds.value.size > 0) {
-    clearSelection();
-    return;
+  if (e.key === "Escape") {
+    if (isPasteMode.value) { isPasteMode.value = false; return; }
+    if (selectedShiftIds.value.size > 0) { clearSelection(); return; }
   }
 }
 
@@ -2117,6 +2232,14 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .sel-btn--clear:hover { color: var(--tx-primary); }
 .toolbar-anim-enter-active, .toolbar-anim-leave-active { transition: opacity .15s, transform .15s; }
 .toolbar-anim-enter-from, .toolbar-anim-leave-to { opacity: 0; transform: translateX(-50%) translateY(8px); }
+
+/* Paste mode */
+.selection-toolbar.paste-mode { background: rgba(30, 80, 160, 0.92); border-color: #4a90e2; }
+.selection-toolbar.paste-mode .sel-count { color: #c8deff; }
+.day-column.paste-target { cursor: copy; }
+.day-column.paste-target:hover { background: rgba(74, 144, 226, 0.08); }
+.day-header.paste-target-header { cursor: copy; }
+.day-header.paste-target-header:hover { background: rgba(74, 144, 226, 0.15); }
 
 /* ── Transitions ── */
 .modal-enter-active, .modal-leave-active { transition: opacity 0.2s, transform 0.2s; }
