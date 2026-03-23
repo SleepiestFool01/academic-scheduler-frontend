@@ -530,7 +530,7 @@ import {
   deleteAssignment  as apiDeleteAssignment,
   fetchSwapRequests,
 } from "../services/schedulingService.js";
-import { getDepartment, getCalendarEntries, getEvents, getPositions } from "../services/departmentService.js";
+import { getDepartment, getCalendarEntries, getEvents, getPositions, getSettingValues } from "../services/departmentService.js";
 import {
   fetchTaskLists,
   fetchTasks,
@@ -609,7 +609,7 @@ const tabs = computed(() => {
   return base;
 });
 const dayLetters  = ["S","M","T","W","R","F","S"];
-const hours       = Array.from({ length: 24 }, (_, i) => i);
+const hours = Array.from({ length: 24 }, (_, i) => i);
 
 // ── Live data (populated from API on mount) ────────────────────────────────────
 // employees: [{ id_employee, fName, lName, email, color, name }]
@@ -620,6 +620,7 @@ const employeeMap  = ref({});
 const shifts          = ref([]);
 const pendingRequests = ref([]);
 const calendarHours   = ref([]); // hours of operation from department calendar
+const activeSeason    = ref(""); // currently active season name (empty = no filter)
 const deptEvents      = ref([]); // department events
 const deptName        = ref('');
 const positions       = ref([]);
@@ -783,7 +784,10 @@ const DAY_NAMES_FULL = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Frid
 
 function businessHoursForDate(date) {
   const dayName = DAY_NAMES_FULL[date.getDay()];
-  const entry   = calendarHours.value.find(h => h.dayOfWeek === dayName);
+  const pool    = activeSeason.value
+    ? calendarHours.value.filter(h => h.season === activeSeason.value)
+    : calendarHours.value;
+  const entry   = pool.find(h => h.dayOfWeek === dayName);
   if (!entry) return null;
   return { start: fromTimeInput(entry.startTime), end: fromTimeInput(entry.endTime) };
 }
@@ -957,7 +961,10 @@ function parseTimeToHour(timeStr) {
 
 function hoursLinesForDate(date) {
   const dayName = DAY_NAMES[date.getDay()];
-  return calendarHours.value
+  const pool    = activeSeason.value
+    ? calendarHours.value.filter(e => e.season === activeSeason.value)
+    : calendarHours.value;
+  return pool
     .filter(e => e.dayOfWeek === dayName)
     .map(e => ({
       key:        e.id_hours_of_operation,
@@ -1125,6 +1132,10 @@ async function loadAll() {
       getDepartment(deptId).then(r => { deptName.value = r.data?.name || ''; }).catch(() => {});
       getCalendarEntries(deptId).then(r => { calendarHours.value = r.data || []; }).catch(() => {});
       getEvents(deptId).then(r => { deptEvents.value = r.data || []; }).catch(() => {});
+      getSettingValues(deptId).then(r => {
+        const sv = (r.data || []).find(v => v.name === "Active Season" || v.key === "active_season");
+        activeSeason.value = sv?.value || "";
+      }).catch(() => {});
     }
     loadMyTasks(); // async, non-blocking — populates employee sidebar
   } catch (err) {
