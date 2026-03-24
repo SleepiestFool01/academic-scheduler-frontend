@@ -241,10 +241,12 @@ function initialsFor(id){ const e = empMap.value[id]; return e ? `${e.fName[0]}$
 async function loadAll() {
   loading.value = true; apiError.value = "";
   try {
+    const deptId = selectedDeptId.value;
+    const deptQs = deptId ? `?id_department=${deptId}` : "";
     const [empRes, swapRes, shiftRes, assignRes] = await Promise.all([
-      apiClient.get("/employees"),
+      apiClient.get(`/employees${deptQs}`),
       apiClient.get("/swap-requests"),
-      apiClient.get("/shifts"),
+      apiClient.get(`/shifts${deptQs}`),
       apiClient.get("/shift-assignments"),
     ]);
 
@@ -252,12 +254,13 @@ async function loadAll() {
     empMap.value = {};
     for (const e of empRes.data) empMap.value[e.id_employee] = e;
 
-    // Join shifts for display
+    // Join shifts for display (only dept-filtered shifts)
     const shiftById = {};
     for (const s of shiftRes.data) shiftById[s.id_shift] = s;
+    const deptShiftIds = new Set(shiftRes.data.map(s => s.id_shift));
 
-    // Enrich swap requests with shift info
-    swapRequests.value = swapRes.data.map(r => {
+    // Enrich swap requests with shift info — only show trades for this dept's shifts
+    swapRequests.value = swapRes.data.filter(r => deptShiftIds.has(r.id_shift)).map(r => {
       const s = shiftById[r.id_shift];
       return {
         ...r,
@@ -266,9 +269,9 @@ async function loadAll() {
       };
     });
 
-    // My shifts (for posting a trade)
+    // My shifts (for posting a trade) — only dept's shifts
     myShifts.value = assignRes.data
-      .filter(a => a.id_employee === currentUser.id_employee)
+      .filter(a => a.id_employee === currentUser.id_employee && deptShiftIds.has(a.id_shift))
       .map(a => {
         const s = shiftById[a.id_shift];
         if (!s) return null;

@@ -18,6 +18,8 @@
             <rect x="15" y="14" width="11" height="7" rx="2" fill="#F0E6D3"/>
           </svg>
         </div>
+        <div class="nav-divider"></div>
+        <DeptSwitcher />
         <h1 class="page-title">Templates</h1>
       </div>
       <div class="nav-right">
@@ -225,6 +227,8 @@ import { ref, computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useTheme } from "../composables/useTheme.js";
 import { useDepartment } from "../composables/useDepartment.js";
+import DeptSwitcher from "../components/DeptSwitcher.vue";
+import Utils from "../config/utils.js";
 import {
   fetchTemplates, createTemplate, updateTemplate, deleteTemplate,
   fetchTemplateShifts,
@@ -267,7 +271,7 @@ const filteredTemplates = computed(() => {
   );
 });
 
-const { selectedDeptId } = useDepartment();
+const { selectedDeptId, myDepts, loadDepts } = useDepartment();
 
 async function loadTemplates() {
   loading.value = true;
@@ -282,7 +286,10 @@ async function loadTemplates() {
 }
 
 watch(selectedDeptId, loadTemplates);
-onMounted(loadTemplates);
+onMounted(async () => {
+  if (!myDepts.value.length) await loadDepts(Utils.getStore("user"));
+  loadTemplates();
+});
 
 // ── Modal ──────────────────────────────────────────────────────────────────────
 const modal = ref({
@@ -551,6 +558,7 @@ function formatDate(iso) {
   z-index: 100;
 }
 .nav-left { display: flex; align-items: center; gap: 12px; }
+.nav-divider { width: 1px; height: 20px; background: var(--bdr-subtle); }
 .nav-right { display: flex; align-items: center; gap: 10px; }
 .back-btn {
   display: flex;

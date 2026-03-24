@@ -75,7 +75,7 @@ export const shiftService = {
    * Create a shift definition, optionally assigning it to an employee.
    * @param {{ id_employee?, date, startHour, endHour, notes, positionName, id_position? }} p
    */
-  async createAndAssign({ id_employee = null, date, startHour, endHour, notes, positionName = "", id_position = null }) {
+  async createAndAssign({ id_employee = null, date, startHour, endHour, notes, positionName = "", id_position = null, id_department = null }) {
     const [y, mo, d] = date.split("-").map(Number);
     const dow = new Date(y, mo - 1, d).getDay();
     const label = positionName || "Shift";
@@ -88,6 +88,7 @@ export const shiftService = {
       startTime:   hourToTimeStr(startHour),
       endTime:     hourToTimeStr(endHour),
       id_position,
+      id_department,
     });
 
     if (id_employee) {

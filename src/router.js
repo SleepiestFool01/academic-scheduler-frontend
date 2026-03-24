@@ -25,6 +25,7 @@ const router = createRouter({
     { path: "/templates",        component: () => import("./views/Templates.vue") },
     { path: "/templates/:id",    component: () => import("./views/TemplateEditor.vue") },
     { path: "/department",  component: () => import("./views/DepartmentPage.vue") },
+    { path: "/shifts",      component: () => import("./views/ShiftsPage.vue") },
 
     // ── Unknown paths → login ─────────────────────────────────────────────────
     { path: "/:pathMatch(.*)*", redirect: "/start" },

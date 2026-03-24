@@ -285,7 +285,7 @@ async function loadAll() {
     const qs = deptId ? `?id_department=${deptId}` : "";
     const [listsRes, tasksRes] = await Promise.all([
       apiClient.get(`/task-lists${qs}`),
-      apiClient.get("/tasks"),
+      apiClient.get(`/tasks${qs}`),
     ]);
     taskLists.value = listsRes.data;
     tasks.value     = tasksRes.data;
@@ -445,7 +445,7 @@ async function saveModal() {
         const idx = tasks.value.findIndex(t => t.id_task === editId);
         if (idx !== -1) tasks.value[idx] = { ...tasks.value[idx], ...data };
       } else {
-        const res = await apiClient.post("/tasks", data);
+        const res = await apiClient.post("/tasks", { ...data, id_department: selectedDeptId.value || null });
         tasks.value.push(res.data);
       }
     }
