@@ -191,9 +191,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import Utils from "../config/utils.js";
+import { useDepartment } from "../composables/useDepartment.js";
 import apiClient from "../services/services.js";
 import { timeStrToHour, fmtHour } from "../services/employeeManagementService.js";
 import {
@@ -247,6 +248,8 @@ async function loadAll() {
     loading.value = false;
   }
 }
+const { selectedDeptId } = useDepartment();
+watch(selectedDeptId, loadAll);
 onMounted(loadAll);
 
 const pendingRequests = computed(() => availability.value.filter(r => r.status === "pending"));

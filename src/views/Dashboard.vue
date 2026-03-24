@@ -23,6 +23,8 @@
           <rect x="15" y="14" width="11" height="7" rx="2" fill="#F0E6D3"/>
         </svg>
       </div>
+      <DeptSwitcher v-if="isManager" />
+      <div class="nav-divider" v-if="isManager && myDepts.length > 0"></div>
       <div class="nav-tabs">
         <button v-for="tab in tabs" :key="tab" class="nav-tab"
           :class="{ active: activeTab === tab }" @click="handleTabClick(tab)">{{ tab }}</button>
@@ -555,6 +557,8 @@ import { useRouter } from "vue-router";
 import Utils from "../config/utils.js";
 import AuthServices from "../services/authServices.js";
 import { useTheme } from "../composables/useTheme.js";
+import { useDepartment } from "../composables/useDepartment.js";
+import DeptSwitcher from "../components/DeptSwitcher.vue";
 
 const { isDark, toggleTheme } = useTheme();
 import {
@@ -686,6 +690,8 @@ const myShiftTasks = ref([]); // [{ shiftTaskListId, taskList, statuses, complet
 
 // Derived from logged-in user (placeholder until auth is wired up)
 const currentUser = ref(Utils.getStore("user") || { fName: "?", lName: "?" });
+
+const { myDepts, selectedDeptId, loadDepts } = useDepartment();
 const userInitials = computed(() => {
   const u = currentUser.value;
   return `${u.fName?.[0] ?? ""}${u.lName?.[0] ?? ""}`.toUpperCase() || "??";
@@ -1254,9 +1260,10 @@ async function loadAll() {
   loading.value  = true;
   apiError.value = null;
   try {
+    const deptId = selectedDeptId.value || currentUser.value?.id_department;
     const [empList, tlData, tData] = await Promise.all([
-      fetchEmployees(),
-      fetchTaskLists().catch(() => []),
+      fetchEmployees(deptId),
+      fetchTaskLists(deptId).catch(() => []),
       fetchTasks().catch(() => []),
     ]);
     const map = {};
@@ -1273,13 +1280,12 @@ async function loadAll() {
       newShift.value.employee    = empList[0].name;
       newShift.value.id_employee = empList[0].id_employee;
     }
-    const deptId = currentUser.value?.id_department;
     // Load positions first so positionMap is ready for the shift JOIN
     if (deptId) {
       try { positions.value = (await getPositions(deptId)).data || []; } catch { /* non-critical */ }
     }
     const positionMap = Object.fromEntries(positions.value.map(p => [p.id_position, p]));
-    shifts.value = await fetchShiftsWithAssignments(map, positionMap);
+    shifts.value = await fetchShiftsWithAssignments(map, positionMap, deptId);
     pendingRequests.value = await fetchSwapRequests(map);
     // Load hours of operation + events for this user's department (non-blocking)
     if (deptId) {
@@ -1316,6 +1322,7 @@ async function confirmQuickCreate() {
       notes:        qc.notes,
       positionName: posName,
       id_position:  qc.id_position,
+      id_department: selectedDeptId.value || currentUser.value?.id_department || null,
     });
     block.employee     = emp?.name || "";
     block.positionName = posName;
@@ -1717,7 +1724,10 @@ function onDashKeydown(e) {
 }
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────────
+watch(selectedDeptId, () => loadAll());
+
 onMounted(async () => {
+  if (isManager.value) await loadDepts(currentUser.value);
   await loadAll();
   if (calBody.value) calBody.value.scrollTop = 7 * CELL_HEIGHT; // scroll to 7am
   window.addEventListener("keydown", onDashKeydown);
@@ -1760,6 +1770,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .nav-tab { padding: 6px 16px; background: transparent; border: none; color: var(--tx-muted); font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer; border-radius: 6px; transition: background 0.15s, color 0.15s; }
 .nav-tab:hover  { background: var(--bdr-subtle); color: var(--tx-secondary); }
 .nav-tab.active { background: var(--bg-active); color: var(--accent); font-weight: 600; }
+.nav-divider { width: 1px; height: 20px; background: var(--bdr-subtle); flex-shrink: 0; }
 .nav-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 .icon-btn { position: relative; background: none; border: none; cursor: pointer; font-size: 16px; color: var(--tx-muted); }
 .notif-dot { position: absolute; top: 0; right: 0; width: 7px; height: 7px; background: var(--err-text); border-radius: 50%; border: 1px solid var(--bg-surface); }

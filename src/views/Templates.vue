@@ -221,9 +221,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useTheme } from "../composables/useTheme.js";
+import { useDepartment } from "../composables/useDepartment.js";
 import {
   fetchTemplates, createTemplate, updateTemplate, deleteTemplate,
   fetchTemplateShifts,
@@ -266,11 +267,13 @@ const filteredTemplates = computed(() => {
   );
 });
 
+const { selectedDeptId } = useDepartment();
+
 async function loadTemplates() {
   loading.value = true;
   apiError.value = "";
   try {
-    templates.value = await fetchTemplates();
+    templates.value = await fetchTemplates(selectedDeptId.value);
   } catch (err) {
     apiError.value = "Could not load templates: " + (err.message || "Network error");
   } finally {
@@ -278,6 +281,7 @@ async function loadTemplates() {
   }
 }
 
+watch(selectedDeptId, loadTemplates);
 onMounted(loadTemplates);
 
 // ── Modal ──────────────────────────────────────────────────────────────────────
@@ -322,7 +326,7 @@ async function saveModal() {
       const idx = templates.value.findIndex(t => t.id_template === modal.value.id);
       if (idx !== -1) templates.value[idx] = updated;
     } else {
-      const created = await createTemplate(modal.value.data);
+      const created = await createTemplate({ ...modal.value.data, id_department: selectedDeptId.value || null });
       router.push('/templates/' + created.id_template);
       return;
     }

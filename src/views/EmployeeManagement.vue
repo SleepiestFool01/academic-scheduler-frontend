@@ -319,9 +319,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import Utils from "../config/utils.js";
+import { useDepartment } from "../composables/useDepartment.js";
 import {
   employeeService,
   shiftService,
@@ -376,10 +377,10 @@ async function loadAll() {
   loading.value  = true;
   apiError.value = "";
   try {
-    const deptId = currentUser.value?.id_department;
+    const deptId = selectedDeptId.value || currentUser.value?.id_department;
     const [empRes, shiftRes, assignRes, posRes] = await Promise.all([
-      employeeService.getAll(),
-      shiftService.getAll(),
+      employeeService.getAll(deptId),
+      shiftService.getAll(deptId),
       shiftService.getAssignments(),
       deptId ? getPositions(deptId) : Promise.resolve({ data: [] }),
     ]);
@@ -454,6 +455,8 @@ async function loadAll() {
   }
 }
 
+const { selectedDeptId } = useDepartment();
+watch(selectedDeptId, loadAll);
 onMounted(loadAll);
 
 // ── Filters ───────────────────────────────────────────────────────────────────
