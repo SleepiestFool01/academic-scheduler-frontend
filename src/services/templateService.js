@@ -1,8 +1,9 @@
 import apiClient from "./services.js";
 
 // ── Templates ─────────────────────────────────────────────────────────────────
-export async function fetchTemplates() {
-  const res = await apiClient.get("/templates");
+export async function fetchTemplates(id_department = null) {
+  const qs = id_department ? `?id_department=${id_department}` : "";
+  const res = await apiClient.get(`/templates${qs}`);
   return res.data;
 }
 

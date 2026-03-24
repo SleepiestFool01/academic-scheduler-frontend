@@ -30,6 +30,10 @@
               <rect x="15" y="14" width="11" height="7" rx="2" fill="#F0E6D3"/>
             </svg>
           </div>
+          <div v-if="!noDeptsYet" class="nav-dept-switcher">
+            <div class="nav-divider"></div>
+            <DeptSwitcher />
+          </div>
         </div>
         <div v-if="!noDeptsYet" class="nav-tabs">
           <button v-for="tab in TABS" :key="tab" class="nav-tab"
@@ -88,15 +92,6 @@
 
         <!-- ── Department header ── -->
         <div class="dept-header">
-          <!-- Department selector (multiple depts) -->
-          <div class="dept-selector-row" v-if="myDepts.length > 1">
-            <span class="dept-selector-label">Department:</span>
-            <select v-model="selectedDeptId" class="dept-selector" @change="onDeptChange">
-              <option v-for="d in myDepts" :key="d.id_department" :value="d.id_department">
-                {{ d.name }}
-              </option>
-            </select>
-          </div>
 
           <div class="dept-name-row">
             <div class="dept-color-dot"></div>
@@ -109,6 +104,9 @@
               <button class="save-inline-btn" @click="saveName" :disabled="savingName">✓</button>
               <button class="cancel-inline-btn" @click="cancelEditName">✕</button>
             </template>
+            <button class="request-access-btn" style="margin-left: auto;" @click="openRequestModal" title="Request access to manage another department">
+              + Request Another Department
+            </button>
           </div>
 
           <div class="dept-desc-row">
@@ -121,16 +119,6 @@
               <button class="save-inline-btn" @click="saveDesc" :disabled="savingDesc">✓</button>
               <button class="cancel-inline-btn" @click="cancelEditDesc">✕</button>
             </template>
-          </div>
-
-          <div class="dept-header-bottom">
-            <div class="dept-chips">
-              <span class="dept-chip">{{ employees.length }} Employees</span>
-              <span class="dept-chip">{{ positions.length }} Positions</span>
-            </div>
-            <button class="request-access-btn" @click="openRequestModal" title="Request access to manage another department">
-              + Request Another Department
-            </button>
           </div>
         </div>
 
@@ -149,14 +137,6 @@
             </div>
             <div class="overview-grid">
               <div class="overview-card">
-                <div class="ov-label">Department Name</div>
-                <div class="ov-value">{{ department.name || '—' }}</div>
-              </div>
-              <div class="overview-card">
-                <div class="ov-label">Description</div>
-                <div class="ov-value">{{ department.description || '—' }}</div>
-              </div>
-              <div class="overview-card">
                 <div class="ov-label">Employees</div>
                 <div class="ov-value ov-big">{{ employees.length }}</div>
               </div>
@@ -165,12 +145,86 @@
                 <div class="ov-value ov-big">{{ positions.length }}</div>
               </div>
               <div class="overview-card">
-                <div class="ov-label">Hours of Operation</div>
-                <div class="ov-value ov-big">{{ calendarEntries.length }}</div>
+                <div class="ov-label">Open Today</div>
+                <template v-if="!activeSeason">
+                  <div class="ov-value ov-faint">No active season</div>
+                </template>
+                <template v-else-if="todayEntry">
+                  <div class="ov-open-badge">Open</div>
+                  <div class="ov-today-hours">{{ fmtTime(todayEntry.startTime) }} – {{ fmtTime(todayEntry.endTime) }}</div>
+                </template>
+                <template v-else>
+                  <div class="ov-closed-badge">Closed</div>
+                </template>
               </div>
+            </div>
+
+            <div class="overview-wide-grid">
+              <!-- Hours of Operation -->
               <div class="overview-card">
-                <div class="ov-label">Upcoming Events</div>
-                <div class="ov-value ov-big">{{ events.length }}</div>
+                <div class="ov-label">
+                  Hours of Operation
+                  <span v-if="activeSeason" class="ov-season-badge">{{ activeSeason }}</span>
+                  <span v-else class="ov-no-season">No active season</span>
+                </div>
+                <div v-if="activeSeason" class="ov-hours-list">
+                  <div v-for="day in DAYS" :key="day" class="ov-hours-row">
+                    <span class="ov-hours-day">{{ day.slice(0, 3) }}</span>
+                    <span v-if="getEntryForSeasonDay(activeSeason, day)" class="ov-hours-time">
+                      {{ fmtTime(getEntryForSeasonDay(activeSeason, day).startTime) }} – {{ fmtTime(getEntryForSeasonDay(activeSeason, day).endTime) }}
+                    </span>
+                    <span v-else class="ov-hours-closed">Closed</span>
+                  </div>
+                </div>
+                <div v-else class="ov-empty-hint">Go to Hours to configure and activate a season.</div>
+              </div>
+
+              <!-- Upcoming Events + Next Event highlight -->
+              <div class="overview-card">
+                <div class="ov-label">
+                  Upcoming Events
+                  <span class="ov-count-badge">{{ upcomingEvents.length }}</span>
+                </div>
+                <div v-if="upcomingEvents.length === 0" class="ov-empty-hint">No upcoming events scheduled.</div>
+                <template v-else>
+                  <!-- Next Event highlight -->
+                  <div class="ov-next-event" v-if="nextEvent">
+                    <div class="ov-next-label">Next Up</div>
+                    <div class="ov-next-body">
+                      <div class="ov-event-date">
+                        <span class="ov-event-month">{{ eventMonth(nextEvent.start_time) }}</span>
+                        <span class="ov-event-day">{{ eventDay(nextEvent.start_time) }}</span>
+                      </div>
+                      <div class="ov-event-info">
+                        <span class="ov-event-title ov-next-title">{{ nextEvent.title }}</span>
+                        <span v-if="nextEvent.start_time" class="ov-event-time">{{ eventStartTime(nextEvent) }}</span>
+                        <span v-if="nextEvent.location" class="ov-event-time">📍 {{ nextEvent.location }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- Full list -->
+                  <div v-if="upcomingEvents.length > 1" class="ov-events-list ov-events-rest">
+                    <div v-for="ev in upcomingEvents.slice(1)" :key="ev.id_event" class="ov-event-row">
+                      <div class="ov-event-date ov-event-date-sm">
+                        <span class="ov-event-month">{{ eventMonth(ev.start_time) }}</span>
+                        <span class="ov-event-day">{{ eventDay(ev.start_time) }}</span>
+                      </div>
+                      <div class="ov-event-info">
+                        <span class="ov-event-title">{{ ev.title }}</span>
+                        <span v-if="ev.start_time" class="ov-event-time">{{ eventStartTime(ev) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Managers -->
+            <div class="overview-card ov-managers-card">
+              <div class="ov-label">Managers</div>
+              <div v-if="deptManagers.length === 0" class="ov-empty-hint">No managers assigned.</div>
+              <div v-else class="ov-managers-list">
+                <span v-for="name in deptManagers" :key="name" class="ov-manager-chip">{{ name }}</span>
               </div>
             </div>
 
@@ -315,6 +369,35 @@
               </div>
               <p v-if="bufferSaved"  class="save-success">Settings saved.</p>
               <p v-if="bufferError"  class="save-error">{{ bufferError }}</p>
+            </div>
+
+            <!-- Managers -->
+            <div class="settings-section">
+              <div class="setting-row mgr-setting-row">
+                <div class="setting-info">
+                  <div class="setting-label">Managers</div>
+                  <div class="setting-desc">Employees who can manage this department.</div>
+                </div>
+                <div class="mgr-setting-body">
+                  <div v-for="link in deptManagerLinks" :key="link.id_managerDepartment" class="mgr-setting-item">
+                    <span class="mgr-setting-name">{{ managerName(link.id_employee) }}</span>
+                    <span v-if="link.id_employee === currentUser.id_employee" class="mgr-you-badge">You</span>
+                    <button v-else class="icon-action danger" title="Remove" @click="removeManager(link)">✕</button>
+                  </div>
+                  <div class="mgr-add-row">
+                    <select v-model="addManagerId" class="mgr-select">
+                      <option value="">— Add a manager —</option>
+                      <option v-for="emp in assignableManagers" :key="emp.id_employee" :value="emp.id_employee">
+                        {{ emp.fName }} {{ emp.lName }}
+                      </option>
+                    </select>
+                    <button class="primary-btn" :disabled="!addManagerId || addingManager" @click="addManager">
+                      {{ addingManager ? 'Adding…' : 'Add' }}
+                    </button>
+                  </div>
+                  <p v-if="managerError" class="save-error">{{ managerError }}</p>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -558,6 +641,8 @@
 import { ref, computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import Utils from "../config/utils.js";
+import { useDepartment } from "../composables/useDepartment.js";
+import DeptSwitcher from "../components/DeptSwitcher.vue";
 import {
   getAllDepartments,
   getDepartment,
@@ -581,7 +666,8 @@ import {
   createSetting,
   createSettingValue,
   updateSettingValue,
-  getManagerDepartments,
+  deleteManagerDepartment,
+  getDeptManagers,
   createManagerDepartment,
   createDepartmentAccessRequest,
   getDepartmentAccessRequests,
@@ -614,16 +700,16 @@ const loading        = ref(false);
 const apiError       = ref("");
 const noDeptsYet     = ref(false);
 
-// All departments this manager can access
-const myDepts        = ref([]); // [{ id_department, name, description }]
-const selectedDeptId = ref(null);
-const allDepts       = ref([]); // all departments in system (for request modal)
+// Department switcher — shared composable
+const { myDepts, selectedDeptId, loadDepts } = useDepartment();
+const allDepts = ref([]); // all departments in system (for request modal)
 
 const department      = ref({});
 const positions       = ref([]);
 const employees       = ref([]);
 const calendarEntries = ref([]);
 const events          = ref([]);
+const deptManagerLinks = ref([]);
 
 // Pending access requests from this manager
 const myPendingRequests = ref([]);
@@ -645,10 +731,16 @@ async function submitCreateDepartment() {
     });
     const newDept = deptRes.data;
 
-    // 2. Link employee to new department
-    await apiClient.put(`/employees/${currentUser.value.id_employee}`, {
-      id_department: newDept.id_department,
-    });
+    // 2. Link employee to new department (primary field + junction table)
+    await Promise.all([
+      apiClient.put(`/employees/${currentUser.value.id_employee}`, {
+        id_department: newDept.id_department,
+      }),
+      createManagerDepartment({
+        id_employee:   currentUser.value.id_employee,
+        id_department: newDept.id_department,
+      }),
+    ]);
 
     // 3. Update localStorage
     const updated = { ...currentUser.value, id_department: newDept.id_department };
@@ -672,28 +764,19 @@ async function initLoad() {
   if (!isManager.value) return;
   initLoading.value = true;
   try {
-    const empId    = currentUser.value?.id_employee;
-    const primaryId = currentUser.value?.id_department ?? null;
+    const empId = currentUser.value?.id_employee;
 
-    // Load junction table + all depts in parallel
-    const [junctionRes, allDeptsRes] = await Promise.allSettled([
-      empId ? getManagerDepartments(empId) : Promise.resolve({ data: [] }),
+    // Delegate dept list loading to shared composable; also load allDepts for request modal
+    const [, allDeptsRes] = await Promise.allSettled([
+      loadDepts(currentUser.value),
       getAllDepartments(),
     ]);
-
     allDepts.value = allDeptsRes.status === "fulfilled" ? (allDeptsRes.value.data || []) : [];
-
-    const junctionRows = junctionRes.status === "fulfilled" ? (junctionRes.value.data || []) : [];
-    const deptIdSet = new Set(junctionRows.map(j => Number(j.id_department)));
-    if (primaryId) deptIdSet.add(Number(primaryId));
-
-    myDepts.value = allDepts.value.filter(d => deptIdSet.has(d.id_department));
 
     if (myDepts.value.length === 0) {
       noDeptsYet.value = true;
     } else {
       noDeptsYet.value = false;
-      selectedDeptId.value = myDepts.value[0].id_department;
       await loadDeptData(selectedDeptId.value);
     }
 
@@ -714,19 +797,21 @@ async function loadDeptData(id) {
   loading.value  = true;
   apiError.value = "";
   try {
-    const [deptRes, posRes, empRes, calRes, evtRes] = await Promise.allSettled([
+    const [deptRes, posRes, empRes, calRes, evtRes, mgrRes] = await Promise.allSettled([
       getDepartment(id),
       getPositions(id),
       getEmployees(),
       getCalendarEntries(id),
       getEvents(id),
+      getDeptManagers(id),
     ]);
 
-    if (deptRes.status === "fulfilled") department.value      = deptRes.value.data || {};
-    if (posRes.status  === "fulfilled") positions.value       = posRes.value.data  || [];
-    if (empRes.status  === "fulfilled") employees.value       = empRes.value.data  || [];
-    if (calRes.status  === "fulfilled") calendarEntries.value = calRes.value.data  || [];
-    if (evtRes.status  === "fulfilled") events.value          = evtRes.value.data  || [];
+    if (deptRes.status === "fulfilled") department.value       = deptRes.value.data || {};
+    if (posRes.status  === "fulfilled") positions.value        = posRes.value.data  || [];
+    if (empRes.status  === "fulfilled") employees.value        = empRes.value.data  || [];
+    if (calRes.status  === "fulfilled") calendarEntries.value  = calRes.value.data  || [];
+    if (evtRes.status  === "fulfilled") events.value           = evtRes.value.data  || [];
+    if (mgrRes.status  === "fulfilled") deptManagerLinks.value = mgrRes.value.data  || [];
   } catch (err) {
     apiError.value = "Could not load department data: " + (err.message || "Network error");
   } finally {
@@ -735,10 +820,12 @@ async function loadDeptData(id) {
   await Promise.all([loadBufferTime(id), loadActiveSeason(id)]);
 }
 
-function onDeptChange() {
+
+watch(selectedDeptId, (id) => {
+  if (!id || noDeptsYet.value) return;
   activeTab.value = "Overview";
-  loadDeptData(selectedDeptId.value);
-}
+  loadDeptData(id);
+});
 
 onMounted(initLoad);
 
@@ -754,6 +841,75 @@ function fmtTime(t) {
 const sortedEvents = computed(() =>
   [...events.value].sort((a, b) => (a.start_time || "") > (b.start_time || "") ? 1 : -1)
 );
+const upcomingEvents = computed(() =>
+  [...events.value]
+    .filter(e => e.start_time && new Date(e.start_time) >= new Date())
+    .sort((a, b) => a.start_time > b.start_time ? 1 : -1)
+    .slice(0, 5)
+);
+const nextEvent = computed(() => upcomingEvents.value[0] || null);
+
+const todayEntry = computed(() => {
+  if (!activeSeason.value) return null;
+  const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const today = dayNames[new Date().getDay()];
+  return getEntryForSeasonDay(activeSeason.value, today);
+});
+
+const deptManagers = computed(() => {
+  const links = deptManagerLinks.value;
+  return links.map(link => {
+    const emp = employees.value.find(e => e.id_employee === link.id_employee);
+    return emp ? `${emp.fName} ${emp.lName}` : null;
+  }).filter(Boolean);
+});
+
+// ── Manager assignment (Settings tab) ─────────────────────────────────────────
+const addManagerId   = ref("");
+const addingManager  = ref(false);
+const managerError   = ref("");
+
+const assignableManagers = computed(() => {
+  const linked = new Set(deptManagerLinks.value.map(l => l.id_employee));
+  return employees.value.filter(e =>
+    (e.role === 'Manager' || e.role === 'Admin') && !linked.has(e.id_employee)
+  );
+});
+
+function managerName(id_employee) {
+  const emp = employees.value.find(e => e.id_employee === id_employee);
+  return emp ? `${emp.fName} ${emp.lName}` : `Employee #${id_employee}`;
+}
+
+async function addManager() {
+  if (!addManagerId.value) return;
+  addingManager.value = true;
+  managerError.value  = "";
+  try {
+    const res = await createManagerDepartment({
+      id_employee:   addManagerId.value,
+      id_department: selectedDeptId.value,
+    });
+    deptManagerLinks.value.push(res.data);
+    addManagerId.value = "";
+  } catch (err) {
+    managerError.value = err.message || "Failed to add manager.";
+  } finally {
+    addingManager.value = false;
+  }
+}
+
+async function removeManager(link) {
+  managerError.value = "";
+  try {
+    await deleteManagerDepartment(link.id_managerDepartment);
+    deptManagerLinks.value = deptManagerLinks.value.filter(
+      l => l.id_managerDepartment !== link.id_managerDepartment
+    );
+  } catch (err) {
+    managerError.value = err.message || "Failed to remove manager.";
+  }
+}
 function eventMonth(dt) {
   if (!dt) return "—";
   return new Date(dt).toLocaleDateString("en-US", { month: "short" }).toUpperCase();
@@ -1249,6 +1405,8 @@ async function saveBufferTime() {
   background: var(--bg-surface); border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0;
 }
 .nav-left  { display: flex; align-items: center; gap: 16px; }
+.nav-dept-switcher { display: flex; align-items: center; gap: 12px; }
+.nav-divider { width: 1px; height: 20px; background: var(--bdr-subtle); flex-shrink: 0; }
 .nav-right { margin-left: auto; }
 .back-btn {
   display: flex; align-items: center; gap: 6px;
@@ -1340,7 +1498,7 @@ async function saveBufferTime() {
 .cancel-inline-btn:hover { background: var(--bdr-subtle); }
 .save-inline-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.dept-header-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.dept-header-bottom { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
 .dept-chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .dept-chip {
   padding: 3px 12px; background: var(--bg-active); border: 1px solid var(--bdr-subtle);
@@ -1371,10 +1529,47 @@ async function saveBufferTime() {
 
 /* ── Overview ── */
 .overview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+.overview-wide-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
 .overview-card { background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 12px; padding: 20px 22px; }
-.ov-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--tx-faint); margin-bottom: 8px; }
+.ov-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--tx-faint); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
 .ov-value { font-size: 14px; color: var(--tx-secondary); word-break: break-word; }
 .ov-big   { font-size: 28px; font-weight: 700; color: var(--accent); font-family: 'DM Mono', monospace; }
+.ov-season-badge { background: var(--accent); color: #fff; border-radius: 4px; padding: 1px 7px; font-size: 10px; text-transform: none; letter-spacing: 0; font-weight: 600; }
+.ov-no-season { color: var(--tx-faint); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 11px; }
+.ov-count-badge { background: var(--bg-elevated); color: var(--tx-secondary); border-radius: 10px; padding: 1px 8px; font-size: 11px; text-transform: none; letter-spacing: 0; font-weight: 600; }
+.ov-empty-hint { color: var(--tx-faint); font-size: 13px; font-style: italic; }
+.ov-hours-list { display: flex; flex-direction: column; gap: 7px; }
+.ov-hours-row { display: flex; align-items: center; gap: 14px; }
+.ov-hours-day { width: 34px; font-size: 12px; font-weight: 600; color: var(--tx-secondary); flex-shrink: 0; }
+.ov-hours-time { font-size: 13px; color: var(--tx-primary); font-family: 'DM Mono', monospace; }
+.ov-hours-closed { font-size: 12px; color: var(--tx-faint); font-style: italic; }
+.ov-events-list { display: flex; flex-direction: column; gap: 10px; }
+.ov-event-row { display: flex; align-items: center; gap: 12px; }
+.ov-event-date { display: flex; flex-direction: column; align-items: center; background: var(--bg-elevated); border-radius: 6px; padding: 5px 9px; min-width: 40px; flex-shrink: 0; }
+.ov-event-month { font-size: 9px; font-weight: 700; letter-spacing: 0.06em; color: var(--accent); text-transform: uppercase; line-height: 1.2; }
+.ov-event-day { font-size: 17px; font-weight: 700; color: var(--tx-primary); line-height: 1.1; font-family: 'DM Mono', monospace; }
+.ov-event-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ov-event-title { font-size: 13px; font-weight: 600; color: var(--tx-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-event-time { font-size: 11px; color: var(--tx-faint); }
+
+/* Open Today */
+.ov-faint { font-size: 13px; color: var(--tx-faint); font-style: italic; margin-top: 2px; }
+.ov-open-badge { display: inline-block; background: #16a34a22; color: #4ade80; border-radius: 4px; padding: 2px 10px; font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+.ov-closed-badge { display: inline-block; background: #ff174422; color: var(--accent); border-radius: 4px; padding: 2px 10px; font-size: 12px; font-weight: 700; }
+.ov-today-hours { font-size: 13px; color: var(--tx-primary); font-family: 'DM Mono', monospace; }
+
+/* Next Event highlight */
+.ov-next-event { background: var(--bg-elevated); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+.ov-next-label { font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+.ov-next-body { display: flex; align-items: center; gap: 12px; }
+.ov-next-title { font-size: 14px !important; }
+.ov-events-rest { border-top: 1px solid var(--bdr-subtle); padding-top: 10px; }
+.ov-event-date-sm .ov-event-day { font-size: 14px !important; }
+
+/* Managers */
+.ov-managers-card { margin-top: 16px; }
+.ov-managers-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.ov-manager-chip { background: var(--bg-elevated); border: 1px solid var(--bdr-subtle); border-radius: 20px; padding: 4px 14px; font-size: 13px; color: var(--tx-primary); font-weight: 500; }
 
 .my-requests-section { margin-top: 28px; }
 .section-title { font-size: 15px; font-weight: 600; color: var(--tx-heading); margin-bottom: 12px; }
@@ -1532,6 +1727,15 @@ async function saveBufferTime() {
 .setting-unit { font-size: 13px; color: var(--tx-muted); }
 .save-success { font-size: 12px; color: #22c55e; margin-top: 4px; }
 .save-error   { font-size: 12px; color: var(--err-text); margin-top: 4px; }
+
+/* ── Manager settings ── */
+.mgr-setting-row { align-items: flex-start; flex-direction: column; gap: 16px; }
+.mgr-setting-body { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.mgr-setting-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bg-elevated); border-radius: 8px; }
+.mgr-setting-name { flex: 1; font-size: 14px; color: var(--tx-primary); }
+.mgr-you-badge { font-size: 11px; font-weight: 600; color: var(--tx-faint); background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 10px; padding: 1px 8px; }
+.mgr-add-row { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+.mgr-select { flex: 1; background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary); padding: 8px 10px; border-radius: 8px; font-size: 14px; outline: none; }
 
 /* ── Shared ── */
 .action-btns { display: flex; gap: 6px; }

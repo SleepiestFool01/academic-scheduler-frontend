@@ -36,6 +36,7 @@ export const updateSettingValue   = (id, value)     => apiClient.put(`/setting-v
 
 // ── Manager ↔ Department (multi-dept junction) ────────────────────────────────
 export const getManagerDepartments  = (id_employee)            => apiClient.get(`/manager-departments?id_employee=${id_employee}`);
+export const getDeptManagers        = (id_department)          => apiClient.get(`/manager-departments?id_department=${id_department}`);
 export const createManagerDepartment = (data)                  => apiClient.post(`/manager-departments`, data);
 export const deleteManagerDepartment = (id_managerDepartment)  => apiClient.delete(`/manager-departments/${id_managerDepartment}`);
 

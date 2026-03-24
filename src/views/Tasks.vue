@@ -261,7 +261,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
+import { useDepartment } from "../composables/useDepartment.js";
 import { useRouter } from "vue-router";
 import apiClient from "../services/services.js";
 import { getShiftTaskLists } from "../services/taskService.js";
@@ -275,11 +276,15 @@ const taskSearch = ref("");
 const taskLists = ref([]);
 const tasks     = ref([]);
 
+const { selectedDeptId } = useDepartment();
+
 async function loadAll() {
   loading.value = true; apiError.value = "";
   try {
+    const deptId = selectedDeptId.value;
+    const qs = deptId ? `?id_department=${deptId}` : "";
     const [listsRes, tasksRes] = await Promise.all([
-      apiClient.get("/task-lists"),
+      apiClient.get(`/task-lists${qs}`),
       apiClient.get("/tasks"),
     ]);
     taskLists.value = listsRes.data;
@@ -290,6 +295,7 @@ async function loadAll() {
     loading.value = false;
   }
 }
+watch(selectedDeptId, () => { loadAll(); loadShifts(); });
 onMounted(() => { loadAll(); loadShifts(); });
 
 // ── Shifts (for task list assignment) ─────────────────────────────────────────
@@ -429,7 +435,7 @@ async function saveModal() {
         const idx = taskLists.value.findIndex(l => l.id_taskList === editId);
         if (idx !== -1) taskLists.value[idx] = { ...taskLists.value[idx], ...data };
       } else {
-        const res = await apiClient.post("/task-lists", data);
+        const res = await apiClient.post("/task-lists", { ...data, id_department: selectedDeptId.value || null });
         taskLists.value.push(res.data);
       }
     } else {
