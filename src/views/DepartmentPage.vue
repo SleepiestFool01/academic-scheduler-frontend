@@ -269,6 +269,49 @@
             </div>
           </div>
 
+          <!-- ════ EMPLOYEES TAB ════ -->
+          <div v-else-if="activeTab === 'Employees'" class="tab-panel">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">Employees</h2>
+                <p class="panel-sub">{{ employees.length }} member{{ employees.length !== 1 ? 's' : '' }}</p>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;">
+                <input v-model="empSearch" class="search-input" placeholder="Search by name or email…" />
+                <button class="primary-btn" @click="openCreateEmployee">+ Add Employee</button>
+              </div>
+            </div>
+            <div v-if="employees.length === 0" class="empty-state">No employees yet. Add one to get started.</div>
+            <div v-else class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="emp in filteredEmployees" :key="emp.id_employee">
+                    <td>
+                      <div class="emp-name-cell">
+                        <div class="emp-avatar" :style="{ background: empColor(emp) }">{{ empInitials(emp) }}</div>
+                        {{ emp.fName }} {{ emp.lName }}
+                      </div>
+                    </td>
+                    <td class="muted">{{ emp.email }}</td>
+                    <td><span class="role-badge" :class="emp.role?.toLowerCase()">{{ emp.role }}</span></td>
+                    <td>
+                      <div class="action-btns">
+                        <button class="icon-action" title="Edit" @click="openEditEmployee(emp)">✎</button>
+                        <button class="icon-action danger" title="Remove" @click="confirmDeleteEmployee(emp)">✕</button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr v-if="filteredEmployees.length === 0">
+                    <td colspan="4" class="empty-row">No employees match your search.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- ════ HOURS TAB ════ -->
           <div v-else-if="activeTab === 'Hours'" class="tab-panel">
             <div class="panel-header">
@@ -616,6 +659,62 @@
       </Transition>
 
       <!-- ══════════════════════════════════════
+           EMPLOYEE MODAL
+      ══════════════════════════════════════ -->
+      <Transition name="modal">
+        <div v-if="empModal2.open" class="modal-overlay" @click.self="empModal2.open = false">
+          <div class="modal">
+            <h3 class="modal-title">{{ empModal2.isEdit ? 'Edit Employee' : 'Add Employee' }}</h3>
+            <div class="form-group">
+              <label>First Name</label>
+              <input v-model="empModal2.data.fName" type="text" placeholder="Jane" />
+            </div>
+            <div class="form-group">
+              <label>Last Name</label>
+              <input v-model="empModal2.data.lName" type="text" placeholder="Smith" />
+            </div>
+            <div class="form-group">
+              <label>Email</label>
+              <input v-model="empModal2.data.email" type="text" placeholder="jane@example.com" />
+            </div>
+            <div class="form-group">
+              <label>Role</label>
+              <select v-model="empModal2.data.role">
+                <option value="Employee">Employee</option>
+                <option value="Manager">Manager</option>
+                <option value="Admin">Admin</option>
+              </select>
+            </div>
+            <p v-if="empModal2.error" class="modal-error">{{ empModal2.error }}</p>
+            <div class="modal-actions">
+              <button class="cancel-btn" @click="empModal2.open = false">Cancel</button>
+              <button class="confirm-btn" :disabled="empModal2.saving" @click="saveEmployee">
+                {{ empModal2.saving ? 'Saving…' : empModal2.isEdit ? 'Save Changes' : 'Add Employee' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- ══════════════════════════════════════
+           DELETE EMPLOYEE CONFIRM
+      ══════════════════════════════════════ -->
+      <Transition name="modal">
+        <div v-if="deleteEmpConfirm.open" class="modal-overlay" @click.self="deleteEmpConfirm.open = false">
+          <div class="modal modal-sm">
+            <h3 class="modal-title">Remove {{ deleteEmpConfirm.emp?.fName }} {{ deleteEmpConfirm.emp?.lName }}?</h3>
+            <p class="modal-body-text">This will permanently delete the employee.</p>
+            <div class="modal-actions">
+              <button class="cancel-btn" @click="deleteEmpConfirm.open = false">Cancel</button>
+              <button class="confirm-btn danger" :disabled="deleteEmpConfirm.saving" @click="executeDeleteEmployee">
+                {{ deleteEmpConfirm.saving ? 'Deleting…' : 'Delete' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- ══════════════════════════════════════
            DELETE CONFIRM
       ══════════════════════════════════════ -->
       <Transition name="modal">
@@ -690,7 +789,7 @@ const userInitials = computed(() => {
 });
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-const TABS    = ["Overview", "Positions", "Hours", "Events", "Settings"];
+const TABS    = ["Overview", "Positions", "Employees", "Hours", "Events", "Settings"];
 const DAYS    = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -707,6 +806,7 @@ const allDepts = ref([]); // all departments in system (for request modal)
 const department      = ref({});
 const positions       = ref([]);
 const employees       = ref([]);
+const allStaff        = ref([]); // unfiltered — used for manager name lookups
 const calendarEntries = ref([]);
 const events          = ref([]);
 const deptManagerLinks = ref([]);
@@ -796,22 +896,29 @@ async function loadDeptData(id) {
   if (!id) return;
   loading.value  = true;
   apiError.value = "";
+  // Clear dept-specific data immediately so stale data from the previous dept never shows
+  calendarEntries.value = [];
+  events.value          = [];
+  positions.value       = [];
+  employees.value       = [];
   try {
-    const [deptRes, posRes, empRes, calRes, evtRes, mgrRes] = await Promise.allSettled([
+    const [deptRes, posRes, empRes, allStaffRes, calRes, evtRes, mgrRes] = await Promise.allSettled([
       getDepartment(id),
       getPositions(id),
+      getEmployees(id),
       getEmployees(),
       getCalendarEntries(id),
       getEvents(id),
       getDeptManagers(id),
     ]);
 
-    if (deptRes.status === "fulfilled") department.value       = deptRes.value.data || {};
-    if (posRes.status  === "fulfilled") positions.value        = posRes.value.data  || [];
-    if (empRes.status  === "fulfilled") employees.value        = empRes.value.data  || [];
-    if (calRes.status  === "fulfilled") calendarEntries.value  = calRes.value.data  || [];
-    if (evtRes.status  === "fulfilled") events.value           = evtRes.value.data  || [];
-    if (mgrRes.status  === "fulfilled") deptManagerLinks.value = mgrRes.value.data  || [];
+    if (deptRes.status      === "fulfilled") department.value       = deptRes.value.data      || {};
+    if (posRes.status       === "fulfilled") positions.value        = posRes.value.data       || [];
+    if (empRes.status       === "fulfilled") employees.value        = empRes.value.data       || [];
+    if (allStaffRes.status  === "fulfilled") allStaff.value         = allStaffRes.value.data  || [];
+    if (calRes.status       === "fulfilled") calendarEntries.value  = calRes.value.data       || [];
+    if (evtRes.status       === "fulfilled") events.value           = evtRes.value.data       || [];
+    if (mgrRes.status       === "fulfilled") deptManagerLinks.value = mgrRes.value.data       || [];
   } catch (err) {
     apiError.value = "Could not load department data: " + (err.message || "Network error");
   } finally {
@@ -859,7 +966,7 @@ const todayEntry = computed(() => {
 const deptManagers = computed(() => {
   const links = deptManagerLinks.value;
   return links.map(link => {
-    const emp = employees.value.find(e => e.id_employee === link.id_employee);
+    const emp = allStaff.value.find(e => e.id_employee === link.id_employee);
     return emp ? `${emp.fName} ${emp.lName}` : null;
   }).filter(Boolean);
 });
@@ -877,7 +984,7 @@ const assignableManagers = computed(() => {
 });
 
 function managerName(id_employee) {
-  const emp = employees.value.find(e => e.id_employee === id_employee);
+  const emp = allStaff.value.find(e => e.id_employee === id_employee);
   return emp ? `${emp.fName} ${emp.lName}` : `Employee #${id_employee}`;
 }
 
@@ -1047,6 +1154,79 @@ const empModal = ref({
 const COLORS = ["#FF1744","#C0392B","#E8724A","#9B6B9B","#4A90A4","#C8973A","#D4756B","#6C8EAD"];
 function empColor(emp)    { return emp?.color || COLORS[(emp?.id_employee || 0) % COLORS.length]; }
 function empInitials(emp) { return `${emp?.fName?.[0] || ""}${emp?.lName?.[0] || ""}`.toUpperCase() || "?"; }
+
+// ── Employee tab ───────────────────────────────────────────────────────────────
+const empSearch = ref("");
+const filteredEmployees = computed(() => {
+  const q = empSearch.value.toLowerCase();
+  if (!q) return employees.value;
+  return employees.value.filter(e =>
+    `${e.fName} ${e.lName} ${e.email}`.toLowerCase().includes(q)
+  );
+});
+
+const empModal2 = ref({ open: false, isEdit: false, editId: null, data: {}, saving: false, error: "" });
+const deleteEmpConfirm = ref({ open: false, emp: null, saving: false });
+
+function openCreateEmployee() {
+  empModal2.value = {
+    open: true, isEdit: false, editId: null,
+    data: { fName: "", lName: "", email: "", role: "Employee" },
+    saving: false, error: "",
+  };
+}
+function openEditEmployee(emp) {
+  empModal2.value = {
+    open: true, isEdit: true, editId: emp.id_employee,
+    data: { fName: emp.fName, lName: emp.lName, email: emp.email, role: emp.role },
+    saving: false, error: "",
+  };
+}
+function confirmDeleteEmployee(emp) {
+  deleteEmpConfirm.value = { open: true, emp, saving: false };
+}
+
+async function saveEmployee() {
+  const { isEdit, editId, data } = empModal2.value;
+  if (!data.fName || !data.lName || !data.email) {
+    empModal2.value.error = "First name, last name, and email are required.";
+    return;
+  }
+  empModal2.value.saving = true;
+  empModal2.value.error  = "";
+  try {
+    if (isEdit) {
+      await apiClient.put(`/employees/${editId}`, data);
+      const idx = employees.value.findIndex(e => e.id_employee === editId);
+      if (idx !== -1) employees.value[idx] = { ...employees.value[idx], ...data };
+    } else {
+      const res = await apiClient.post("/employees/create-employee", {
+        ...data,
+        id_department: selectedDeptId.value || null,
+      });
+      employees.value.push(res.data);
+    }
+    empModal2.value.open = false;
+  } catch (err) {
+    empModal2.value.error = err.response?.data?.message || err.message || "Save failed.";
+  } finally {
+    empModal2.value.saving = false;
+  }
+}
+
+async function executeDeleteEmployee() {
+  deleteEmpConfirm.value.saving = true;
+  try {
+    await apiClient.delete(`/employees/${deleteEmpConfirm.value.emp.id_employee}`);
+    employees.value = employees.value.filter(e => e.id_employee !== deleteEmpConfirm.value.emp.id_employee);
+    deleteEmpConfirm.value.open = false;
+  } catch (err) {
+    apiError.value = "Delete failed: " + err.message;
+    deleteEmpConfirm.value.open = false;
+  } finally {
+    deleteEmpConfirm.value.saving = false;
+  }
+}
 function empNameById(id)  { const e = employees.value.find(e => e.id_employee === id); return e ? `${e.fName} ${e.lName}` : `Employee #${id}`; }
 
 const unassignedEmployees = computed(() => {
@@ -1697,6 +1877,13 @@ async function saveBufferTime() {
 .data-table td { padding: 12px 16px; border-bottom: 1px solid var(--bdr-strong); color: var(--tx-secondary); vertical-align: middle; }
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tr:hover td { background: var(--bg-input); }
+.empty-row { text-align: center; color: var(--tx-faint); padding: 32px 0 !important; }
+.emp-name-cell { display: flex; align-items: center; gap: 10px; }
+.emp-avatar { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0; }
+.role-badge { display: inline-block; padding: 2px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; background: var(--bg-active); color: var(--tx-secondary); }
+.role-badge.manager, .role-badge.admin { background: rgba(255,23,68,0.15); color: #FF1744; }
+.search-input { background: var(--bg-input); border: 1px solid var(--bdr-subtle); border-radius: 8px; padding: 8px 14px; color: var(--tx-primary); font-family: inherit; font-size: 13px; outline: none; width: 220px; }
+.search-input:focus { border-color: var(--accent); }
 .day-badge { display: inline-block; padding: 2px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; background: var(--bg-active); color: var(--tx-secondary); }
 .mono { font-family: 'DM Mono', monospace; font-size: 12px; }
 

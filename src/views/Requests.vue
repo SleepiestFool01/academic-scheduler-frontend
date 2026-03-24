@@ -231,8 +231,10 @@ function deptNameById(id) { return allDepts.value.find(d => d.id_department === 
 async function loadAll() {
   loading.value = true; apiError.value = "";
   try {
+    const deptId = selectedDeptId.value;
+    const deptQs = deptId ? `?id_department=${deptId}` : "";
     const [empRes, availRes, deptRes] = await Promise.all([
-      apiClient.get("/employees"),
+      apiClient.get(`/employees${deptQs}`),
       apiClient.get("/personal-availability"),
       getAllDepartments(),
     ]);
@@ -241,7 +243,10 @@ async function loadAll() {
     for (const e of empRes.data) empMap.value[e.id_employee] = e;
     allDepts.value = deptRes.data || [];
 
-    availability.value = availRes.data.map(a => ({ ...a, status: "pending" }));
+    const deptEmpIds = new Set(empRes.data.map(e => e.id_employee));
+    availability.value = availRes.data
+      .filter(a => deptEmpIds.has(a.id_employee))
+      .map(a => ({ ...a, status: "pending" }));
   } catch (err) {
     apiError.value = "Could not load data: " + (err.message || "Network error");
   } finally {
