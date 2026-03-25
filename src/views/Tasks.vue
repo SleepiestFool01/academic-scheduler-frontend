@@ -23,7 +23,7 @@
         <button class="nav-tab" :class="{ active: activeTab === 'tasks' }" @click="activeTab = 'tasks'">All Tasks</button>
       </div>
       <div class="nav-right">
-        <button class="primary-btn" @click="openCreateModal">
+        <button v-if="isManager" class="primary-btn" @click="openCreateModal">
           + {{ activeTab === 'lists' ? 'New Task List' : 'New Task' }}
         </button>
       </div>
@@ -42,7 +42,6 @@
         <div class="panel-header">
           <div>
             <h2 class="panel-title">Task Lists</h2>
-            <p class="panel-sub">Group tasks into lists you can assign to shifts (e.g. "Opening Checklist")</p>
           </div>
         </div>
 
@@ -59,7 +58,7 @@
                 <h3 class="list-name">{{ list.name }}</h3>
                 <p class="list-desc">{{ list.description || 'No description' }}</p>
               </div>
-              <div class="action-btns">
+              <div v-if="isManager" class="action-btns">
                 <button class="icon-action" @click="openEditList(list)">✎</button>
                 <button class="icon-action danger" @click="confirmDelete('list', list)">✕</button>
               </div>
@@ -70,7 +69,7 @@
                 <span class="task-bullet">·</span>
                 <span class="task-name">{{ task.name }}</span>
                 <span class="task-desc">{{ task.description }}</span>
-                <div class="task-actions">
+                <div v-if="isManager" class="task-actions">
                   <button class="icon-action sm" @click="openEditTask(task)">✎</button>
                   <button class="icon-action sm danger" @click="confirmDelete('task', task)">✕</button>
                 </div>
@@ -78,11 +77,13 @@
               <div v-if="tasksForList(list.id_taskList).length === 0" class="no-tasks">No tasks in this list yet.</div>
             </div>
 
-            <div class="list-btn-row">
-              <button class="add-task-btn" @click="openCreateTaskInList(list)">+ New Task</button>
-              <button class="add-task-btn" @click="openAddExisting(list)">+ Add Existing</button>
-            </div>
-            <button class="assign-shift-btn" @click="openAssignShift(list)">⟶ Assign to Shift</button>
+            <template v-if="isManager">
+              <div class="list-btn-row">
+                <button class="add-task-btn" @click="openCreateTaskInList(list)">+ New Task</button>
+                <button class="add-task-btn" @click="openAddExisting(list)">+ Add Existing</button>
+              </div>
+              <button class="assign-shift-btn" @click="openAssignShift(list)">⟶ Assign to Shift</button>
+            </template>
           </div>
         </div>
       </div>
@@ -100,14 +101,17 @@
         <div class="table-wrap">
           <table class="data-table">
             <thead>
-              <tr><th>Task</th><th>Description</th><th>Task List</th><th>Actions</th></tr>
+              <tr>
+                <th>Task</th><th>Description</th><th>Task List</th>
+                <th v-if="isManager">Actions</th>
+              </tr>
             </thead>
             <tbody>
               <tr v-for="task in filteredTasks" :key="task.id_task">
                 <td class="task-name-cell">{{ task.name }}</td>
                 <td class="muted">{{ task.description }}</td>
                 <td><span class="list-badge">{{ listName(task.id_taskList) }}</span></td>
-                <td>
+                <td v-if="isManager">
                   <div class="action-btns">
                     <button class="icon-action" @click="openEditTask(task)">✎</button>
                     <button class="icon-action danger" @click="confirmDelete('task', task)">✕</button>
@@ -264,10 +268,13 @@
 import { ref, computed, onMounted, watch } from "vue";
 import { useDepartment } from "../composables/useDepartment.js";
 import { useRouter } from "vue-router";
+import Utils from "../config/utils.js";
 import apiClient from "../services/services.js";
 import { getShiftTaskLists } from "../services/taskService.js";
 
 const router     = useRouter();
+const currentUser = Utils.getStore("user") || {};
+const isManager  = currentUser.role === "Manager" || currentUser.role === "Admin";
 const loading    = ref(false);
 const apiError   = ref("");
 const activeTab  = ref("lists");
