@@ -169,7 +169,6 @@ const loading     = ref(false);
 const apiError    = ref("");
 
 const { selectedDeptId, myDepts, loadDepts } = useDepartment();
-const isManager = computed(() => currentUser.value?.role === "Manager" || currentUser.value?.role === "Admin");
 
 const userInitials = computed(() => {
   const u = currentUser.value;
@@ -221,13 +220,8 @@ async function loadShifts() {
     const posMap = {};
     for (const p of posRes.data) posMap[p.id_position] = p;
 
-    let shifts = await fetchShiftsWithAssignments(empMap, posMap, deptId);
-    shifts = shifts.filter(s => s.date >= weekStart && s.date <= weekEnd);
-    // Employees only see their own shifts
-    if (!isManager.value) {
-      shifts = shifts.filter(s => s.id_employee === currentUser.value.id_employee);
-    }
-    allShifts.value = shifts;
+    const shifts = await fetchShiftsWithAssignments(empMap, posMap, deptId);
+    allShifts.value = shifts.filter(s => s.date >= weekStart && s.date <= weekEnd);
   } catch (err) {
     apiError.value = "Could not load shifts: " + (err.message || "Network error");
   } finally {

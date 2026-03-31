@@ -128,7 +128,7 @@
             <button v-for="v in ['Day','Week','Month']" :key="v" class="view-btn"
               :class="{ active: calView === v }" @click="setView(v)">{{ v }}</button>
           </div>
-          <button v-if="isManager" class="add-shift-btn" @click="openBlankModal"><span>+</span> Add Shift</button>
+          <button class="add-shift-btn" @click="openBlankModal"><span>+</span> Add Shift</button>
         </div>
 
         <!-- ════════════════════════════════════
@@ -486,7 +486,7 @@
             @click="openShiftTasksModal(selectedShift)">
             Tasks
           </button>
-          <button v-if="isManager" class="popover-delete" @click="deleteShift(selectedShift.id)">Delete</button>
+          <button class="popover-delete" @click="deleteShift(selectedShift.id)">Delete</button>
         </div>
       </div>
     </Transition>
@@ -543,7 +543,7 @@
         <div class="sel-divider"></div>
         <button class="sel-btn" @click="copySelectedShifts" title="Copy (⌘C / Ctrl+C)">Copy</button>
         <button class="sel-btn" @click="pasteDashShifts" :disabled="dashClipboard.length === 0" title="Paste (⌘V / Ctrl+V)">Paste</button>
-        <button v-if="isManager" class="sel-btn sel-btn--delete" @click="deleteSelectedShifts" title="Delete (Del)">Delete</button>
+        <button class="sel-btn sel-btn--delete" @click="deleteSelectedShifts" title="Delete (Del)">Delete</button>
         <button class="sel-btn sel-btn--clear" @click="clearSelection" title="Clear (Esc)">✕</button>
       </template>
     </div>
@@ -1712,7 +1712,7 @@ function onDashKeydown(e) {
     undoLastAction();
     return;
   }
-  if ((e.key === "Delete" || e.key === "Backspace") && selectedShiftIds.value.size > 0 && isManager.value) {
+  if ((e.key === "Delete" || e.key === "Backspace") && selectedShiftIds.value.size > 0) {
     if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
     e.preventDefault();
     deleteSelectedShifts();
