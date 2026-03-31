@@ -1,5 +1,5 @@
 import { ref } from "vue";
-import { getManagerDepartments, getAllDepartments } from "../services/departmentService.js";
+import { getManagerDepartments, getAllDepartments, createManagerDepartment } from "../services/departmentService.js";
 import Utils from "../config/utils.js";
 
 const STORAGE_KEY = "selectedDeptId";
@@ -27,8 +27,16 @@ async function loadDepts(user) {
     const allDepts    = allDeptsRes.status  === "fulfilled" ? (allDeptsRes.value.data  || []) : [];
     const junctionRows = junctionRes.status === "fulfilled" ? (junctionRes.value.data || []) : [];
 
-    const deptIdSet = new Set(junctionRows.map(j => Number(j.id_department)));
+    const junctionDeptIds = new Set(junctionRows.map(j => Number(j.id_department)));
+    const deptIdSet = new Set(junctionDeptIds);
     if (primaryId) deptIdSet.add(Number(primaryId));
+
+    // Backfill any missing junction rows (e.g. manager added via id_department directly)
+    if (empId && primaryId && !junctionDeptIds.has(Number(primaryId))) {
+      try {
+        await createManagerDepartment({ id_employee: empId, id_department: primaryId });
+      } catch (_) { /* ignore duplicate / error */ }
+    }
 
     myDepts.value = allDepts.filter(d => deptIdSet.has(d.id_department));
 
