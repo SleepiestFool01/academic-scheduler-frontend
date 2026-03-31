@@ -479,7 +479,7 @@
         <div class="popover-day">{{ selectedShiftDateLabel }}</div>
         <div v-if="selectedShift.notes" class="popover-notes">{{ selectedShift.notes }}</div>
         <div class="popover-actions">
-          <button class="popover-edit" @click="editShift">Edit</button>
+          <button v-if="isManager" class="popover-edit" @click="editShift">Edit</button>
           <button
             v-if="isManager || selectedShift.id_employee === currentUser?.id_employee"
             class="popover-tasks"
