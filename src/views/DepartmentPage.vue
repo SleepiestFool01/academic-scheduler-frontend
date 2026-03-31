@@ -978,7 +978,9 @@ const managerError   = ref("");
 
 const assignableManagers = computed(() => {
   const linked = new Set(deptManagerLinks.value.map(l => l.id_employee));
-  return employees.value.filter(e => !linked.has(e.id_employee));
+  return employees.value.filter(e =>
+    (e.role === 'Manager' || e.role === 'Admin') && !linked.has(e.id_employee)
+  );
 });
 
 function managerName(id_employee) {
@@ -996,13 +998,6 @@ async function addManager() {
       id_department: selectedDeptId.value,
     });
     deptManagerLinks.value.push(res.data);
-    // Sync role in Employees tab
-    const empId = Number(addManagerId.value);
-    const emp = employees.value.find(e => e.id_employee === empId);
-    if (emp && emp.role !== 'Manager' && emp.role !== 'Admin') {
-      await apiClient.put(`/employees/${empId}`, { ...emp, role: 'Manager' });
-      emp.role = 'Manager';
-    }
     addManagerId.value = "";
   } catch (err) {
     managerError.value = err.message || "Failed to add manager.";
@@ -1018,12 +1013,6 @@ async function removeManager(link) {
     deptManagerLinks.value = deptManagerLinks.value.filter(
       l => l.id_managerDepartment !== link.id_managerDepartment
     );
-    // Sync role in Employees tab
-    const emp = employees.value.find(e => e.id_employee === link.id_employee);
-    if (emp && emp.role === 'Manager') {
-      await apiClient.put(`/employees/${emp.id_employee}`, { ...emp, role: 'Employee' });
-      emp.role = 'Employee';
-    }
   } catch (err) {
     managerError.value = err.message || "Failed to remove manager.";
   }
@@ -1207,31 +1196,9 @@ async function saveEmployee() {
   empModal2.value.error  = "";
   try {
     if (isEdit) {
-      const prevEmp = employees.value.find(e => e.id_employee === editId);
-      const prevRole = prevEmp?.role;
       await apiClient.put(`/employees/${editId}`, data);
       const idx = employees.value.findIndex(e => e.id_employee === editId);
       if (idx !== -1) employees.value[idx] = { ...employees.value[idx], ...data };
-      // Sync deptManagerLinks if role changed
-      const newRole = data.role;
-      if (prevRole !== newRole) {
-        const isNowManager = newRole === 'Manager' || newRole === 'Admin';
-        const wasManager   = prevRole === 'Manager' || prevRole === 'Admin';
-        const existingLink = deptManagerLinks.value.find(l => l.id_employee === editId);
-        if (isNowManager && !existingLink) {
-          try {
-            const res = await createManagerDepartment({ id_employee: editId, id_department: selectedDeptId.value });
-            deptManagerLinks.value.push(res.data);
-          } catch { /* non-fatal */ }
-        } else if (!isNowManager && wasManager && existingLink) {
-          try {
-            await deleteManagerDepartment(existingLink.id_managerDepartment);
-            deptManagerLinks.value = deptManagerLinks.value.filter(
-              l => l.id_managerDepartment !== existingLink.id_managerDepartment
-            );
-          } catch { /* non-fatal */ }
-        }
-      }
     } else {
       const res = await apiClient.post("/employees/create-employee", {
         ...data,
