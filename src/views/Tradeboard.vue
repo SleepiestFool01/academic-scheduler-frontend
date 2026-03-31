@@ -447,6 +447,7 @@ async function loadAll() {
         .map(r => r.id_shift)
     );
 
+    const today = new Date().toISOString().slice(0, 10);
     myShifts.value = assignRes.data
       .filter(a => a.id_employee === currentUser.value.id_employee && deptShiftIds.has(a.id_shift) && a.date >= today)
       .map(a => {
