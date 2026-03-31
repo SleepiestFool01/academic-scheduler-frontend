@@ -1201,6 +1201,7 @@ function getHourFromEvent(e, colEl) {
 // ── Drag handlers ──────────────────────────────────────────────────────────────
 function onColumnMouseDown(e, colIdx) {
   if (e.button !== 0) return;
+  if (!isManager.value) return;
   if (e.metaKey || e.ctrlKey) {
     rubberBand.value = { active: true, startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY };
     return;
