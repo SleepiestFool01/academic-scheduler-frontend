@@ -203,9 +203,9 @@
           </div>
 
           <div v-if="openTrades.length === 0" class="empty-card">
-            <p class="empty-icon"></p>
+            <p class="empty-icon">🔄</p>
             <p class="empty-title">Nothing on the board</p>
-            <p class="empty-sub">No shifts available right now.</p>
+            <p class="empty-sub">No shifts available right now. Check back later.</p>
           </div>
           <div v-else class="trade-grid">
             <div v-for="r in openTrades" :key="r.id_swapRequest" class="trade-card"
@@ -449,7 +449,7 @@ async function loadAll() {
 
     const today = new Date().toISOString().slice(0, 10);
     myShifts.value = assignRes.data
-      .filter(a => a.id_employee === currentUser.value.id_employee && deptShiftIds.has(a.id_shift) && a.date >= today)
+      .filter(a => a.id_employee === currentUser.value.id_employee && deptShiftIds.has(a.id_shift))
       .map(a => {
         const s = shiftById[a.id_shift];
         if (!s) return null;
@@ -480,26 +480,23 @@ onMounted(async () => {
 });
 
 // ── Computed sections ─────────────────────────────────────────────────────────
-const today = new Date().toISOString().slice(0, 10);
-const isUpcoming = r => r.shiftDate >= today;
-
 // Manager
 const needsApproval = computed(() =>
-  swapRequests.value.filter(r => isUpcoming(r) && r.status === "Pending" && r.id_employeeRequested != null)
+  swapRequests.value.filter(r => r.status === "Pending" && r.id_employeeRequested != null)
 );
 const openBoard = computed(() =>
-  swapRequests.value.filter(r => isUpcoming(r) && r.status === "Pending" && r.id_employeeRequested == null)
+  swapRequests.value.filter(r => r.status === "Pending" && r.id_employeeRequested == null)
 );
 const allRequests = computed(() => swapRequests.value);
 
 // Employee
 const openTrades = computed(() =>
-  // Unclaimed shifts: no claimer yet, still pending, upcoming only
-  swapRequests.value.filter(r => isUpcoming(r) && r.status === "Pending" && r.id_employeeRequested == null)
+  // Unclaimed shifts: no claimer yet, still pending
+  swapRequests.value.filter(r => r.status === "Pending" && r.id_employeeRequested == null)
 );
 const myClaims = computed(() =>
-  // Shifts I've claimed, awaiting approval, upcoming only
-  swapRequests.value.filter(r => isUpcoming(r) && r.status === "Pending" && r.id_employeeRequested === currentUser.value.id_employee)
+  // Shifts I've claimed, awaiting approval
+  swapRequests.value.filter(r => r.status === "Pending" && r.id_employeeRequested === currentUser.value.id_employee)
 );
 const myPosts = computed(() =>
   swapRequests.value.filter(r => r.id_employeeRequester === currentUser.value.id_employee)
