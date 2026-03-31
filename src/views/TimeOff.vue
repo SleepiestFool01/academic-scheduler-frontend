@@ -275,7 +275,7 @@ function shapeRequest(raw) {
   return {
     ...raw,
     id: raw.id_personalAvailability || uniqueId(),
-    type: raw.type || "PTO",
+    type: raw.requestType || raw.type || "PTO",
     duration: raw.duration || "full",
     reason: raw.reason || raw.notes || "",
     status: raw.status || "pending",
@@ -334,7 +334,7 @@ async function submitRequest() {
       endDate: form.value.endDate,
       startTime: normalizeTime(form.value.duration === "full" ? "00:00" : form.value.startTime),
       endTime: normalizeTime(form.value.duration === "full" ? "23:59" : (form.value.endTime || form.value.startTime)),
-      type: form.value.type,
+      requestType: form.value.type,
       duration: form.value.duration,
       reason: form.value.reason,
       status: "pending",
