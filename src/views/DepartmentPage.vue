@@ -30,6 +30,10 @@
               <rect x="15" y="14" width="11" height="7" rx="2" fill="#F0E6D3"/>
             </svg>
           </div>
+          <div v-if="!noDeptsYet" class="nav-dept-switcher">
+            <div class="nav-divider"></div>
+            <DeptSwitcher />
+          </div>
         </div>
         <div v-if="!noDeptsYet" class="nav-tabs">
           <button v-for="tab in TABS" :key="tab" class="nav-tab"
@@ -88,15 +92,6 @@
 
         <!-- ── Department header ── -->
         <div class="dept-header">
-          <!-- Department selector (multiple depts) -->
-          <div class="dept-selector-row" v-if="myDepts.length > 1">
-            <span class="dept-selector-label">Department:</span>
-            <select v-model="selectedDeptId" class="dept-selector" @change="onDeptChange">
-              <option v-for="d in myDepts" :key="d.id_department" :value="d.id_department">
-                {{ d.name }}
-              </option>
-            </select>
-          </div>
 
           <div class="dept-name-row">
             <div class="dept-color-dot"></div>
@@ -109,6 +104,9 @@
               <button class="save-inline-btn" @click="saveName" :disabled="savingName">✓</button>
               <button class="cancel-inline-btn" @click="cancelEditName">✕</button>
             </template>
+            <button class="request-access-btn" style="margin-left: auto;" @click="openRequestModal" title="Request access to manage another department">
+              + Request Another Department
+            </button>
           </div>
 
           <div class="dept-desc-row">
@@ -121,16 +119,6 @@
               <button class="save-inline-btn" @click="saveDesc" :disabled="savingDesc">✓</button>
               <button class="cancel-inline-btn" @click="cancelEditDesc">✕</button>
             </template>
-          </div>
-
-          <div class="dept-header-bottom">
-            <div class="dept-chips">
-              <span class="dept-chip">{{ employees.length }} Employees</span>
-              <span class="dept-chip">{{ positions.length }} Positions</span>
-            </div>
-            <button class="request-access-btn" @click="openRequestModal" title="Request access to manage another department">
-              + Request Another Department
-            </button>
           </div>
         </div>
 
@@ -149,14 +137,6 @@
             </div>
             <div class="overview-grid">
               <div class="overview-card">
-                <div class="ov-label">Department Name</div>
-                <div class="ov-value">{{ department.name || '—' }}</div>
-              </div>
-              <div class="overview-card">
-                <div class="ov-label">Description</div>
-                <div class="ov-value">{{ department.description || '—' }}</div>
-              </div>
-              <div class="overview-card">
                 <div class="ov-label">Employees</div>
                 <div class="ov-value ov-big">{{ employees.length }}</div>
               </div>
@@ -165,12 +145,86 @@
                 <div class="ov-value ov-big">{{ positions.length }}</div>
               </div>
               <div class="overview-card">
-                <div class="ov-label">Hours of Operation</div>
-                <div class="ov-value ov-big">{{ calendarEntries.length }}</div>
+                <div class="ov-label">Open Today</div>
+                <template v-if="!activeSeason">
+                  <div class="ov-value ov-faint">No active season</div>
+                </template>
+                <template v-else-if="todayEntry">
+                  <div class="ov-open-badge">Open</div>
+                  <div class="ov-today-hours">{{ fmtTime(todayEntry.startTime) }} – {{ fmtTime(todayEntry.endTime) }}</div>
+                </template>
+                <template v-else>
+                  <div class="ov-closed-badge">Closed</div>
+                </template>
               </div>
+            </div>
+
+            <div class="overview-wide-grid">
+              <!-- Hours of Operation -->
               <div class="overview-card">
-                <div class="ov-label">Upcoming Events</div>
-                <div class="ov-value ov-big">{{ events.length }}</div>
+                <div class="ov-label">
+                  Hours of Operation
+                  <span v-if="activeSeason" class="ov-season-badge">{{ activeSeason }}</span>
+                  <span v-else class="ov-no-season">No active season</span>
+                </div>
+                <div v-if="activeSeason" class="ov-hours-list">
+                  <div v-for="day in DAYS" :key="day" class="ov-hours-row">
+                    <span class="ov-hours-day">{{ day.slice(0, 3) }}</span>
+                    <span v-if="getEntryForSeasonDay(activeSeason, day)" class="ov-hours-time">
+                      {{ fmtTime(getEntryForSeasonDay(activeSeason, day).startTime) }} – {{ fmtTime(getEntryForSeasonDay(activeSeason, day).endTime) }}
+                    </span>
+                    <span v-else class="ov-hours-closed">Closed</span>
+                  </div>
+                </div>
+                <div v-else class="ov-empty-hint">Go to Hours to configure and activate a season.</div>
+              </div>
+
+              <!-- Upcoming Events + Next Event highlight -->
+              <div class="overview-card">
+                <div class="ov-label">
+                  Upcoming Events
+                  <span class="ov-count-badge">{{ upcomingEvents.length }}</span>
+                </div>
+                <div v-if="upcomingEvents.length === 0" class="ov-empty-hint">No upcoming events scheduled.</div>
+                <template v-else>
+                  <!-- Next Event highlight -->
+                  <div class="ov-next-event" v-if="nextEvent">
+                    <div class="ov-next-label">Next Up</div>
+                    <div class="ov-next-body">
+                      <div class="ov-event-date">
+                        <span class="ov-event-month">{{ eventMonth(nextEvent.start_time) }}</span>
+                        <span class="ov-event-day">{{ eventDay(nextEvent.start_time) }}</span>
+                      </div>
+                      <div class="ov-event-info">
+                        <span class="ov-event-title ov-next-title">{{ nextEvent.title }}</span>
+                        <span v-if="nextEvent.start_time" class="ov-event-time">{{ eventStartTime(nextEvent) }}</span>
+                        <span v-if="nextEvent.location" class="ov-event-time">📍 {{ nextEvent.location }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- Full list -->
+                  <div v-if="upcomingEvents.length > 1" class="ov-events-list ov-events-rest">
+                    <div v-for="ev in upcomingEvents.slice(1)" :key="ev.id_event" class="ov-event-row">
+                      <div class="ov-event-date ov-event-date-sm">
+                        <span class="ov-event-month">{{ eventMonth(ev.start_time) }}</span>
+                        <span class="ov-event-day">{{ eventDay(ev.start_time) }}</span>
+                      </div>
+                      <div class="ov-event-info">
+                        <span class="ov-event-title">{{ ev.title }}</span>
+                        <span v-if="ev.start_time" class="ov-event-time">{{ eventStartTime(ev) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Managers -->
+            <div class="overview-card ov-managers-card">
+              <div class="ov-label">Managers</div>
+              <div v-if="deptManagers.length === 0" class="ov-empty-hint">No managers assigned.</div>
+              <div v-else class="ov-managers-list">
+                <span v-for="name in deptManagers" :key="name" class="ov-manager-chip">{{ name }}</span>
               </div>
             </div>
 
@@ -215,39 +269,89 @@
             </div>
           </div>
 
+          <!-- ════ EMPLOYEES TAB ════ -->
+          <div v-else-if="activeTab === 'Employees'" class="tab-panel">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">Employees</h2>
+                <p class="panel-sub">{{ employees.length }} member{{ employees.length !== 1 ? 's' : '' }}</p>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;">
+                <input v-model="empSearch" class="search-input" placeholder="Search by name or email…" />
+                <button class="primary-btn" @click="openCreateEmployee">+ Add Employee</button>
+              </div>
+            </div>
+            <div v-if="employees.length === 0" class="empty-state">No employees yet. Add one to get started.</div>
+            <div v-else class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="emp in filteredEmployees" :key="emp.id_employee">
+                    <td>
+                      <div class="emp-name-cell">
+                        <div class="emp-avatar" :style="{ background: empColor(emp) }">{{ empInitials(emp) }}</div>
+                        {{ emp.fName }} {{ emp.lName }}
+                      </div>
+                    </td>
+                    <td class="muted">{{ emp.email }}</td>
+                    <td><span class="role-badge" :class="emp.role?.toLowerCase()">{{ emp.role }}</span></td>
+                    <td>
+                      <div class="action-btns">
+                        <button class="icon-action" title="Edit" @click="openEditEmployee(emp)">✎</button>
+                        <button class="icon-action danger" title="Remove" @click="confirmDeleteEmployee(emp)">✕</button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr v-if="filteredEmployees.length === 0">
+                    <td colspan="4" class="empty-row">No employees match your search.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- ════ HOURS TAB ════ -->
           <div v-else-if="activeTab === 'Hours'" class="tab-panel">
             <div class="panel-header">
               <div>
                 <h2 class="panel-title">Hours of Operation</h2>
-                <p class="panel-sub">{{ calendarEntries.length }} entr{{ calendarEntries.length !== 1 ? 'ies' : 'y' }}</p>
+                <p class="panel-sub">
+                  {{ groupedBySeasons.length }} season{{ groupedBySeasons.length !== 1 ? 's' : '' }}
+                  <span v-if="activeSeason" class="active-season-badge">{{ activeSeason }} active</span>
+                </p>
               </div>
-              <button class="primary-btn" @click="openCreateHours">+ Add Hours</button>
+              <button class="primary-btn" @click="openCreateSeason">+ Create Season</button>
             </div>
-            <div v-if="calendarEntries.length === 0" class="empty-state">No hours configured yet.</div>
-            <div v-else class="table-wrap">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Name</th><th>Day</th><th>Season</th><th>Open</th><th>Close</th><th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="entry in calendarEntries" :key="entry.id_hours_of_operation">
-                    <td>{{ entry.name || '—' }}</td>
-                    <td><span class="day-badge">{{ entry.dayOfWeek }}</span></td>
-                    <td>{{ entry.season || '—' }}</td>
-                    <td class="mono">{{ fmtTime(entry.startTime) }}</td>
-                    <td class="mono">{{ fmtTime(entry.endTime) }}</td>
-                    <td>
-                      <div class="action-btns">
-                        <button class="icon-action" @click="openEditHours(entry)">✎</button>
-                        <button class="icon-action danger" @click="confirmDeleteHours(entry)">✕</button>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            <div v-if="groupedBySeasons.length === 0" class="empty-state">No seasons configured yet. Create a season to set your hours of operation.</div>
+            <div v-else class="seasons-grid">
+              <div v-for="group in groupedBySeasons" :key="group.name" class="season-card"
+                :class="{ 'season-card--active': group.name === activeSeason }">
+                <div class="season-card-header">
+                  <div class="season-name-row">
+                    <span class="season-name">{{ group.name }}</span>
+                    <span v-if="group.name === activeSeason" class="active-chip">Active</span>
+                  </div>
+                  <div class="action-btns">
+                    <button class="icon-action" title="Edit Hours" @click="openSeasonHoursModal(group.name)">✎</button>
+                    <button class="icon-action danger" title="Delete Season" @click="confirmDeleteSeason(group.name)">✕</button>
+                  </div>
+                </div>
+                <div class="season-days">
+                  <div v-for="day in DAYS" :key="day" class="season-day-row">
+                    <span class="season-day-label">{{ day.slice(0, 3) }}</span>
+                    <span v-if="getEntryForSeasonDay(group.name, day)" class="season-day-hours mono">
+                      {{ fmtTime(getEntryForSeasonDay(group.name, day).startTime) }} – {{ fmtTime(getEntryForSeasonDay(group.name, day).endTime) }}
+                    </span>
+                    <span v-else class="season-day-closed">Closed</span>
+                  </div>
+                </div>
+                <div class="season-card-footer">
+                  <button v-if="group.name !== activeSeason" class="set-active-btn" @click="setActiveSeason(group.name)">Set Active</button>
+                  <button v-else class="set-active-btn active-set" @click="setActiveSeason('')">Deactivate</button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -308,6 +412,35 @@
               </div>
               <p v-if="bufferSaved"  class="save-success">Settings saved.</p>
               <p v-if="bufferError"  class="save-error">{{ bufferError }}</p>
+            </div>
+
+            <!-- Managers -->
+            <div class="settings-section">
+              <div class="setting-row mgr-setting-row">
+                <div class="setting-info">
+                  <div class="setting-label">Managers</div>
+                  <div class="setting-desc">Employees who can manage this department.</div>
+                </div>
+                <div class="mgr-setting-body">
+                  <div v-for="link in deptManagerLinks" :key="link.id_managerDepartment" class="mgr-setting-item">
+                    <span class="mgr-setting-name">{{ managerName(link.id_employee) }}</span>
+                    <span v-if="link.id_employee === currentUser.id_employee" class="mgr-you-badge">You</span>
+                    <button v-else class="icon-action danger" title="Remove" @click="removeManager(link)">✕</button>
+                  </div>
+                  <div class="mgr-add-row">
+                    <select v-model="addManagerId" class="mgr-select">
+                      <option value="">— Add a manager —</option>
+                      <option v-for="emp in assignableManagers" :key="emp.id_employee" :value="emp.id_employee">
+                        {{ emp.fName }} {{ emp.lName }}
+                      </option>
+                    </select>
+                    <button class="primary-btn" :disabled="!addManagerId || addingManager" @click="addManager">
+                      {{ addingManager ? 'Adding…' : 'Add' }}
+                    </button>
+                  </div>
+                  <p v-if="managerError" class="save-error">{{ managerError }}</p>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -430,46 +563,51 @@
       </Transition>
 
       <!-- ══════════════════════════════════════
-           HOURS MODAL
+           CREATE SEASON MODAL
       ══════════════════════════════════════ -->
       <Transition name="modal">
-        <div v-if="hoursModal.open" class="modal-overlay" @click.self="hoursModal.open = false">
+        <div v-if="createSeasonModal.open" class="modal-overlay" @click.self="createSeasonModal.open = false">
           <div class="modal">
-            <h3 class="modal-title">{{ hoursModal.isEdit ? 'Edit Hours' : 'Add Hours' }}</h3>
+            <h3 class="modal-title">Create Season</h3>
             <div class="form-group">
-              <label>Name <span class="optional">(optional)</span></label>
-              <input v-model="hoursModal.data.name" type="text" placeholder="e.g. Regular Hours" />
+              <label>Season Name</label>
+              <input v-model="createSeasonModal.name" type="text" placeholder="e.g. Fall 2024, Summer, Finals Week" @keyup.enter="submitCreateSeason" />
             </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Day</label>
-                <select v-model="hoursModal.data.dayOfWeek">
-                  <option v-for="d in DAYS" :key="d" :value="d">{{ d }}</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>Season <span class="optional">(optional)</span></label>
-                <select v-model="hoursModal.data.season">
-                  <option value="">— None —</option>
-                  <option v-for="s in SEASONS" :key="s" :value="s">{{ s }}</option>
-                </select>
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Open</label>
-                <input v-model="hoursModal.data.startTime" type="time" />
-              </div>
-              <div class="form-group">
-                <label>Close</label>
-                <input v-model="hoursModal.data.endTime" type="time" />
-              </div>
-            </div>
-            <p v-if="hoursModal.error" class="modal-error">{{ hoursModal.error }}</p>
+            <p v-if="createSeasonModal.error" class="modal-error">{{ createSeasonModal.error }}</p>
             <div class="modal-actions">
-              <button class="cancel-btn" @click="hoursModal.open = false">Cancel</button>
-              <button class="confirm-btn" :disabled="hoursModal.saving" @click="saveHours">
-                {{ hoursModal.saving ? 'Saving…' : hoursModal.isEdit ? 'Save Changes' : 'Create' }}
+              <button class="cancel-btn" @click="createSeasonModal.open = false">Cancel</button>
+              <button class="confirm-btn" @click="submitCreateSeason">Next: Set Hours</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- ══════════════════════════════════════
+           SEASON HOURS MODAL
+      ══════════════════════════════════════ -->
+      <Transition name="modal">
+        <div v-if="seasonHoursModal.open" class="modal-overlay" @click.self="seasonHoursModal.open = false">
+          <div class="modal modal-wide">
+            <h3 class="modal-title">{{ seasonHoursModal.seasonName }} — Hours</h3>
+            <div class="season-hours-table">
+              <div class="season-hours-header">
+                <span>Day</span><span>Open</span><span>Opens</span><span>Closes</span>
+              </div>
+              <div v-for="row in seasonHoursModal.days" :key="row.day" class="season-hours-row">
+                <span class="shm-day">{{ row.day }}</span>
+                <label class="shm-toggle">
+                  <input type="checkbox" v-model="row.open" />
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </label>
+                <input v-model="row.startTime" type="time" :disabled="!row.open" class="shm-time" />
+                <input v-model="row.endTime" type="time" :disabled="!row.open" class="shm-time" />
+              </div>
+            </div>
+            <p v-if="seasonHoursModal.error" class="modal-error">{{ seasonHoursModal.error }}</p>
+            <div class="modal-actions">
+              <button class="cancel-btn" @click="seasonHoursModal.open = false">Cancel</button>
+              <button class="confirm-btn" :disabled="seasonHoursModal.saving" @click="saveSeasonHours">
+                {{ seasonHoursModal.saving ? 'Saving…' : 'Save Hours' }}
               </button>
             </div>
           </div>
@@ -521,6 +659,62 @@
       </Transition>
 
       <!-- ══════════════════════════════════════
+           EMPLOYEE MODAL
+      ══════════════════════════════════════ -->
+      <Transition name="modal">
+        <div v-if="empModal2.open" class="modal-overlay" @click.self="empModal2.open = false">
+          <div class="modal">
+            <h3 class="modal-title">{{ empModal2.isEdit ? 'Edit Employee' : 'Add Employee' }}</h3>
+            <div class="form-group">
+              <label>First Name</label>
+              <input v-model="empModal2.data.fName" type="text" placeholder="Jane" />
+            </div>
+            <div class="form-group">
+              <label>Last Name</label>
+              <input v-model="empModal2.data.lName" type="text" placeholder="Smith" />
+            </div>
+            <div class="form-group">
+              <label>Email</label>
+              <input v-model="empModal2.data.email" type="text" placeholder="jane@example.com" />
+            </div>
+            <div class="form-group">
+              <label>Role</label>
+              <select v-model="empModal2.data.role">
+                <option value="Employee">Employee</option>
+                <option value="Manager">Manager</option>
+                <option value="Admin">Admin</option>
+              </select>
+            </div>
+            <p v-if="empModal2.error" class="modal-error">{{ empModal2.error }}</p>
+            <div class="modal-actions">
+              <button class="cancel-btn" @click="empModal2.open = false">Cancel</button>
+              <button class="confirm-btn" :disabled="empModal2.saving" @click="saveEmployee">
+                {{ empModal2.saving ? 'Saving…' : empModal2.isEdit ? 'Save Changes' : 'Add Employee' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- ══════════════════════════════════════
+           DELETE EMPLOYEE CONFIRM
+      ══════════════════════════════════════ -->
+      <Transition name="modal">
+        <div v-if="deleteEmpConfirm.open" class="modal-overlay" @click.self="deleteEmpConfirm.open = false">
+          <div class="modal modal-sm">
+            <h3 class="modal-title">Remove {{ deleteEmpConfirm.emp?.fName }} {{ deleteEmpConfirm.emp?.lName }}?</h3>
+            <p class="modal-body-text">This will permanently delete the employee.</p>
+            <div class="modal-actions">
+              <button class="cancel-btn" @click="deleteEmpConfirm.open = false">Cancel</button>
+              <button class="confirm-btn danger" :disabled="deleteEmpConfirm.saving" @click="executeDeleteEmployee">
+                {{ deleteEmpConfirm.saving ? 'Deleting…' : 'Delete' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- ══════════════════════════════════════
            DELETE CONFIRM
       ══════════════════════════════════════ -->
       <Transition name="modal">
@@ -546,6 +740,8 @@
 import { ref, computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import Utils from "../config/utils.js";
+import { useDepartment } from "../composables/useDepartment.js";
+import DeptSwitcher from "../components/DeptSwitcher.vue";
 import {
   getAllDepartments,
   getDepartment,
@@ -569,7 +765,8 @@ import {
   createSetting,
   createSettingValue,
   updateSettingValue,
-  getManagerDepartments,
+  deleteManagerDepartment,
+  getDeptManagers,
   createManagerDepartment,
   createDepartmentAccessRequest,
   getDepartmentAccessRequests,
@@ -592,9 +789,8 @@ const userInitials = computed(() => {
 });
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-const TABS    = ["Overview", "Positions", "Hours", "Events", "Settings"];
+const TABS    = ["Overview", "Positions", "Employees", "Hours", "Events", "Settings"];
 const DAYS    = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-const SEASONS = ["Fall","Winter","Spring","Summer","Finals"];
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const activeTab      = ref("Overview");
@@ -603,16 +799,17 @@ const loading        = ref(false);
 const apiError       = ref("");
 const noDeptsYet     = ref(false);
 
-// All departments this manager can access
-const myDepts        = ref([]); // [{ id_department, name, description }]
-const selectedDeptId = ref(null);
-const allDepts       = ref([]); // all departments in system (for request modal)
+// Department switcher — shared composable
+const { myDepts, selectedDeptId, loadDepts } = useDepartment();
+const allDepts = ref([]); // all departments in system (for request modal)
 
 const department      = ref({});
 const positions       = ref([]);
 const employees       = ref([]);
+const allStaff        = ref([]); // unfiltered — used for manager name lookups
 const calendarEntries = ref([]);
 const events          = ref([]);
+const deptManagerLinks = ref([]);
 
 // Pending access requests from this manager
 const myPendingRequests = ref([]);
@@ -634,10 +831,16 @@ async function submitCreateDepartment() {
     });
     const newDept = deptRes.data;
 
-    // 2. Link employee to new department
-    await apiClient.put(`/employees/${currentUser.value.id_employee}`, {
-      id_department: newDept.id_department,
-    });
+    // 2. Link employee to new department (primary field + junction table)
+    await Promise.all([
+      apiClient.put(`/employees/${currentUser.value.id_employee}`, {
+        id_department: newDept.id_department,
+      }),
+      createManagerDepartment({
+        id_employee:   currentUser.value.id_employee,
+        id_department: newDept.id_department,
+      }),
+    ]);
 
     // 3. Update localStorage
     const updated = { ...currentUser.value, id_department: newDept.id_department };
@@ -661,28 +864,19 @@ async function initLoad() {
   if (!isManager.value) return;
   initLoading.value = true;
   try {
-    const empId    = currentUser.value?.id_employee;
-    const primaryId = currentUser.value?.id_department ?? null;
+    const empId = currentUser.value?.id_employee;
 
-    // Load junction table + all depts in parallel
-    const [junctionRes, allDeptsRes] = await Promise.allSettled([
-      empId ? getManagerDepartments(empId) : Promise.resolve({ data: [] }),
+    // Delegate dept list loading to shared composable; also load allDepts for request modal
+    const [, allDeptsRes] = await Promise.allSettled([
+      loadDepts(currentUser.value),
       getAllDepartments(),
     ]);
-
     allDepts.value = allDeptsRes.status === "fulfilled" ? (allDeptsRes.value.data || []) : [];
-
-    const junctionRows = junctionRes.status === "fulfilled" ? (junctionRes.value.data || []) : [];
-    const deptIdSet = new Set(junctionRows.map(j => Number(j.id_department)));
-    if (primaryId) deptIdSet.add(Number(primaryId));
-
-    myDepts.value = allDepts.value.filter(d => deptIdSet.has(d.id_department));
 
     if (myDepts.value.length === 0) {
       noDeptsYet.value = true;
     } else {
       noDeptsYet.value = false;
-      selectedDeptId.value = myDepts.value[0].id_department;
       await loadDeptData(selectedDeptId.value);
     }
 
@@ -702,32 +896,43 @@ async function loadDeptData(id) {
   if (!id) return;
   loading.value  = true;
   apiError.value = "";
+  // Clear dept-specific data immediately so stale data from the previous dept never shows
+  calendarEntries.value = [];
+  events.value          = [];
+  positions.value       = [];
+  employees.value       = [];
   try {
-    const [deptRes, posRes, empRes, calRes, evtRes] = await Promise.allSettled([
+    const [deptRes, posRes, empRes, allStaffRes, calRes, evtRes, mgrRes] = await Promise.allSettled([
       getDepartment(id),
       getPositions(id),
+      getEmployees(id),
       getEmployees(),
       getCalendarEntries(id),
       getEvents(id),
+      getDeptManagers(id),
     ]);
 
-    if (deptRes.status === "fulfilled") department.value      = deptRes.value.data || {};
-    if (posRes.status  === "fulfilled") positions.value       = posRes.value.data  || [];
-    if (empRes.status  === "fulfilled") employees.value       = empRes.value.data  || [];
-    if (calRes.status  === "fulfilled") calendarEntries.value = calRes.value.data  || [];
-    if (evtRes.status  === "fulfilled") events.value          = evtRes.value.data  || [];
+    if (deptRes.status      === "fulfilled") department.value       = deptRes.value.data      || {};
+    if (posRes.status       === "fulfilled") positions.value        = posRes.value.data       || [];
+    if (empRes.status       === "fulfilled") employees.value        = empRes.value.data       || [];
+    if (allStaffRes.status  === "fulfilled") allStaff.value         = allStaffRes.value.data  || [];
+    if (calRes.status       === "fulfilled") calendarEntries.value  = calRes.value.data       || [];
+    if (evtRes.status       === "fulfilled") events.value           = evtRes.value.data       || [];
+    if (mgrRes.status       === "fulfilled") deptManagerLinks.value = mgrRes.value.data       || [];
   } catch (err) {
     apiError.value = "Could not load department data: " + (err.message || "Network error");
   } finally {
     loading.value = false;
   }
-  await loadBufferTime(id);
+  await Promise.all([loadBufferTime(id), loadActiveSeason(id)]);
 }
 
-function onDeptChange() {
+
+watch(selectedDeptId, (id) => {
+  if (!id || noDeptsYet.value) return;
   activeTab.value = "Overview";
-  loadDeptData(selectedDeptId.value);
-}
+  loadDeptData(id);
+});
 
 onMounted(initLoad);
 
@@ -743,6 +948,86 @@ function fmtTime(t) {
 const sortedEvents = computed(() =>
   [...events.value].sort((a, b) => (a.start_time || "") > (b.start_time || "") ? 1 : -1)
 );
+const upcomingEvents = computed(() =>
+  [...events.value]
+    .filter(e => e.start_time && new Date(e.start_time) >= new Date())
+    .sort((a, b) => a.start_time > b.start_time ? 1 : -1)
+    .slice(0, 5)
+);
+const nextEvent = computed(() => upcomingEvents.value[0] || null);
+
+const todayEntry = computed(() => {
+  if (!activeSeason.value) return null;
+  const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const today = dayNames[new Date().getDay()];
+  return getEntryForSeasonDay(activeSeason.value, today);
+});
+
+const deptManagers = computed(() => {
+  const links = deptManagerLinks.value;
+  return links.map(link => {
+    const emp = allStaff.value.find(e => e.id_employee === link.id_employee);
+    return emp ? `${emp.fName} ${emp.lName}` : null;
+  }).filter(Boolean);
+});
+
+// ── Manager assignment (Settings tab) ─────────────────────────────────────────
+const addManagerId   = ref("");
+const addingManager  = ref(false);
+const managerError   = ref("");
+
+const assignableManagers = computed(() => {
+  const linked = new Set(deptManagerLinks.value.map(l => l.id_employee));
+  return employees.value.filter(e => !linked.has(e.id_employee));
+});
+
+function managerName(id_employee) {
+  const emp = allStaff.value.find(e => e.id_employee === id_employee);
+  return emp ? `${emp.fName} ${emp.lName}` : `Employee #${id_employee}`;
+}
+
+async function addManager() {
+  if (!addManagerId.value) return;
+  addingManager.value = true;
+  managerError.value  = "";
+  try {
+    const res = await createManagerDepartment({
+      id_employee:   addManagerId.value,
+      id_department: selectedDeptId.value,
+    });
+    deptManagerLinks.value.push(res.data);
+    // Sync role in Employees tab
+    const empId = Number(addManagerId.value);
+    const emp = employees.value.find(e => e.id_employee === empId);
+    if (emp && emp.role !== 'Manager' && emp.role !== 'Admin') {
+      await apiClient.put(`/employees/${empId}`, { ...emp, role: 'Manager' });
+      emp.role = 'Manager';
+    }
+    addManagerId.value = "";
+  } catch (err) {
+    managerError.value = err.message || "Failed to add manager.";
+  } finally {
+    addingManager.value = false;
+  }
+}
+
+async function removeManager(link) {
+  managerError.value = "";
+  try {
+    await deleteManagerDepartment(link.id_managerDepartment);
+    deptManagerLinks.value = deptManagerLinks.value.filter(
+      l => l.id_managerDepartment !== link.id_managerDepartment
+    );
+    // Sync role in Employees tab
+    const emp = employees.value.find(e => e.id_employee === link.id_employee);
+    if (emp && emp.role === 'Manager') {
+      await apiClient.put(`/employees/${emp.id_employee}`, { ...emp, role: 'Employee' });
+      emp.role = 'Employee';
+    }
+  } catch (err) {
+    managerError.value = err.message || "Failed to remove manager.";
+  }
+}
 function eventMonth(dt) {
   if (!dt) return "—";
   return new Date(dt).toLocaleDateString("en-US", { month: "short" }).toUpperCase();
@@ -880,6 +1165,101 @@ const empModal = ref({
 const COLORS = ["#FF1744","#C0392B","#E8724A","#9B6B9B","#4A90A4","#C8973A","#D4756B","#6C8EAD"];
 function empColor(emp)    { return emp?.color || COLORS[(emp?.id_employee || 0) % COLORS.length]; }
 function empInitials(emp) { return `${emp?.fName?.[0] || ""}${emp?.lName?.[0] || ""}`.toUpperCase() || "?"; }
+
+// ── Employee tab ───────────────────────────────────────────────────────────────
+const empSearch = ref("");
+const filteredEmployees = computed(() => {
+  const q = empSearch.value.toLowerCase();
+  if (!q) return employees.value;
+  return employees.value.filter(e =>
+    `${e.fName} ${e.lName} ${e.email}`.toLowerCase().includes(q)
+  );
+});
+
+const empModal2 = ref({ open: false, isEdit: false, editId: null, data: {}, saving: false, error: "" });
+const deleteEmpConfirm = ref({ open: false, emp: null, saving: false });
+
+function openCreateEmployee() {
+  empModal2.value = {
+    open: true, isEdit: false, editId: null,
+    data: { fName: "", lName: "", email: "", role: "Employee" },
+    saving: false, error: "",
+  };
+}
+function openEditEmployee(emp) {
+  empModal2.value = {
+    open: true, isEdit: true, editId: emp.id_employee,
+    data: { fName: emp.fName, lName: emp.lName, email: emp.email, role: emp.role },
+    saving: false, error: "",
+  };
+}
+function confirmDeleteEmployee(emp) {
+  deleteEmpConfirm.value = { open: true, emp, saving: false };
+}
+
+async function saveEmployee() {
+  const { isEdit, editId, data } = empModal2.value;
+  if (!data.fName || !data.lName || !data.email) {
+    empModal2.value.error = "First name, last name, and email are required.";
+    return;
+  }
+  empModal2.value.saving = true;
+  empModal2.value.error  = "";
+  try {
+    if (isEdit) {
+      const prevEmp = employees.value.find(e => e.id_employee === editId);
+      const prevRole = prevEmp?.role;
+      await apiClient.put(`/employees/${editId}`, data);
+      const idx = employees.value.findIndex(e => e.id_employee === editId);
+      if (idx !== -1) employees.value[idx] = { ...employees.value[idx], ...data };
+      // Sync deptManagerLinks if role changed
+      const newRole = data.role;
+      if (prevRole !== newRole) {
+        const isNowManager = newRole === 'Manager' || newRole === 'Admin';
+        const wasManager   = prevRole === 'Manager' || prevRole === 'Admin';
+        const existingLink = deptManagerLinks.value.find(l => l.id_employee === editId);
+        if (isNowManager && !existingLink) {
+          try {
+            const res = await createManagerDepartment({ id_employee: editId, id_department: selectedDeptId.value });
+            deptManagerLinks.value.push(res.data);
+          } catch { /* non-fatal */ }
+        } else if (!isNowManager && wasManager && existingLink) {
+          try {
+            await deleteManagerDepartment(existingLink.id_managerDepartment);
+            deptManagerLinks.value = deptManagerLinks.value.filter(
+              l => l.id_managerDepartment !== existingLink.id_managerDepartment
+            );
+          } catch { /* non-fatal */ }
+        }
+      }
+    } else {
+      const res = await apiClient.post("/employees/create-employee", {
+        ...data,
+        id_department: selectedDeptId.value || null,
+      });
+      employees.value.push(res.data);
+    }
+    empModal2.value.open = false;
+  } catch (err) {
+    empModal2.value.error = err.response?.data?.message || err.message || "Save failed.";
+  } finally {
+    empModal2.value.saving = false;
+  }
+}
+
+async function executeDeleteEmployee() {
+  deleteEmpConfirm.value.saving = true;
+  try {
+    await apiClient.delete(`/employees/${deleteEmpConfirm.value.emp.id_employee}`);
+    employees.value = employees.value.filter(e => e.id_employee !== deleteEmpConfirm.value.emp.id_employee);
+    deleteEmpConfirm.value.open = false;
+  } catch (err) {
+    apiError.value = "Delete failed: " + err.message;
+    deleteEmpConfirm.value.open = false;
+  } finally {
+    deleteEmpConfirm.value.saving = false;
+  }
+}
 function empNameById(id)  { const e = employees.value.find(e => e.id_employee === id); return e ? `${e.fName} ${e.lName}` : `Employee #${id}`; }
 
 const unassignedEmployees = computed(() => {
@@ -921,39 +1301,103 @@ async function removeEmp(row) {
   } catch (err) { empModal.value.error = err.message || "Failed to remove."; }
 }
 
-// ── Hours CRUD ────────────────────────────────────────────────────────────────
-const hoursModal = ref({ open: false, isEdit: false, data: {}, editId: null, saving: false, error: "" });
+// ── Season Hours ───────────────────────────────────────────────────────────────
+const groupedBySeasons = computed(() => {
+  const groups = {};
+  calendarEntries.value.forEach(entry => {
+    const s = entry.season || "Unassigned";
+    if (!groups[s]) groups[s] = [];
+    groups[s].push(entry);
+  });
+  return Object.entries(groups).map(([name, entries]) => ({ name, entries }));
+});
 
-function openCreateHours() {
-  hoursModal.value = { open: true, isEdit: false, saving: false, error: "", editId: null,
-    data: { name: "", dayOfWeek: "Monday", season: "", startTime: "08:00", endTime: "17:00" } };
+function getEntryForSeasonDay(seasonName, dayName) {
+  return calendarEntries.value.find(e =>
+    (e.season || "Unassigned") === seasonName && e.dayOfWeek === dayName
+  ) || null;
 }
-function openEditHours(entry) {
-  hoursModal.value = {
-    open: true, isEdit: true, saving: false, error: "",
-    data: { name: entry.name || "", dayOfWeek: entry.dayOfWeek || "Monday", season: entry.season || "", startTime: entry.startTime?.slice(0,5) || "08:00", endTime: entry.endTime?.slice(0,5) || "17:00" },
-    editId: entry.id_hours_of_operation,
+
+// ── Create Season Modal ────────────────────────────────────────────────────────
+const createSeasonModal = ref({ open: false, name: "", error: "" });
+
+function openCreateSeason() {
+  createSeasonModal.value = { open: true, name: "", error: "" };
+}
+function submitCreateSeason() {
+  const name = createSeasonModal.value.name.trim();
+  if (!name) { createSeasonModal.value.error = "Season name is required."; return; }
+  if (groupedBySeasons.value.some(g => g.name === name)) {
+    createSeasonModal.value.error = "A season with that name already exists."; return;
+  }
+  createSeasonModal.value.open = false;
+  openSeasonHoursModal(name);
+}
+
+// ── Season Hours Modal ─────────────────────────────────────────────────────────
+const seasonHoursModal = ref({ open: false, seasonName: "", saving: false, error: "", days: [] });
+
+function openSeasonHoursModal(seasonName) {
+  seasonHoursModal.value = {
+    open: true, seasonName, saving: false, error: "",
+    days: DAYS.map(day => {
+      const existing = getEntryForSeasonDay(seasonName, day);
+      return {
+        day,
+        open: !!existing,
+        startTime: existing?.startTime?.slice(0, 5) || "08:00",
+        endTime:   existing?.endTime?.slice(0, 5)   || "17:00",
+        existingId: existing?.id_hours_of_operation || null,
+      };
+    }),
   };
 }
-async function saveHours() {
-  const { isEdit, data, editId } = hoursModal.value;
-  if (!data.name?.trim()) { hoursModal.value.error = "Name is required."; return; }
-  if (!data.dayOfWeek) { hoursModal.value.error = "Day is required."; return; }
-  hoursModal.value.saving = true; hoursModal.value.error = "";
+
+async function saveSeasonHours() {
+  const { seasonName, days } = seasonHoursModal.value;
+  seasonHoursModal.value.saving = true;
+  seasonHoursModal.value.error  = "";
   try {
-    const payload = { name: data.name.trim(), dayOfWeek: data.dayOfWeek, season: data.season || null, startTime: data.startTime, endTime: data.endTime };
-    if (isEdit) {
-      await updateCalendarEntry(editId, payload);
-      const idx = calendarEntries.value.findIndex(e => e.id_hours_of_operation === editId);
-      if (idx !== -1) calendarEntries.value[idx] = { ...calendarEntries.value[idx], ...payload };
-    } else {
-      const res = await createCalendarEntry(payload);
-      calendarEntries.value.push(res.data);
+    for (const d of days) {
+      const seasonVal = seasonName === "Unassigned" ? null : seasonName;
+      if (d.open) {
+        const payload = {
+          name:          `${seasonName} – ${d.day}`,
+          dayOfWeek:     d.day,
+          season:        seasonVal,
+          startTime:     d.startTime,
+          endTime:       d.endTime,
+          id_department: selectedDeptId.value,
+        };
+        if (d.existingId) {
+          await updateCalendarEntry(d.existingId, payload);
+          const idx = calendarEntries.value.findIndex(e => e.id_hours_of_operation === d.existingId);
+          if (idx !== -1) calendarEntries.value[idx] = { ...calendarEntries.value[idx], ...payload };
+        } else {
+          const res = await createCalendarEntry(payload);
+          calendarEntries.value.push(res.data);
+          d.existingId = res.data.id_hours_of_operation;
+        }
+      } else if (d.existingId) {
+        await deleteCalendarEntry(d.existingId);
+        calendarEntries.value = calendarEntries.value.filter(e => e.id_hours_of_operation !== d.existingId);
+        d.existingId = null;
+      }
     }
-    hoursModal.value.open = false;
+    seasonHoursModal.value.open = false;
   } catch (err) {
-    hoursModal.value.error = err.message || "Save failed.";
-  } finally { hoursModal.value.saving = false; }
+    seasonHoursModal.value.error = err.message || "Save failed.";
+  } finally {
+    seasonHoursModal.value.saving = false;
+  }
+}
+
+function confirmDeleteSeason(seasonName) {
+  const entries = calendarEntries.value.filter(e => (e.season || "Unassigned") === seasonName);
+  deleteConfirm.value = {
+    open: true, type: "season", item: { seasonName, entries },
+    label: `season "${seasonName}" and all its hours`, saving: false,
+  };
 }
 
 // ── Events CRUD ───────────────────────────────────────────────────────────────
@@ -1018,7 +1462,6 @@ async function saveEvent() {
 const deleteConfirm = ref({ open: false, type: "", item: null, label: "", saving: false });
 
 function confirmDeletePosition(pos) { deleteConfirm.value = { open: true, type: "position", item: pos, label: `position "${pos.name}"`, saving: false }; }
-function confirmDeleteHours(entry)  { deleteConfirm.value = { open: true, type: "hours",    item: entry, label: `hours entry "${entry.name || entry.dayOfWeek}"`, saving: false }; }
 function confirmDeleteEvent(ev)     { deleteConfirm.value = { open: true, type: "event",    item: ev, label: `event "${ev.title}"`, saving: false }; }
 
 async function executeDelete() {
@@ -1028,9 +1471,13 @@ async function executeDelete() {
     if (type === "position") {
       await deletePosition(item.id_position);
       positions.value = positions.value.filter(p => p.id_position !== item.id_position);
-    } else if (type === "hours") {
-      await deleteCalendarEntry(item.id_hours_of_operation);
-      calendarEntries.value = calendarEntries.value.filter(e => e.id_hours_of_operation !== item.id_hours_of_operation);
+    } else if (type === "season") {
+      for (const entry of item.entries) {
+        await deleteCalendarEntry(entry.id_hours_of_operation);
+      }
+      const ids = new Set(item.entries.map(e => e.id_hours_of_operation));
+      calendarEntries.value = calendarEntries.value.filter(e => !ids.has(e.id_hours_of_operation));
+      if (activeSeason.value === item.seasonName) await setActiveSeason("");
     } else if (type === "event") {
       await deleteEvent(item.id_event);
       events.value = events.value.filter(e => e.id_event !== item.id_event);
@@ -1040,6 +1487,46 @@ async function executeDelete() {
     apiError.value = "Delete failed: " + (err.message || "Unknown error");
     deleteConfirm.value.open = false;
   } finally { deleteConfirm.value.saving = false; }
+}
+
+// ── Settings: Active Season ───────────────────────────────────────────────────
+const ACTIVE_SEASON_KEY   = "Active Season";
+const activeSeason        = ref("");
+let   activeSeasonValueId = null;
+let   activeSeasonSettingId = null;
+
+async function loadActiveSeason(id) {
+  if (!id) return;
+  try {
+    const valRes = await getSettingValues(id);
+    const values = valRes.data || [];
+    const sv = values.find(v => v.name === ACTIVE_SEASON_KEY || v.key === "active_season");
+    if (sv) { activeSeasonValueId = sv.id_settingValue; activeSeasonSettingId = sv.id_setting; activeSeason.value = sv.value || ""; return; }
+    const settingsRes = await getSettings();
+    let setting = (settingsRes.data || []).find(s => s.name === ACTIVE_SEASON_KEY || s.key === "active_season");
+    if (!setting) {
+      const nr = await createSetting({ name: ACTIVE_SEASON_KEY, key: "active_season", type: "string" });
+      setting = nr.data;
+    }
+    activeSeasonSettingId = setting?.id_setting;
+    if (activeSeasonSettingId) {
+      const nvr = await createSettingValue({ id_setting: activeSeasonSettingId, id_department: id, value: "" });
+      activeSeasonValueId = nvr.data?.id_settingValue;
+    }
+    activeSeason.value = "";
+  } catch { activeSeason.value = ""; }
+}
+
+async function setActiveSeason(seasonName) {
+  try {
+    if (activeSeasonValueId) {
+      await updateSettingValue(activeSeasonValueId, seasonName);
+    } else if (activeSeasonSettingId) {
+      const res = await createSettingValue({ id_setting: activeSeasonSettingId, id_department: selectedDeptId.value, value: seasonName });
+      activeSeasonValueId = res.data?.id_settingValue;
+    }
+    activeSeason.value = seasonName;
+  } catch (err) { console.error("Failed to set active season:", err); }
 }
 
 // ── Settings: Buffer Time ─────────────────────────────────────────────────────
@@ -1131,6 +1618,8 @@ async function saveBufferTime() {
   background: var(--bg-surface); border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0;
 }
 .nav-left  { display: flex; align-items: center; gap: 16px; }
+.nav-dept-switcher { display: flex; align-items: center; gap: 12px; }
+.nav-divider { width: 1px; height: 20px; background: var(--bdr-subtle); flex-shrink: 0; }
 .nav-right { margin-left: auto; }
 .back-btn {
   display: flex; align-items: center; gap: 6px;
@@ -1222,7 +1711,7 @@ async function saveBufferTime() {
 .cancel-inline-btn:hover { background: var(--bdr-subtle); }
 .save-inline-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.dept-header-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.dept-header-bottom { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
 .dept-chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .dept-chip {
   padding: 3px 12px; background: var(--bg-active); border: 1px solid var(--bdr-subtle);
@@ -1253,10 +1742,47 @@ async function saveBufferTime() {
 
 /* ── Overview ── */
 .overview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+.overview-wide-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
 .overview-card { background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 12px; padding: 20px 22px; }
-.ov-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--tx-faint); margin-bottom: 8px; }
+.ov-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--tx-faint); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
 .ov-value { font-size: 14px; color: var(--tx-secondary); word-break: break-word; }
 .ov-big   { font-size: 28px; font-weight: 700; color: var(--accent); font-family: 'DM Mono', monospace; }
+.ov-season-badge { background: var(--accent); color: #fff; border-radius: 4px; padding: 1px 7px; font-size: 10px; text-transform: none; letter-spacing: 0; font-weight: 600; }
+.ov-no-season { color: var(--tx-faint); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 11px; }
+.ov-count-badge { background: var(--bg-elevated); color: var(--tx-secondary); border-radius: 10px; padding: 1px 8px; font-size: 11px; text-transform: none; letter-spacing: 0; font-weight: 600; }
+.ov-empty-hint { color: var(--tx-faint); font-size: 13px; font-style: italic; }
+.ov-hours-list { display: flex; flex-direction: column; gap: 7px; }
+.ov-hours-row { display: flex; align-items: center; gap: 14px; }
+.ov-hours-day { width: 34px; font-size: 12px; font-weight: 600; color: var(--tx-secondary); flex-shrink: 0; }
+.ov-hours-time { font-size: 13px; color: var(--tx-primary); font-family: 'DM Mono', monospace; }
+.ov-hours-closed { font-size: 12px; color: var(--tx-faint); font-style: italic; }
+.ov-events-list { display: flex; flex-direction: column; gap: 10px; }
+.ov-event-row { display: flex; align-items: center; gap: 12px; }
+.ov-event-date { display: flex; flex-direction: column; align-items: center; background: var(--bg-elevated); border-radius: 6px; padding: 5px 9px; min-width: 40px; flex-shrink: 0; }
+.ov-event-month { font-size: 9px; font-weight: 700; letter-spacing: 0.06em; color: var(--accent); text-transform: uppercase; line-height: 1.2; }
+.ov-event-day { font-size: 17px; font-weight: 700; color: var(--tx-primary); line-height: 1.1; font-family: 'DM Mono', monospace; }
+.ov-event-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ov-event-title { font-size: 13px; font-weight: 600; color: var(--tx-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-event-time { font-size: 11px; color: var(--tx-faint); }
+
+/* Open Today */
+.ov-faint { font-size: 13px; color: var(--tx-faint); font-style: italic; margin-top: 2px; }
+.ov-open-badge { display: inline-block; background: #16a34a22; color: #4ade80; border-radius: 4px; padding: 2px 10px; font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+.ov-closed-badge { display: inline-block; background: #ff174422; color: var(--accent); border-radius: 4px; padding: 2px 10px; font-size: 12px; font-weight: 700; }
+.ov-today-hours { font-size: 13px; color: var(--tx-primary); font-family: 'DM Mono', monospace; }
+
+/* Next Event highlight */
+.ov-next-event { background: var(--bg-elevated); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+.ov-next-label { font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+.ov-next-body { display: flex; align-items: center; gap: 12px; }
+.ov-next-title { font-size: 14px !important; }
+.ov-events-rest { border-top: 1px solid var(--bdr-subtle); padding-top: 10px; }
+.ov-event-date-sm .ov-event-day { font-size: 14px !important; }
+
+/* Managers */
+.ov-managers-card { margin-top: 16px; }
+.ov-managers-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.ov-manager-chip { background: var(--bg-elevated); border: 1px solid var(--bdr-subtle); border-radius: 20px; padding: 4px 14px; font-size: 13px; color: var(--tx-primary); font-weight: 500; }
 
 .my-requests-section { margin-top: 28px; }
 .section-title { font-size: 15px; font-weight: 600; color: var(--tx-heading); margin-bottom: 12px; }
@@ -1311,7 +1837,72 @@ async function saveBufferTime() {
 .emp-select:focus { border-color: var(--accent); }
 .emp-select option { background: var(--bg-modal); }
 
-/* ── Hours table ── */
+/* ── Seasons grid ── */
+.seasons-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.season-card {
+  background: var(--bg-surface); border: 1px solid var(--bdr-subtle);
+  border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;
+  transition: border-color 0.15s;
+}
+.season-card:hover { border-color: var(--bdr-medium); }
+.season-card--active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.season-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.season-name-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.season-name { font-size: 16px; font-weight: 700; color: var(--tx-primary); }
+.active-chip { display: inline-block; padding: 2px 9px; border-radius: 100px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; background: var(--accent); color: #fff; }
+.active-season-badge { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; padding: 2px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; background: var(--accent); color: #fff; }
+.season-days { display: flex; flex-direction: column; gap: 4px; }
+.season-day-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.season-day-label { font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 600; color: var(--tx-muted); width: 30px; flex-shrink: 0; text-transform: uppercase; }
+.season-day-hours { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--tx-secondary); }
+.season-day-closed { font-size: 12px; color: var(--tx-ghost, #444); font-style: italic; }
+.season-card-footer { margin-top: auto; }
+.set-active-btn {
+  width: 100%; padding: 7px 0; border-radius: 8px;
+  border: 1px solid var(--bdr-medium); background: transparent;
+  color: var(--tx-secondary); font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.set-active-btn:hover { border-color: var(--accent); color: var(--accent); }
+.set-active-btn.active-set { border-color: var(--accent); color: var(--accent); background: rgba(255,23,68,0.06); }
+.set-active-btn.active-set:hover { background: rgba(255,23,68,0.12); }
+
+/* ── Season Hours Modal ── */
+.modal-wide { width: 620px !important; max-width: 96vw !important; }
+.season-hours-table { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--bdr-subtle); border-radius: 10px; overflow: visible; }
+.season-hours-header {
+  display: grid; grid-template-columns: 100px 52px 1fr 1fr;
+  padding: 8px 14px; background: var(--bg-input); border-radius: 10px 10px 0 0;
+  font-size: 11px; font-weight: 600; color: var(--tx-faint); text-transform: uppercase; letter-spacing: 0.07em;
+}
+.season-hours-row {
+  display: grid; grid-template-columns: 100px 52px 1fr 1fr;
+  align-items: center; padding: 10px 14px; gap: 10px;
+  border-top: 1px solid var(--bdr-subtle);
+}
+.shm-day { font-size: 13px; color: var(--tx-primary); font-weight: 500; }
+.shm-time {
+  background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary);
+  padding: 5px 8px; border-radius: 7px; font-size: 13px; font-family: 'DM Mono', monospace;
+  outline: none; width: 100%; transition: border-color 0.15s;
+}
+.shm-time:focus { border-color: var(--accent); }
+.shm-time:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* Toggle switch */
+.shm-toggle { position: relative; display: inline-block; width: 36px; height: 20px; cursor: pointer; }
+.shm-toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-track {
+  position: absolute; inset: 0; background: var(--bdr-medium); border-radius: 20px; transition: background 0.2s;
+}
+.shm-toggle input:checked + .toggle-track { background: var(--accent); }
+.toggle-thumb {
+  position: absolute; top: 3px; left: 3px;
+  width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: transform 0.2s;
+}
+.shm-toggle input:checked + .toggle-track .toggle-thumb { transform: translateX(16px); }
+
+/* ── Hours table (kept for back-compat if used elsewhere) ── */
 .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--bdr-subtle); }
 .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .data-table thead { background: var(--bg-surface); }
@@ -1319,6 +1910,13 @@ async function saveBufferTime() {
 .data-table td { padding: 12px 16px; border-bottom: 1px solid var(--bdr-strong); color: var(--tx-secondary); vertical-align: middle; }
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tr:hover td { background: var(--bg-input); }
+.empty-row { text-align: center; color: var(--tx-faint); padding: 32px 0 !important; }
+.emp-name-cell { display: flex; align-items: center; gap: 10px; }
+.emp-avatar { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0; }
+.role-badge { display: inline-block; padding: 2px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; background: var(--bg-active); color: var(--tx-secondary); }
+.role-badge.manager, .role-badge.admin { background: rgba(255,23,68,0.15); color: #FF1744; }
+.search-input { background: var(--bg-input); border: 1px solid var(--bdr-subtle); border-radius: 8px; padding: 8px 14px; color: var(--tx-primary); font-family: inherit; font-size: 13px; outline: none; width: 220px; }
+.search-input:focus { border-color: var(--accent); }
 .day-badge { display: inline-block; padding: 2px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; background: var(--bg-active); color: var(--tx-secondary); }
 .mono { font-family: 'DM Mono', monospace; font-size: 12px; }
 
@@ -1350,6 +1948,15 @@ async function saveBufferTime() {
 .save-success { font-size: 12px; color: #22c55e; margin-top: 4px; }
 .save-error   { font-size: 12px; color: var(--err-text); margin-top: 4px; }
 
+/* ── Manager settings ── */
+.mgr-setting-row { align-items: flex-start; flex-direction: column; gap: 16px; }
+.mgr-setting-body { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.mgr-setting-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bg-elevated); border-radius: 8px; }
+.mgr-setting-name { flex: 1; font-size: 14px; color: var(--tx-primary); }
+.mgr-you-badge { font-size: 11px; font-weight: 600; color: var(--tx-faint); background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 10px; padding: 1px 8px; }
+.mgr-add-row { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+.mgr-select { flex: 1; background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary); padding: 8px 10px; border-radius: 8px; font-size: 14px; outline: none; }
+
 /* ── Shared ── */
 .action-btns { display: flex; gap: 6px; }
 .icon-action { background: var(--bdr-subtle); border: none; color: var(--tx-muted); width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; }
@@ -1368,7 +1975,7 @@ async function saveBufferTime() {
 
 /* ── Modals ── */
 .modal-overlay { position: fixed; inset: 0; background: var(--bg-moverlay); display: flex; align-items: center; justify-content: center; z-index: 300; backdrop-filter: blur(4px); }
-.modal { background: var(--bg-modal); border: 1px solid var(--bdr-medium); border-radius: 14px; padding: 28px; width: 420px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
+.modal { background: var(--bg-modal); border: 1px solid var(--bdr-medium); border-radius: 14px; padding: 28px; width: 420px; max-width: 96vw; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
 .modal-sm { width: 320px; }
 .modal-title { font-size: 18px; font-weight: 700; color: var(--tx-primary); margin-bottom: 8px; }
 .modal-desc  { font-size: 13px; color: var(--tx-muted); margin-bottom: 20px; }

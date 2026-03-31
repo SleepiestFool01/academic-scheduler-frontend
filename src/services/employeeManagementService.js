@@ -9,9 +9,10 @@ import apiClient from "./services.js";
 // ── Employees ──────────────────────────────────────────────────────────────────
 
 export const employeeService = {
-  /** GET /employees — all users regardless of role */
-  getAll() {
-    return apiClient.get("/employees");
+  /** GET /employees — all users regardless of role, optionally filtered by department */
+  getAll(id_department = null) {
+    const qs = id_department ? `?id_department=${id_department}` : "";
+    return apiClient.get(`/employees${qs}`);
   },
 
   /** POST /employees/create-employee — create a new employee record */
@@ -59,9 +60,10 @@ export function fmtHour(h) {
 const DAY_ENUM = ["Sun", "Mon", "Tue", "Wed", "Thur", "Fri", "Sat"];
 
 export const shiftService = {
-  /** GET /shifts */
-  getAll() {
-    return apiClient.get("/shifts");
+  /** GET /shifts, optionally filtered by department */
+  getAll(id_department = null) {
+    const qs = id_department ? `?id_department=${id_department}` : "";
+    return apiClient.get(`/shifts${qs}`);
   },
 
   /** GET /shift-assignments */
@@ -73,7 +75,7 @@ export const shiftService = {
    * Create a shift definition, optionally assigning it to an employee.
    * @param {{ id_employee?, date, startHour, endHour, notes, positionName, id_position? }} p
    */
-  async createAndAssign({ id_employee = null, date, startHour, endHour, notes, positionName = "", id_position = null }) {
+  async createAndAssign({ id_employee = null, date, startHour, endHour, notes, positionName = "", id_position = null, id_department = null }) {
     const [y, mo, d] = date.split("-").map(Number);
     const dow = new Date(y, mo - 1, d).getDay();
     const label = positionName || "Shift";
@@ -86,6 +88,7 @@ export const shiftService = {
       startTime:   hourToTimeStr(startHour),
       endTime:     hourToTimeStr(endHour),
       id_position,
+      id_department,
     });
 
     if (id_employee) {

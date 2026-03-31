@@ -68,8 +68,9 @@ const DAY_ENUM = ["Sun", "Mon", "Tue", "Wed", "Thur", "Fri", "Sat"];
  * Hits: GET /users/employees
  * Returns: [{ id_employee, fName, lName, email, role, bio }]
  */
-export async function fetchEmployees() {
-  const { data } = await apiClient.get(`${EMPLOYEES}/employees`);
+export async function fetchEmployees(id_department = null) {
+  const qs = id_department ? `?id_department=${id_department}` : "";
+  const { data } = await apiClient.get(`${EMPLOYEES}/employees${qs}`);
   return data;
 }
 
@@ -85,9 +86,10 @@ export async function fetchEmployees() {
  * @param {Object} employeeMap   { [id_employee]: employeeObject }
  * @param {Object} positionMap   { [id_position]: positionObject }  (optional)
  */
-export async function fetchShiftsWithAssignments(employeeMap, positionMap = {}) {
+export async function fetchShiftsWithAssignments(employeeMap, positionMap = {}, id_department = null) {
+  const qs = id_department ? `?id_department=${id_department}` : "";
   const [shiftsRes, assignRes] = await Promise.all([
-    apiClient.get(SHIFTS),
+    apiClient.get(`${SHIFTS}${qs}`),
     apiClient.get(ASSIGNMENTS),
   ]);
 
@@ -184,6 +186,7 @@ export async function createShift({
   notes,
   positionName = "",
   id_position = null,
+  id_department = null,
 }) {
   const [y, mo, d] = date.split("-").map(Number);
   const dowInt     = new Date(y, mo - 1, d).getDay();
@@ -199,6 +202,7 @@ export async function createShift({
     startTime:   hourToTimeStr(startHour),
     endTime:     hourToTimeStr(endHour),
     id_position,
+    id_department,
   });
 
   // 2. Optionally create ShiftAssignment

@@ -17,16 +17,22 @@
             <rect x="15" y="14" width="11" height="7" rx="2" fill="#F0E6D3"/>
           </svg>
         </div>
+        <div class="nav-divider"></div>
+        <DeptSwitcher />
       </div>
       <div class="nav-tabs">
-        <button v-for="tab in ['Employees', 'Shifts']" :key="tab"
-          class="nav-tab" :class="{ active: activeTab === tab }"
-          @click="activeTab = tab">{{ tab }}</button>
+        <button v-for="tab in DEPT_TABS" :key="tab" class="nav-tab"
+          :class="{ active: tab === 'Employees' }"
+          @click="tab === 'Employees' ? null : router.push('/department')">{{ tab }}</button>
       </div>
       <div class="nav-right">
         <button class="primary-btn" @click="openCreateModal">
           + Add {{ activeTab === 'Employees' ? 'Employee' : 'Shift' }}
         </button>
+        <div v-if="currentUser" class="avatar" :title="`${currentUser.fName} ${currentUser.lName}`">
+          <img v-if="currentUser.picture" :src="currentUser.picture" class="avatar-img" referrerpolicy="no-referrer" />
+          <span v-else>{{ userInitials }}</span>
+        </div>
       </div>
     </div>
 
@@ -319,9 +325,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import Utils from "../config/utils.js";
+import { useDepartment } from "../composables/useDepartment.js";
+import DeptSwitcher from "../components/DeptSwitcher.vue";
 import {
   employeeService,
   shiftService,
@@ -376,10 +384,10 @@ async function loadAll() {
   loading.value  = true;
   apiError.value = "";
   try {
-    const deptId = currentUser.value?.id_department;
+    const deptId = selectedDeptId.value || currentUser.value?.id_department;
     const [empRes, shiftRes, assignRes, posRes] = await Promise.all([
-      employeeService.getAll(),
-      shiftService.getAll(),
+      employeeService.getAll(deptId),
+      shiftService.getAll(deptId),
       shiftService.getAssignments(),
       deptId ? getPositions(deptId) : Promise.resolve({ data: [] }),
     ]);
@@ -454,7 +462,18 @@ async function loadAll() {
   }
 }
 
-onMounted(loadAll);
+const { selectedDeptId, myDepts, loadDepts } = useDepartment();
+watch(selectedDeptId, loadAll);
+onMounted(() => {
+  if (!myDepts.value.length) loadDepts(currentUser.value);
+  loadAll();
+});
+
+const DEPT_TABS   = ["Overview", "Positions", "Employees", "Hours", "Events", "Settings"];
+const userInitials = computed(() => {
+  const u = currentUser.value;
+  return `${u?.fName?.[0] ?? ""}${u?.lName?.[0] ?? ""}`.toUpperCase() || "??";
+});
 
 // ── Filters ───────────────────────────────────────────────────────────────────
 const filteredEmployees = computed(() => {
@@ -585,6 +604,7 @@ async function saveModal() {
           notes:        data.notes,
           positionName,
           id_position:  data.id_position,
+          id_department: selectedDeptId.value || null,
         });
         shifts.value.push({
           id_shiftAssignment: assignment?.id_shiftAssignment || null,
@@ -710,7 +730,15 @@ async function executeDelete() {
   background: var(--bg-surface); border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0;
 }
 .nav-left  { display: flex; align-items: center; gap: 16px; }
-.nav-right { margin-left: auto; }
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.nav-divider { width: 1px; height: 20px; background: var(--bdr-subtle); }
+.avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: #FF1744; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; overflow: hidden; flex-shrink: 0;
+}
+.avatar-img { width: 100%; height: 100%; object-fit: cover; }
 .back-btn {
   display: flex; align-items: center; gap: 6px;
   background: none; border: none; color: var(--tx-muted);

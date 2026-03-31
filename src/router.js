@@ -22,7 +22,10 @@ const router = createRouter({
     { path: "/tradeboard",  component: () => import("./views/Tradeboard.vue") },
     { path: "/tasks",       component: () => import("./views/Tasks.vue") },
     { path: "/requests",    component: () => import("./views/TimeOff.vue") },
+    { path: "/templates",        component: () => import("./views/Templates.vue") },
+    { path: "/templates/:id",    component: () => import("./views/TemplateEditor.vue") },
     { path: "/department",  component: () => import("./views/DepartmentPage.vue") },
+    { path: "/shifts",      component: () => import("./views/ShiftsPage.vue") },
 
     // ── Unknown paths → login ─────────────────────────────────────────────────
     { path: "/:pathMatch(.*)*", redirect: "/start" },

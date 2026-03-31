@@ -11,8 +11,9 @@ import apiClient from "./services.js";
 
 // ── Task Lists & Tasks ──────────────────────────────────────────────────────────
 
-export async function fetchTaskLists() {
-  const { data } = await apiClient.get("/task-lists");
+export async function fetchTaskLists(id_department = null) {
+  const qs = id_department ? `?id_department=${id_department}` : "";
+  const { data } = await apiClient.get(`/task-lists${qs}`);
   return data;
 }
 
