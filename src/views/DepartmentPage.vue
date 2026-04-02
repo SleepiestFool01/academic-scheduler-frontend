@@ -964,11 +964,27 @@ const todayEntry = computed(() => {
 });
 
 const deptManagers = computed(() => {
-  const links = deptManagerLinks.value;
-  return links.map(link => {
+  const seen = new Set();
+  const names = [];
+
+  // From junction table
+  for (const link of deptManagerLinks.value) {
     const emp = allStaff.value.find(e => e.id_employee === link.id_employee);
-    return emp ? `${emp.fName} ${emp.lName}` : null;
-  }).filter(Boolean);
+    if (emp && !seen.has(emp.id_employee)) {
+      seen.add(emp.id_employee);
+      names.push(`${emp.fName} ${emp.lName}`);
+    }
+  }
+
+  // From employees whose primary dept matches and are Manager/Admin
+  for (const emp of employees.value) {
+    if ((emp.role === "Manager" || emp.role === "Admin") && !seen.has(emp.id_employee)) {
+      seen.add(emp.id_employee);
+      names.push(`${emp.fName} ${emp.lName}`);
+    }
+  }
+
+  return names;
 });
 
 // ── Manager assignment (Settings tab) ─────────────────────────────────────────
@@ -1205,6 +1221,9 @@ async function saveEmployee() {
         id_department: selectedDeptId.value || null,
       });
       employees.value.push(res.data);
+      if ((data.role === "Manager" || data.role === "Admin") && selectedDeptId.value) {
+        await createManagerDepartment({ id_employee: res.data.id_employee, id_department: selectedDeptId.value });
+      }
     }
     empModal2.value.open = false;
   } catch (err) {
