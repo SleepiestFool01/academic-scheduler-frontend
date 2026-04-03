@@ -150,7 +150,7 @@
                 <div v-for="hour in hours" :key="hour" class="time-slot-label">{{ formatHour(hour) }}</div>
               </div>
               <div class="day-column"
-                :class="{ 'is-dragging-col': drag.active && drag.dayIndex === 0, 'paste-target': isPasteMode }"
+                :class="{ 'is-dragging-col': drag.active && drag.dayIndex === 0, 'paste-target': isPasteMode, 'no-edit': !isManager }"
                 @mousedown.prevent="isPasteMode ? null : onColumnMouseDown($event, 0)"
                 @click="isPasteMode ? pasteToDay(dayViewDate) : null">
                 <div v-for="hour in hours" :key="hour" class="hour-cell"></div>
@@ -207,7 +207,7 @@
                 <div v-for="hour in hours" :key="hour" class="time-slot-label">{{ formatHour(hour) }}</div>
               </div>
               <div v-for="(date, colIdx) in weekDates" :key="colIdx" class="day-column"
-                :class="{ 'is-dragging-col': drag.active && drag.dayIndex === colIdx, 'paste-target': isPasteMode }"
+                :class="{ 'is-dragging-col': drag.active && drag.dayIndex === colIdx, 'paste-target': isPasteMode, 'no-edit': !isManager }"
                 @mousedown.prevent="isPasteMode ? null : onColumnMouseDown($event, colIdx)"
                 @click="isPasteMode ? pasteToDay(date) : null">
                 <div v-for="hour in hours" :key="hour" class="hour-cell"></div>
@@ -479,7 +479,7 @@
         <div class="popover-day">{{ selectedShiftDateLabel }}</div>
         <div v-if="selectedShift.notes" class="popover-notes">{{ selectedShift.notes }}</div>
         <div class="popover-actions">
-          <button class="popover-edit" @click="editShift">Edit</button>
+          <button v-if="isManager" class="popover-edit" @click="editShift">Edit</button>
           <button
             v-if="isManager || selectedShift.id_employee === currentUser?.id_employee"
             class="popover-tasks"
@@ -1886,6 +1886,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 
 .day-column { flex: 1; position: relative; border-left: 1px solid var(--bdr-strong); cursor: crosshair; }
 .day-column.is-dragging-col { background: var(--accent-drag); }
+.day-column.no-edit { cursor: default; }
 .hour-cell { height: 60px; border-bottom: 1px solid var(--bdr-faint); }
 .hour-cell:nth-child(even) { background: var(--hour-even); }
 
