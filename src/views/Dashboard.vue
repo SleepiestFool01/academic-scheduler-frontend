@@ -69,12 +69,14 @@
             @click="jumpToDay(day)">{{ day }}</div>
         </div>
 
-        <div class="sidebar-section">
+        <!-- Today's Employees — Manager only -->
+        <div v-if="isManager" class="sidebar-section">
           <p class="sidebar-label">Today's Employees</p>
           <div v-for="emp in todaysEmployees" :key="emp.name" class="employee-chip" :style="{ background: emp.color }">{{ emp.name }}</div>
           <div v-if="todaysEmployees.length === 0" class="sidebar-empty">No shifts today</div>
         </div>
-        <div class="sidebar-section">
+        <!-- Open Shifts — Manager only -->
+        <div v-if="isManager" class="sidebar-section">
           <div class="open-shifts-header">
             <p class="sidebar-label underline-link" @click="activeTab = 'Shifts'">Open Shifts</p>
             <span class="open-shifts-week">this week</span>
@@ -85,6 +87,41 @@
             <div class="open-shift-gaps">
               <span v-for="gap in s.gaps" :key="gap" class="open-shift-gap">{{ gap }}</span>
             </div>
+          </div>
+        </div>
+
+        <!-- My Shifts Today — Employee only -->
+        <div v-if="!isManager" class="sidebar-section">
+          <p class="sidebar-label">My Shifts Today</p>
+          <div v-if="myTodayShifts.length === 0" class="sidebar-empty">No shifts today</div>
+          <div v-for="s in myTodayShifts" :key="s.id" class="my-shift-item">
+            <span class="my-shift-pos">{{ s.positionName || 'Shift' }}</span>
+            <span class="my-shift-time">{{ s.startLabel }} – {{ s.endLabel }}</span>
+          </div>
+        </div>
+
+        <!-- My Shifts This Week — Employee only -->
+        <div v-if="!isManager" class="sidebar-section">
+          <p class="sidebar-label">This Week</p>
+          <div v-if="myWeekShifts.length === 0" class="sidebar-empty">No other shifts this week</div>
+          <div v-for="s in myWeekShifts" :key="s.id" class="open-shift-item">
+            <span class="open-shift-day">{{ DAY_ABBR[new Date(s.date + 'T00:00:00').getDay()] }}</span>
+            <div class="open-shift-gaps">
+              <span class="open-shift-gap">{{ s.startLabel }} – {{ s.endLabel }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tradeboard Open Shifts — Employee only -->
+        <div v-if="!isManager" class="sidebar-section">
+          <p class="sidebar-label underline-link" @click="router.push('/tradeboard')">Tradeboard</p>
+          <div v-if="tradeboardOpenShifts.length === 0" class="sidebar-empty">No open shifts</div>
+          <div v-for="r in tradeboardOpenShifts" :key="r.id" class="trade-preview-item" @click="router.push('/tradeboard')">
+            <div class="trade-preview-top">
+              <span class="trade-preview-name">{{ r.employeeName }}</span>
+              <span class="trade-preview-day">{{ r.dayLabel }}</span>
+            </div>
+            <span class="trade-preview-time">{{ r.startLabel }} – {{ r.endLabel }}</span>
           </div>
         </div>
         <div class="sidebar-section">
@@ -768,7 +805,12 @@ function dateKey(weekOff, dayIdx) {
   return d.toISOString().slice(0, 10);
 }
 
-function dateToKey(d) { return d.toISOString().slice(0, 10); }
+function dateToKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 function keyToDate(k) { const [y,m,d] = k.split("-").map(Number); return new Date(y, m-1, d); }
 
@@ -843,6 +885,41 @@ const todaysEmployees = computed(() => {
   const key   = dateToKey(new Date());
   const names = [...new Set(shifts.value.filter(s => s.date === key).map(s => s.employee))];
   return names.map(n => employees.value.find(e => e.name === n)).filter(Boolean);
+});
+
+const myTodayShifts = computed(() => {
+  if (isManager.value) return [];
+  const key  = dateToKey(new Date());
+  const myId = currentUser.value?.id_employee;
+  return shifts.value.filter(s => s.date === key && s.id_employee === myId);
+});
+
+const myWeekShifts = computed(() => {
+  if (isManager.value) return [];
+  const todayKey = dateToKey(new Date());
+  const myId     = currentUser.value?.id_employee;
+  const weekKeys = new Set(weekDates.value.map(d => dateToKey(d)));
+  return shifts.value
+    .filter(s => s.id_employee === myId && weekKeys.has(s.date) && s.date !== todayKey)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.startHour - b.startHour);
+});
+
+const tradeboardOpenShifts = computed(() => {
+  if (isManager.value) return [];
+  return pendingRequests.value
+    .filter(r => r.raw.id_employeeRequested == null)
+    .map(r => {
+      const shift = shifts.value.find(s => s.id_shift === r.raw.id_shift);
+      return {
+        id:           r.id,
+        employeeName: r.name,
+        dayLabel:     shift?.date ? DAY_ABBR[new Date(shift.date + 'T00:00:00').getDay()] : "—",
+        startLabel:   shift?.startLabel || "—",
+        endLabel:     shift?.endLabel   || "—",
+        positionName: shift?.positionName || "",
+      };
+    })
+    .slice(0, 5);
 });
 
 const currentTimePx = computed(() => {
@@ -1840,6 +1917,17 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .request-item { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--bdr-subtle); color: var(--tx-muted); }
 .request-name { color: var(--tx-secondary); font-weight: 500; }
 .request-type { font-size: 11px; color: var(--accent); }
+
+.my-shift-item { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--bdr-subtle); }
+.my-shift-pos { font-size: 12px; font-weight: 600; color: var(--tx-secondary); }
+.my-shift-time { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--tx-dim); }
+
+.trade-preview-item { padding: 6px 0; border-bottom: 1px solid var(--bdr-subtle); cursor: pointer; transition: background 0.12s; border-radius: 4px; }
+.trade-preview-item:hover { background: var(--bg-hover); }
+.trade-preview-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
+.trade-preview-name { font-size: 12px; font-weight: 600; color: var(--tx-secondary); }
+.trade-preview-day { font-size: 10px; font-weight: 700; color: var(--tx-dim); }
+.trade-preview-time { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--accent); }
 
 /* ── Main ── */
 .cal-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
