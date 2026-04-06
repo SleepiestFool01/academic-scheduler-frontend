@@ -368,6 +368,15 @@ async function executeDelete() {
 }
 
 // ── Apply Template ─────────────────────────────────────────────────────────────
+
+// Returns "YYYY-MM-DD" in local time (not UTC) — avoids UTC-midnight off-by-one
+function localDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function defaultStartDate() {
   // Default to Monday of the current week
   const today = new Date();
@@ -375,7 +384,7 @@ function defaultStartDate() {
   const diff = day === 0 ? -6 : 1 - day;
   const monday = new Date(today);
   monday.setDate(today.getDate() + diff);
-  return monday.toISOString().slice(0, 10);
+  return localDateStr(monday);
 }
 
 const applyModal = ref({
@@ -464,8 +473,8 @@ async function applyTemplate() {
     try {
       application = await createTemplateApplication({
         id_template: applyModal.value.template.id_template,
-        startDate:   start.toISOString().slice(0, 10),
-        endDate:     end.toISOString().slice(0, 10),
+        startDate:   localDateStr(start),
+        endDate:     localDateStr(end),
       });
     } catch { /* live-sync link unavailable until backend adds endpoint */ }
 
@@ -473,7 +482,7 @@ async function applyTemplate() {
     const current = new Date(start);
     while (current <= end) {
       const dowInt  = current.getDay();
-      const dateStr = current.toISOString().slice(0, 10);
+      const dateStr = localDateStr(current);
 
       for (const ts of tShifts) {
         if (ts.dayOfWeek !== dowInt) continue;
