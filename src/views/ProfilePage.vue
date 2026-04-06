@@ -35,43 +35,22 @@
     </div>
 
     <div class="content">
-      <!-- ── Employee view: post shifts + see board ── -->
-      <template v-if="isEmployee">
-        
-      </template>
+      <!-- ── Profile view: see profile information ── -->
+      <div class="profile-body">
+        <div class="profile-avatar-lg">
+          <img v-if="currentUser?.picture" :src="currentUser.picture" class="avatar-img" referrerpolicy="no-referrer" />
+          <span v-else>{{ userInitials }}</span>
+        </div>
+        <h2 class="profile-name">{{ currentUser?.fName }} {{ currentUser?.lName }}</h2>
+        <p class="profile-email">{{ currentUser?.email }}</p>
+        <span class="profile-role-badge" :class="currentUser?.role?.toLowerCase()">{{ currentUser?.role }}</span>
+        <p class="profile-bio">{{ currentUser?.bio }}</p>
+      </div>
     </div>
 
     <!-- ── Post shift modal ── -->
     <Transition name="modal">
-      <div v-if="modal.open" class="modal-overlay" @click.self="modal.open = false">
-        <div class="modal">
-          <h3 class="modal-title">Post a Shift for Trade</h3>
-          <div class="form-group">
-            <label>Select your shift to trade</label>
-            <select v-model="modal.id_shift">
-              <option v-for="s in myShifts" :key="s.id_shiftAssignment" :value="s.id_shift">
-                {{ s.date }} · {{ s.startLabel }}–{{ s.endLabel }}
-              </option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Request trade with <span class="optional">(optional — leave blank to open to anyone)</span></label>
-            <select v-model="modal.id_employeeRequested">
-              <option value="">Open to anyone</option>
-              <option v-for="e in otherEmployees" :key="e.id_employee" :value="e.id_employee">
-                {{ e.fName }} {{ e.lName }}
-              </option>
-            </select>
-          </div>
-          <p v-if="modal.error" class="modal-error">{{ modal.error }}</p>
-          <div class="modal-actions">
-            <button class="cancel-btn" @click="modal.open = false">Cancel</button>
-            <button class="confirm-btn" :disabled="modal.saving" @click="postShift">
-              {{ modal.saving ? 'Posting…' : 'Post Shift' }}
-            </button>
-          </div>
-        </div>
-      </div>
+      
     </Transition>
   </div>
 </template>
@@ -259,6 +238,29 @@ async function updateStatus(r, status) {
 .data-table tr:hover td { background: var(--bg-input); }
 .empty-row { text-align: center; color: var(--tx-ghost); font-style: italic; padding: 32px 0 !important; }
 .mono { font-family: 'DM Mono', monospace; font-size: 12px; }
+
+.avatar-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+
+.profile-body { padding: 0 24px 20px; text-align: center; }
+.profile-avatar-lg {
+  width: 160px; height: 160px; border-radius: 50%;
+  background: linear-gradient(135deg, #FF1744, #F0E6D3);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px; font-weight: 700; color: #fff;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 2px solid var(--accent-border);
+}
+.profile-name { font-size: 28px; font-weight: 700; color: var(--tx-heading); margin-bottom: 6px; }
+.profile-email { font-size: 18px; color: var(--tx-faint); margin-bottom: 12px; font-family: 'DM Mono', monospace; }
+.profile-role-badge {
+  display: inline-block; padding: 3px 14px; border-radius: 100px;
+  font-size: 15px; font-weight: 600;
+}
+.profile-role-badge.employee { background: rgba(255,23,68,0.1);  color: #FF4569; }
+.profile-role-badge.manager  { background: rgba(240,230,211,0.1); color: #c8903a; }
+.profile-role-badge.admin    { background: rgba(74,144,164,0.15); color: #4A90A4; }
+.profile-bio { font-size: 15px; font-weight: 600; color: var(--tx-secondary); margin-bottom: 6px; }
 
 .emp-cell { display: flex; align-items: center; gap: 8px; }
 .emp-avatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; flex-shrink: 0; }

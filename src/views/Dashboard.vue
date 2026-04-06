@@ -498,7 +498,7 @@
           <span class="profile-role-badge" :class="currentUser?.role?.toLowerCase()">{{ currentUser?.role }}</span>
         </div>
         <div class="profile-divider"></div>
-        <button class="profile-btn" @click="">
+        <button class="profile-btn" @click="router.push('/profile')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
             <!-- Profile icon body -->
             <path
