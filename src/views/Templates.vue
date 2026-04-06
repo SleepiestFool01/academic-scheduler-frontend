@@ -480,13 +480,14 @@ async function applyTemplate() {
 
         // Create the Shift row
         const { data: newShift } = await apiClient.post("/shifts", {
-          name:        ts.label || "Shift",
-          description: ts.notes || "",
-          day:         DAY_ENUM[dowInt],
-          date:        dateStr,
-          startTime:   hourToTimeStr(ts.startHour),
-          endTime:     hourToTimeStr(ts.endHour),
-          id_position: ts.id_position || null,
+          name:          ts.label || "Shift",
+          description:   ts.notes || "",
+          day:           DAY_ENUM[dowInt],
+          date:          dateStr,
+          startTime:     hourToTimeStr(ts.startHour),
+          endTime:       hourToTimeStr(ts.endHour),
+          id_position:   ts.id_position || null,
+          id_department: selectedDeptId.value || null,
         });
 
         // Create ShiftAssignments for each employee (if any)
