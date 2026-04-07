@@ -1,5 +1,5 @@
 <template>
-  <div class="editor-root" @mousemove="onGlobalMouseMove" @mouseup="onGlobalMouseUp">
+  <div class="editor-root" @mousemove="onGlobalMouseMove" @mouseup="onGlobalMouseUp" :class="{ 'cmd-create-mode': cmdHeld }">
 
     <!-- ── Loading overlay ── -->
     <div v-if="loading" class="loading-overlay">
@@ -36,8 +36,38 @@
       <button class="retry-btn" @click="loadAll">Retry</button>
     </div>
 
-    <!-- ── Main body: calendar + right panel ── -->
+    <!-- ── Main body: hours sidebar + calendar + right panel ── -->
     <div class="editor-body">
+
+      <!-- ── Hours of Operation Sidebar (visual overlay only) ── -->
+      <aside class="hours-sidebar">
+        <div class="hours-sidebar-head">
+          <span class="hours-sidebar-title">Hours of Operation</span>
+          <span class="hours-sidebar-sub">Visual overlay only</span>
+        </div>
+        <div v-if="hoursOptions.length === 0" class="hours-sidebar-empty">
+          No hours of operation set up for this department.
+        </div>
+        <div v-else class="hours-sidebar-list">
+          <button
+            v-for="opt in hoursOptions"
+            :key="opt.key"
+            class="hours-opt"
+            :class="{ active: selectedHoursKey === opt.key }"
+            @click="selectHoursOption(opt.key)"
+          >
+            <div class="hours-opt-row">
+              <span class="hours-opt-name">{{ opt.label }}</span>
+              <span v-if="opt.key === activeSeason" class="hours-opt-badge">Active</span>
+            </div>
+            <span class="hours-opt-meta">{{ opt.entries.length }} day{{ opt.entries.length !== 1 ? 's' : '' }}</span>
+          </button>
+        </div>
+        <div v-if="selectedHoursKey" class="hours-sidebar-legend">
+          <div class="legend-row"><span class="legend-swatch open"></span>Open</div>
+          <div class="legend-row"><span class="legend-swatch close"></span>Close</div>
+        </div>
+      </aside>
 
       <!-- ── Calendar Grid ── -->
       <div class="cal-grid-wrapper">
@@ -64,6 +94,16 @@
             >
               <div v-for="h in hours" :key="h" class="hour-cell"></div>
 
+              <!-- Hours of operation overlay lines (visual only) -->
+              <template v-for="entry in hoursLinesForDayIdx(colIdx)" :key="entry.key">
+                <div class="hours-op-line open" :style="{ top: entry.openPx + 'px' }">
+                  <span class="hours-line-label">Open {{ entry.openLabel }}</span>
+                </div>
+                <div class="hours-op-line close" :style="{ top: entry.closePx + 'px' }">
+                  <span class="hours-line-label">Close {{ entry.closeLabel }}</span>
+                </div>
+              </template>
+
               <div v-if="drag.active && drag.dayIndex === colIdx" class="ghost-block" :style="ghostStyle">
                 <span class="ghost-label">{{ ghostLabel }}</span>
               </div>
@@ -78,7 +118,7 @@
                   'shift-block--selected': selectedShift?.id_templateShift === shift.id_templateShift,
                   'shift-block--multi-selected': selectedShiftIds.has(shift.id_templateShift)
                 }"
-                @mousedown.stop
+                @mousedown="onShiftBlockMouseDown($event, colIdx)"
                 @click.stop="onShiftBlockClick(shift, $event)"
               >
                 <div class="shift-label">
@@ -332,7 +372,7 @@ import {
   removeTemplateShiftTaskList,
   getTemplateApplicationShifts,
 } from "../services/templateService.js";
-import { getPositions, getEmployees } from "../services/departmentService.js";
+import { getPositions, getEmployees, getCalendarEntries, getSettingValues } from "../services/departmentService.js";
 import { fetchTaskLists, assignTaskListToShift, getShiftTaskLists, removeShiftTaskList } from "../services/taskService.js";
 import apiClient from "../services/services.js";
 
@@ -362,6 +402,69 @@ const templateShifts   = ref([]);
 const positions        = ref([]);
 const allEmployees     = ref([]);
 const allTaskLists     = ref([]);
+
+// ── Hours of Operation (visual overlay only — does not modify real HOO) ───────
+const calendarHours      = ref([]); // raw rows from /calendar
+const activeSeason       = ref("");  // currently saved active season for the dept
+const selectedHoursKey   = ref(null); // key of the season the user is currently viewing
+const HOURS_NONE_KEY     = "__none__";
+
+// Group entries by season → [{ key, label, entries }]
+const hoursOptions = computed(() => {
+  const groups = new Map();
+  for (const e of calendarHours.value) {
+    const key = e.season || HOURS_NONE_KEY;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(e);
+  }
+  const list = [];
+  for (const [key, entries] of groups.entries()) {
+    list.push({
+      key,
+      label: key === HOURS_NONE_KEY ? "Default" : key,
+      entries,
+    });
+  }
+  // Sort: active season first, then alpha
+  list.sort((a, b) => {
+    if (a.key === activeSeason.value) return -1;
+    if (b.key === activeSeason.value) return 1;
+    return a.label.localeCompare(b.label);
+  });
+  return list;
+});
+
+const selectedHoursEntries = computed(() => {
+  const opt = hoursOptions.value.find(o => o.key === selectedHoursKey.value);
+  return opt ? opt.entries : [];
+});
+
+function parseTimeToHour(timeStr) {
+  if (!timeStr) return 0;
+  const [h, m] = timeStr.split(":").map(Number);
+  return h + (m || 0) / 60;
+}
+
+function hoursLinesForDayIdx(dayIdx) {
+  const dayName = DAY_NAMES_FULL[dayIdx];
+  return selectedHoursEntries.value
+    .filter(e => e.dayOfWeek === dayName)
+    .map(e => {
+      const openH  = parseTimeToHour(e.startTime);
+      const closeH = parseTimeToHour(e.endTime);
+      return {
+        key:        e.id_hours_of_operation || `${e.dayOfWeek}-${e.startTime}-${e.endTime}`,
+        openPx:     (openH  - CAL_START_HOUR) * CELL_HEIGHT,
+        closePx:    (closeH - CAL_START_HOUR) * CELL_HEIGHT,
+        openLabel:  fmtHour(openH),
+        closeLabel: fmtHour(closeH),
+      };
+    });
+}
+
+function selectHoursOption(key) {
+  selectedHoursKey.value = key;
+}
 // Maps id_templateShift → first assigned employee obj (for block color/label)
 const shiftEmployeeMap = ref({});
 const calBody        = ref(null);
@@ -434,6 +537,8 @@ async function undoLastAction() {
 
 // ── Drag ──────────────────────────────────────────────────────────────────────
 const drag = ref({ active: false, dayIndex: 0, startHour: 0, currentHour: 0, colEl: null });
+const cmdHeld = ref(false);
+let dragStartedFromShiftBlock = false;
 
 const quickCreate = ref({
   visible: false, dayIndex: 0, startHour: 0, endHour: 0,
@@ -541,6 +646,25 @@ async function loadAll() {
     if (id_department) {
       const posRes = await getPositions(id_department).catch(() => ({ data: [] }));
       positions.value = posRes.data || [];
+
+      // Load hours of operation + active-season setting (visual overlay only)
+      getCalendarEntries(id_department).then(r => {
+        calendarHours.value = r.data || [];
+        // Default selection: the currently active season, or first available group
+        const opts = hoursOptions.value;
+        const match = opts.find(o => o.key === activeSeason.value);
+        selectedHoursKey.value = match ? match.key : (opts[0]?.key ?? null);
+      }).catch(() => {});
+
+      getSettingValues(id_department).then(r => {
+        const sv = (r.data || []).find(v => v.name === "Active Season" || v.key === "active_season");
+        activeSeason.value = sv?.value || "";
+        // Re-resolve default once we know the active season (in case calendar loaded first)
+        if (!selectedHoursKey.value || hoursOptions.value.find(o => o.key === activeSeason.value)) {
+          const match = hoursOptions.value.find(o => o.key === activeSeason.value);
+          if (match) selectedHoursKey.value = match.key;
+        }
+      }).catch(() => {});
     }
   } catch (err) {
     apiError.value = "Could not load template: " + (err.message || "Network error");
@@ -898,16 +1022,42 @@ function onColumnMouseDown(e, colIdx) {
   drag.value = { active: true, dayIndex: colIdx, startHour, currentHour: startHour, colEl: e.currentTarget };
 }
 
+// ── Drag-scroll (auto-scroll while dragging near edges) ────────────────────────
+let dragScrollSpeed = 0;
+let dragScrollRAF   = null;
+function runDragScroll() {
+  if (!calBody.value || dragScrollSpeed === 0) { dragScrollRAF = null; return; }
+  calBody.value.scrollTop += dragScrollSpeed;
+  dragScrollRAF = requestAnimationFrame(runDragScroll);
+}
+function setDragScroll(speed) {
+  dragScrollSpeed = speed;
+  if (speed !== 0 && !dragScrollRAF) dragScrollRAF = requestAnimationFrame(runDragScroll);
+}
+function stopDragScroll() { dragScrollSpeed = 0; if (dragScrollRAF) { cancelAnimationFrame(dragScrollRAF); dragScrollRAF = null; } }
+
 function onGlobalMouseMove(e) {
   if (rubberBand.value.active) {
     rubberBand.value = { ...rubberBand.value, x: e.clientX, y: e.clientY };
     return;
   }
-  if (!drag.value.active || !drag.value.colEl) return;
+  if (!drag.value.active || !drag.value.colEl) { stopDragScroll(); return; }
   drag.value.currentHour = getHourFromEvent(e, drag.value.colEl);
+
+  // Auto-scroll when cursor is within 60px of the top/bottom of calBody
+  if (calBody.value) {
+    const { top, bottom } = calBody.value.getBoundingClientRect();
+    const ZONE = 60;
+    const fromTop    = e.clientY - top;
+    const fromBottom = bottom - e.clientY;
+    if (fromTop < ZONE && fromTop >= 0)            setDragScroll(-Math.max(2, Math.round((ZONE - fromTop)    / 10)));
+    else if (fromBottom < ZONE && fromBottom >= 0) setDragScroll( Math.max(2, Math.round((ZONE - fromBottom) / 10)));
+    else                                           setDragScroll(0);
+  }
 }
 
 function onGlobalMouseUp(e) {
+  stopDragScroll();
   if (rubberBand.value.active) {
     finalizeRubberBand();
     return;
@@ -918,7 +1068,10 @@ function onGlobalMouseUp(e) {
   const colIdx    = drag.value.dayIndex;
   drag.value.active = false;
 
-  if (endHour - startHour < SNAP_MINUTES / 60 + 0.001) return;
+  if (endHour - startHour < SNAP_MINUTES / 60 + 0.001) {
+    dragStartedFromShiftBlock = false;
+    return;
+  }
 
   quickCreate.value = {
     visible:    true,
@@ -945,7 +1098,11 @@ function onGlobalMouseUp(e) {
 }
 
 // Window-level keyboard listener — handles quick-create and multi-select shortcuts
+function onWindowKeyup(e)  { if (e.key === "Meta" || e.key === "Control") cmdHeld.value = false; }
+function onWindowBlur()    { cmdHeld.value = false; }
+
 function onWindowKeydown(e) {
+  if (e.key === "Meta" || e.key === "Control") cmdHeld.value = true;
   // Quick-create popover has priority
   if (quickCreate.value.visible) {
     if (e.key === "Escape") { quickCreate.value.visible = false; return; }
@@ -987,8 +1144,17 @@ function onWindowKeydown(e) {
     if (selectedShiftIds.value.size > 0) { clearSelection(); return; }
   }
 }
-onMounted(()   => window.addEventListener("keydown",  onWindowKeydown));
-onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
+onMounted(() => {
+  window.addEventListener("keydown", onWindowKeydown);
+  window.addEventListener("keyup",   onWindowKeyup);
+  window.addEventListener("blur",    onWindowBlur);
+});
+onUnmounted(() => {
+  stopDragScroll();
+  window.removeEventListener("keydown", onWindowKeydown);
+  window.removeEventListener("keyup",   onWindowKeyup);
+  window.removeEventListener("blur",    onWindowBlur);
+});
 
 // ── Multi-select helpers ───────────────────────────────────────────────────────
 function toggleShiftSelection(id) {
@@ -1001,7 +1167,30 @@ function clearSelection() {
   selectedShiftIds.value = new Set();
 }
 
+function onShiftBlockMouseDown(e, colIdx) {
+  if (e.metaKey || e.ctrlKey) {
+    e.stopPropagation();
+    dragStartedFromShiftBlock = true;
+    const colEl = e.currentTarget.closest('.day-column');
+    if (colEl) {
+      clearSelection();
+      selectedShift.value       = null;
+      quickCreate.value.visible = false;
+      const startHour = getHourFromEvent(e, colEl);
+      drag.value = { active: true, dayIndex: colIdx, startHour, currentHour: startHour, colEl };
+    }
+    return;
+  }
+  dragStartedFromShiftBlock = false;
+  e.stopPropagation();
+}
+
 function onShiftBlockClick(shift, e) {
+  e.stopPropagation();
+  if (dragStartedFromShiftBlock) {
+    dragStartedFromShiftBlock = false;
+    return;
+  }
   if (e.metaKey || e.ctrlKey) {
     toggleShiftSelection(shift.id_templateShift);
     return;
@@ -1235,6 +1424,141 @@ function fromTimeInput(t) {
 /* ── Editor body ── */
 .editor-body { flex: 1; display: flex; flex-direction: row; overflow: hidden; }
 
+/* ── Hours of Operation Sidebar ── */
+.hours-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--bdr-subtle);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.hours-sidebar-head {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--bdr-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.hours-sidebar-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tx-muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.hours-sidebar-sub {
+  font-size: 10px;
+  color: var(--tx-faded);
+  font-style: italic;
+}
+.hours-sidebar-empty {
+  padding: 16px;
+  font-size: 12px;
+  color: var(--tx-faded);
+  font-style: italic;
+  line-height: 1.5;
+}
+.hours-sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hours-sidebar-list::-webkit-scrollbar { width: 4px; }
+.hours-sidebar-list::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
+.hours-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg-modal);
+  border: 1px solid var(--bdr-subtle);
+  border-radius: 8px;
+  padding: 9px 11px;
+  cursor: pointer;
+  text-align: left;
+  font-family: 'DM Sans', sans-serif;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.hours-opt:hover {
+  border-color: var(--bdr-medium);
+  background: var(--bg-hover);
+}
+.hours-opt.active {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+.hours-opt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.hours-opt-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tx-primary);
+}
+.hours-opt.active .hours-opt-name { color: var(--accent); }
+.hours-opt-badge {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--ok-text);
+  background: var(--ok-bg);
+  border-radius: 10px;
+  padding: 2px 6px;
+  flex-shrink: 0;
+}
+.hours-opt-meta {
+  font-size: 10px;
+  color: var(--tx-faded);
+  font-family: 'DM Mono', monospace;
+}
+.hours-sidebar-legend {
+  border-top: 1px solid var(--bdr-subtle);
+  padding: 10px 16px;
+  display: flex;
+  gap: 14px;
+  flex-shrink: 0;
+}
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--tx-faint);
+  font-family: 'DM Mono', monospace;
+}
+.legend-swatch {
+  width: 18px;
+  height: 2px;
+  border-radius: 1px;
+}
+.legend-swatch.open  { background: rgba(34, 197, 94, 0.85); }
+.legend-swatch.close { background: rgba(248, 113, 113, 0.85); }
+
+/* ── Hours of operation overlay lines (calendar grid) ── */
+.hours-op-line {
+  position: absolute; left: 0; right: 0; height: 2px;
+  z-index: 4; pointer-events: none; overflow: visible;
+}
+.hours-op-line.open  { background: rgba(34, 197, 94, 0.65); box-shadow: 0 0 6px rgba(34,197,94,0.3); }
+.hours-op-line.close { background: rgba(248, 113, 113, 0.65); box-shadow: 0 0 6px rgba(248,113,113,0.3); }
+.hours-line-label {
+  position: absolute; right: 6px; bottom: 4px;
+  font-size: 10px; font-family: 'DM Mono', monospace; font-weight: 600;
+  white-space: nowrap; padding: 1px 5px; border-radius: 3px;
+  pointer-events: none; line-height: 13px;
+}
+.hours-op-line.open  .hours-line-label { color: rgb(34,197,94);   background: rgba(34,197,94,0.12); }
+.hours-op-line.close .hours-line-label { color: rgb(248,113,113); background: rgba(248,113,113,0.12); }
+
 /* ── Calendar grid ── */
 .cal-grid-wrapper {
   flex: 1; display: flex; flex-direction: column; overflow: hidden;
@@ -1277,6 +1601,7 @@ function fromTimeInput(t) {
 /* ── Shift blocks ── */
 .shift-block { position: absolute; transition: filter .1s; }
 .shift-block:hover { filter: brightness(1.12); }
+.cmd-create-mode .shift-block { cursor: crosshair !important; }
 .shift-label { font-size: 12px; font-weight: 700; color: rgba(0,0,0,.85); line-height: 1.2; }
 .shift-time  { font-size: 10px; color: rgba(0,0,0,.6); font-family: 'DM Mono', monospace; }
 .shift-pos-badge { font-size: 9px; color: rgba(0,0,0,.5); margin-top: 2px; background: rgba(0,0,0,.1); border-radius: 3px; padding: 1px 4px; display: inline-block; }
