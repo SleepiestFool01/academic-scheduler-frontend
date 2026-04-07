@@ -315,6 +315,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useTheme } from "../composables/useTheme.js";
+import { useDepartment } from "../composables/useDepartment.js";
 import Utils from "../config/utils.js";
 import {
   getTemplate,
@@ -347,6 +348,7 @@ const EMPLOYEE_COLORS  = ["#F0E6D3","#C0392B","#FF1744","#E8724A","#9B6B9B","#4A
 
 // ── State ─────────────────────────────────────────────────────────────────────
 useTheme(); // ensures data-theme is applied on this page
+const { selectedDeptId } = useDepartment();
 const router = useRouter();
 const route  = useRoute();
 const id     = computed(() => route.params.id);
@@ -497,14 +499,14 @@ async function loadAll() {
   loading.value  = true;
   apiError.value = "";
   try {
-    const currentUser  = Utils.getStore("user");
-    const id_department = currentUser?.id_department ?? null;
+    const currentUser   = Utils.getStore("user");
+    const id_department = selectedDeptId.value || currentUser?.id_department || null;
 
     const [tpl, shifts, emps, tls] = await Promise.all([
       getTemplate(id.value),
       fetchTemplateShifts(id.value),
-      getEmployees().catch(() => ({ data: [] })),
-      fetchTaskLists().catch(() => []),
+      getEmployees(id_department).catch(() => ({ data: [] })),
+      fetchTaskLists(id_department).catch(() => []),
     ]);
 
     templateName.value = tpl.name;

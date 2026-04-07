@@ -69,17 +69,19 @@
             @click="jumpToDay(day)">{{ day }}</div>
         </div>
 
-        <!-- Today's Employees — Manager only -->
+        <!-- ══ MANAGER SIDEBAR ══ -->
         <div v-if="isManager" class="sidebar-section">
-          <p class="sidebar-label">Today's Employees</p>
+          <div class="sidebar-sec-header">
+            <span class="sidebar-sec-title">Today's Employees</span>
+            <span v-if="todaysEmployees.length" class="sidebar-sec-count">{{ todaysEmployees.length }}</span>
+          </div>
           <div v-for="emp in todaysEmployees" :key="emp.name" class="employee-chip" :style="{ background: emp.color }">{{ emp.name }}</div>
           <div v-if="todaysEmployees.length === 0" class="sidebar-empty">No shifts today</div>
         </div>
-        <!-- Open Shifts — Manager only -->
         <div v-if="isManager" class="sidebar-section">
-          <div class="open-shifts-header">
-            <p class="sidebar-label underline-link" @click="activeTab = 'Shifts'">Open Shifts</p>
-            <span class="open-shifts-week">this week</span>
+          <div class="sidebar-sec-header clickable" @click="activeTab = 'Shifts'">
+            <span class="sidebar-sec-title">Open Shifts</span>
+            <span class="sidebar-sec-sub">this week</span>
           </div>
           <div v-if="computedOpenShifts.length === 0" class="sidebar-empty">No open shifts this week</div>
           <div v-for="s in computedOpenShifts" :key="s.key" class="open-shift-item">
@@ -89,10 +91,26 @@
             </div>
           </div>
         </div>
+        <div v-if="isManager" class="sidebar-section">
+          <div class="sidebar-sec-header clickable" @click="activeTab = 'Requests'">
+            <span class="sidebar-sec-title">Requests</span>
+            <span v-if="pendingRequests.length" class="sidebar-sec-count">{{ pendingRequests.length }}</span>
+          </div>
+          <div v-if="pendingRequests.length === 0" class="sidebar-empty">No pending requests</div>
+          <div v-for="r in pendingRequests" :key="r.id" class="request-item">
+            <span class="request-name">{{ r.name }}</span>
+            <span class="request-type">{{ r.type }}</span>
+          </div>
+        </div>
 
-        <!-- My Shifts Today — Employee only -->
+        <!-- ══ EMPLOYEE SIDEBAR ══ -->
+
+        <!-- 1. My Shifts Today -->
         <div v-if="!isManager" class="sidebar-section">
-          <p class="sidebar-label">My Shifts Today</p>
+          <div class="sidebar-sec-header">
+            <span class="sidebar-sec-title">My Shifts Today</span>
+            <span v-if="myTodayShifts.length" class="sidebar-sec-count">{{ myTodayShifts.length }}</span>
+          </div>
           <div v-if="myTodayShifts.length === 0" class="sidebar-empty">No shifts today</div>
           <div v-for="s in myTodayShifts" :key="s.id" class="my-shift-item">
             <span class="my-shift-pos">{{ s.positionName || 'Shift' }}</span>
@@ -100,21 +118,41 @@
           </div>
         </div>
 
-        <!-- My Shifts This Week — Employee only -->
+        <!-- 2. Tasks -->
         <div v-if="!isManager" class="sidebar-section">
-          <p class="sidebar-label">This Week</p>
-          <div v-if="myWeekShifts.length === 0" class="sidebar-empty">No other shifts this week</div>
-          <div v-for="s in myWeekShifts" :key="s.id" class="open-shift-item">
-            <span class="open-shift-day">{{ DAY_ABBR[new Date(s.date + 'T00:00:00').getDay()] }}</span>
-            <div class="open-shift-gaps">
-              <span class="open-shift-gap">{{ s.startLabel }} – {{ s.endLabel }}</span>
-            </div>
+          <div class="sidebar-sec-header">
+            <span class="sidebar-sec-title">Tasks</span>
+            <span v-if="myShiftTasksTotal > 0" class="sidebar-sec-count">{{ myShiftTasksDone }}/{{ myShiftTasksTotal }}</span>
           </div>
+          <div v-if="myShiftTasks.length === 0" class="sidebar-empty">No tasks for today's shifts</div>
+          <template v-for="stl in myShiftTasks" :key="stl.shiftTaskListId">
+            <div class="sb-tasklist-header">
+              <span class="sb-tasklist-name">{{ stl.taskList.name }}</span>
+              <span class="sb-tasklist-shift">{{ stl.shiftLabel }}</span>
+            </div>
+            <div v-for="status in stl.statuses" :key="status.id_shiftTaskListStatus" class="sb-task-row">
+              <button class="sb-task-check" :class="{ done: status.isCompleted }" @click="toggleTaskStatus(status)" :title="status.isCompleted ? 'Mark incomplete' : 'Mark complete'">
+                <svg v-if="status.isCompleted" width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <path d="M1.5 5L3.8 7.5L8.5 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <span class="sb-task-label" :class="{ done: status.isCompleted }">{{ status.taskName }}</span>
+            </div>
+            <div class="sb-task-progress">
+              <div class="my-task-bar">
+                <div class="my-task-fill" :style="{ width: stl.totalCount ? (stl.completedCount / stl.totalCount * 100) + '%' : '0%' }"></div>
+              </div>
+              <span class="my-task-count">{{ stl.completedCount }}/{{ stl.totalCount }}</span>
+            </div>
+          </template>
         </div>
 
-        <!-- Tradeboard Open Shifts — Employee only -->
+        <!-- 3. Tradeboard -->
         <div v-if="!isManager" class="sidebar-section">
-          <p class="sidebar-label underline-link" @click="router.push('/tradeboard')">Tradeboard</p>
+          <div class="sidebar-sec-header clickable" @click="router.push('/tradeboard')">
+            <span class="sidebar-sec-title">Tradeboard</span>
+            <span v-if="tradeboardOpenShifts.length" class="sidebar-sec-count">{{ tradeboardOpenShifts.length }}</span>
+          </div>
           <div v-if="tradeboardOpenShifts.length === 0" class="sidebar-empty">No open shifts</div>
           <div v-for="r in tradeboardOpenShifts" :key="r.id" class="trade-preview-item" @click="router.push('/tradeboard')">
             <div class="trade-preview-top">
@@ -124,29 +162,17 @@
             <span class="trade-preview-time">{{ r.startLabel }} – {{ r.endLabel }}</span>
           </div>
         </div>
-        <div class="sidebar-section">
-          <p class="sidebar-label underline-link" @click="activeTab = 'Requests'">Requests</p>
-          <div v-if="pendingRequests.length === 0" class="sidebar-empty">No pending requests</div>
-          <div v-for="r in pendingRequests" :key="r.id" class="request-item">
+
+        <!-- 4. Requests -->
+        <div v-if="!isManager" class="sidebar-section">
+          <div class="sidebar-sec-header clickable" @click="activeTab = 'Requests'">
+            <span class="sidebar-sec-title">Requests</span>
+            <span v-if="myRequests.length" class="sidebar-sec-count">{{ myRequests.length }}</span>
+          </div>
+          <div v-if="myRequests.length === 0" class="sidebar-empty">No pending requests</div>
+          <div v-for="r in myRequests" :key="r.id" class="request-item">
             <span class="request-name">{{ r.name }}</span>
             <span class="request-type">{{ r.type }}</span>
-          </div>
-        </div>
-
-        <!-- My Tasks Today — Employee only -->
-        <div v-if="!isManager && myShiftTasks.length > 0" class="sidebar-section">
-          <p class="sidebar-label">My Tasks Today</p>
-          <div v-for="stl in myShiftTasks" :key="stl.shiftTaskListId" class="my-task-item">
-            <div class="my-task-list-name">{{ stl.taskList.name }}</div>
-            <div class="my-task-progress">
-              <div class="my-task-bar">
-                <div
-                  class="my-task-fill"
-                  :style="{ width: stl.totalCount ? (stl.completedCount / stl.totalCount * 100) + '%' : '0%' }"
-                ></div>
-              </div>
-              <span class="my-task-count">{{ stl.completedCount }}/{{ stl.totalCount }}</span>
-            </div>
           </div>
         </div>
       </aside>
@@ -722,8 +748,11 @@ const shiftTasksModal = ref({
   error: "",
 });
 
-// Employee sidebar: task lists from today's shifts
-const myShiftTasks = ref([]); // [{ shiftTaskListId, taskList, statuses, completedCount, totalCount }]
+// Employee sidebar: task lists for all of today's shifts
+const myShiftTasks = ref([]); // [{ shiftTaskListId, id_shift, shiftLabel, taskList, statuses, completedCount, totalCount }]
+
+// Tracks the current local time in fractional hours; refreshes every minute for the time-line indicator
+const currentTimeHour = ref(new Date().getHours() + new Date().getMinutes() / 60);
 
 // Derived from logged-in user (placeholder until auth is wired up)
 const currentUser = ref(Utils.getStore("user") || { fName: "?", lName: "?" });
@@ -894,15 +923,6 @@ const myTodayShifts = computed(() => {
   return shifts.value.filter(s => s.date === key && s.id_employee === myId);
 });
 
-const myWeekShifts = computed(() => {
-  if (isManager.value) return [];
-  const todayKey = dateToKey(new Date());
-  const myId     = currentUser.value?.id_employee;
-  const weekKeys = new Set(weekDates.value.map(d => dateToKey(d)));
-  return shifts.value
-    .filter(s => s.id_employee === myId && weekKeys.has(s.date) && s.date !== todayKey)
-    .sort((a, b) => a.date.localeCompare(b.date) || a.startHour - b.startHour);
-});
 
 const tradeboardOpenShifts = computed(() => {
   if (isManager.value) return [];
@@ -920,6 +940,17 @@ const tradeboardOpenShifts = computed(() => {
       };
     })
     .slice(0, 5);
+});
+
+// Employee sidebar task summary
+const myShiftTasksTotal = computed(() => myShiftTasks.value.reduce((acc, stl) => acc + stl.totalCount, 0));
+const myShiftTasksDone  = computed(() => myShiftTasks.value.reduce((acc, stl) => acc + stl.completedCount, 0));
+
+// Employee's own pending requests (swap requests they initiated)
+const myRequests = computed(() => {
+  if (isManager.value) return [];
+  const myId = currentUser.value?.id_employee;
+  return pendingRequests.value.filter(r => r.raw.id_employeeRequester === myId);
 });
 
 const currentTimePx = computed(() => {
@@ -1342,7 +1373,7 @@ async function loadAll() {
     const [empList, tlData, tData] = await Promise.all([
       fetchEmployees(deptId),
       fetchTaskLists(deptId).catch(() => []),
-      fetchTasks().catch(() => []),
+      fetchTasks(deptId).catch(() => []),
     ]);
     const map = {};
     empList.forEach((e, i) => {
@@ -1595,32 +1626,39 @@ async function toggleTaskStatus(status) {
   }
 }
 
-// Employee-only: load task lists for today's own shifts (populates sidebar)
+// Employee-only: load task lists for all of today's shifts (populates sidebar)
 async function loadMyTasks() {
   if (isManager.value) return;
-  const myId     = currentUser.value?.id_employee;
-  if (!myId) return;
-  const todayKey = dateToKey(new Date());
-  const todayShifts = shifts.value.filter(s => s.date === todayKey && s.id_employee === myId);
+  const todayShifts = myTodayShifts.value;
+  if (todayShifts.length === 0) {
+    myShiftTasks.value = [];
+    return;
+  }
   const results = [];
-  for (const shift of todayShifts) {
-    try {
+  try {
+    for (const shift of todayShifts) {
       const stls = await getShiftTaskLists(shift.id_shift);
       for (const stl of stls) {
-        const statuses  = await getTaskListStatuses(stl.id_shiftTaskList);
-        const taskList  = taskLists.value.find(l => l.id_taskList === stl.id_taskList);
+        const statuses = await getTaskListStatuses(stl.id_shiftTaskList);
+        const taskList = taskLists.value.find(l => l.id_taskList === stl.id_taskList);
         if (taskList) {
+          const enriched = statuses.map(s => ({
+            ...s,
+            taskName: allTasks.value.find(t => t.id_task === s.id_task)?.name ?? `Task #${s.id_task}`,
+          }));
           results.push({
             shiftTaskListId: stl.id_shiftTaskList,
+            id_shift:        shift.id_shift,
+            shiftLabel:      shift.positionName || `${shift.startLabel}–${shift.endLabel}`,
             taskList,
-            statuses,
-            completedCount: statuses.filter(s => s.isCompleted).length,
-            totalCount:     statuses.length,
+            statuses: enriched,
+            completedCount: enriched.filter(s => s.isCompleted).length,
+            totalCount:     enriched.length,
           });
         }
       }
-    } catch { /* silent — sidebar is non-critical */ }
-  }
+    }
+  } catch { /* silent — sidebar is non-critical */ }
   myShiftTasks.value = results;
 }
 
@@ -1804,13 +1842,24 @@ function onDashKeydown(e) {
 // ── Lifecycle ──────────────────────────────────────────────────────────────────
 watch(selectedDeptId, () => loadAll());
 
+// Reload sidebar tasks whenever today's shifts change (e.g. after loadAll)
+watch(myTodayShifts, () => { loadMyTasks(); }, { deep: false });
+
+let clockInterval = null;
 onMounted(async () => {
   if (isManager.value) await loadDepts(currentUser.value);
   await loadAll();
   if (calBody.value) calBody.value.scrollTop = 7 * CELL_HEIGHT; // scroll to 7am
   window.addEventListener("keydown", onDashKeydown);
+  // Tick every minute to keep the current-time line accurate
+  clockInterval = setInterval(() => {
+    currentTimeHour.value = new Date().getHours() + new Date().getMinutes() / 60;
+  }, 60_000);
 });
-onUnmounted(() => { window.removeEventListener("keydown", onDashKeydown); });
+onUnmounted(() => {
+  window.removeEventListener("keydown", onDashKeydown);
+  clearInterval(clockInterval);
+});
 watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrollTop = 7 * CELL_HEIGHT; }, 50); });
 </script>
 
@@ -1862,7 +1911,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .layout { display: flex; flex: 1; overflow: hidden; }
 
 /* ── Sidebar ── */
-.sidebar { width: 220px; flex-shrink: 0; background: var(--bg-surface); border-right: 1px solid var(--bdr-subtle); overflow-y: auto; padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; }
+.sidebar { width: 220px; flex-shrink: 0; background: var(--bg-surface); border-right: 1px solid var(--bdr-subtle); overflow-y: auto; padding: 16px 8px; display: flex; flex-direction: column; gap: 8px; }
 .sidebar::-webkit-scrollbar { width: 4px; }
 .sidebar::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
 .mini-cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; padding: 0 2px; }
@@ -1877,12 +1926,22 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .mini-cal-cell.selected-day { background: var(--accent-bg); color: var(--accent); font-weight: 600; outline: 1px solid var(--accent-border); }
 .mini-cal-cell.today { background: var(--accent) !important; color: var(--today-badge-tx) !important; font-weight: 700; }
 .mini-cal-cell.empty { cursor: default; }
-.sidebar-section { margin-bottom: 20px; }
+.sidebar-section { margin-bottom: 0; padding: 0 10px 12px; background: var(--bg-card); border: 1px solid var(--bdr-faint); border-radius: 8px; }
+
+/* Section header — used by both manager and employee sections */
+.sidebar-sec-header { display: flex; align-items: center; justify-content: space-between; padding: 11px 0 9px; margin-bottom: 8px; border-bottom: 1px solid var(--bdr-faint); }
+.sidebar-sec-title { font-size: 13px; font-weight: 700; color: var(--tx-primary); letter-spacing: 0.01em; font-family: 'DM Sans', sans-serif; }
+.sidebar-sec-sub { font-size: 10px; color: var(--tx-faintest); font-style: italic; }
+.sidebar-sec-count { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--tx-ghost); background: var(--bg-hover); border: 1px solid var(--bdr-faint); border-radius: 10px; padding: 1px 7px; flex-shrink: 0; }
+.sidebar-sec-header.clickable { cursor: pointer; }
+.sidebar-sec-header.clickable:hover .sidebar-sec-title { color: var(--accent); }
+
+/* Legacy sidebar label — kept for any remaining usages */
 .sidebar-label { font-size: 11px; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 8px; }
 .sidebar-label.underline-link { cursor: pointer; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 .employee-chip { border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 600; color: #000; margin-bottom: 5px; text-align: center; cursor: pointer; transition: opacity 0.15s; }
 .employee-chip:hover { opacity: 0.85; }
-.sidebar-empty { font-size: 11px; color: var(--tx-faintest); font-style: italic; }
+.sidebar-empty { font-size: 11px; color: var(--tx-faintest); font-style: italic; padding: 2px 0 4px; }
 .open-shifts-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
 .open-shifts-header .sidebar-label { margin-bottom: 0; }
 .open-shifts-week { font-size: 10px; color: var(--tx-faintest); font-style: italic; }
@@ -2277,11 +2336,31 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .stm-link { color: var(--accent-hover); cursor: pointer; text-decoration: underline; }
 .stm-link:hover { color: var(--accent); }
 
-/* ── My tasks sidebar ── */
-.my-task-item { margin-bottom: 8px; }
-.my-task-list-name { font-size: 11px; font-weight: 600; color: var(--tx-secondary); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.my-task-progress { display: flex; align-items: center; gap: 6px; }
-.my-task-bar { flex: 1; height: 4px; background: var(--bdr-subtle); border-radius: 2px; overflow: hidden; }
+/* ── Sidebar task section ── */
+.sb-tasklist-header { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; margin: 10px 0 5px; }
+.sb-tasklist-name { font-size: 11px; font-weight: 700; color: var(--tx-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.sb-tasklist-shift { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--tx-ghost); flex-shrink: 0; }
+.sb-task-row { display: flex; align-items: center; gap: 7px; padding: 3px 0; }
+.sb-task-check {
+  width: 16px; height: 16px; flex-shrink: 0;
+  border-radius: 4px;
+  border: 1.5px solid var(--tx-muted);
+  background: var(--bg-input);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: transparent;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  padding: 0;
+}
+.sb-task-check:hover { border-color: var(--accent); background: var(--accent-bg); }
+.sb-task-check.done { background: var(--accent); border-color: var(--accent); color: #fff; }
+.sb-task-label { font-size: 11px; color: var(--tx-muted); line-height: 1.35; flex: 1; }
+.sb-task-label.done { color: var(--tx-faintest); text-decoration: line-through; }
+.sb-task-progress { display: flex; align-items: center; gap: 6px; margin: 6px 0 4px; }
+
+/* ── Shared progress bar (tasks) ── */
+.my-task-progress { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+.my-task-bar { flex: 1; height: 3px; background: var(--bdr-subtle); border-radius: 2px; overflow: hidden; }
 .my-task-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s ease; }
 .my-task-count { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--tx-ghost); flex-shrink: 0; }
 
