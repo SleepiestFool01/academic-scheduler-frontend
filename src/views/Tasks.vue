@@ -82,7 +82,10 @@
               <button class="add-task-btn" @click="openCreateTaskInList(list)">+ New Task</button>
               <button class="add-task-btn" @click="openAddExisting(list)">+ Add Existing</button>
             </div>
-            <button class="assign-shift-btn" @click="openAssignShift(list)">⟶ Assign to Shift</button>
+            <div class="card-action-row">
+              <button class="assign-shift-btn" @click="openAssignShift(list)">⟶ Assign to Shift</button>
+              <button class="position-link-btn" @click="openPositionLink(list)">⊕ Link to Position</button>
+            </div>
           </div>
         </div>
       </div>
@@ -309,6 +312,54 @@
       </div>
     </Transition>
 
+    <!-- Position Link modal -->
+    <Transition name="modal">
+      <div v-if="posLinkModal.open" class="modal-overlay" @click.self="posLinkModal.open = false">
+        <div class="modal modal-shift">
+          <h3 class="modal-title">Position Links — "{{ posLinkModal.list?.name }}"</h3>
+          <p class="modal-hint">Task lists linked to a position are automatically assigned to every new shift created with that position.</p>
+
+          <!-- Currently linked positions -->
+          <div class="pos-link-section">
+            <p class="pos-link-label">Linked Positions</p>
+            <div v-if="posLinkModal.links.length === 0" class="pos-link-empty">No positions linked yet.</div>
+            <div v-for="link in posLinkModal.links" :key="link.id_positionTaskList" class="pos-link-row">
+              <span class="pos-link-name">{{ link.positionName }}</span>
+              <button class="pos-unlink-btn" :disabled="posLinkModal.saving" @click="unlinkPosition(link)">Remove</button>
+            </div>
+          </div>
+
+          <!-- Add a new link -->
+          <div class="pos-link-section">
+            <p class="pos-link-label">Add Position</p>
+            <div class="pos-link-add-row">
+              <select v-model="posLinkModal.selectedPositionId" class="pos-link-select">
+                <option :value="null" disabled>Select a position…</option>
+                <option
+                  v-for="p in availablePositions"
+                  :key="p.id_position"
+                  :value="p.id_position"
+                >{{ p.name }}</option>
+              </select>
+              <button
+                class="confirm-btn"
+                style="flex-shrink:0"
+                :disabled="!posLinkModal.selectedPositionId || posLinkModal.saving"
+                @click="linkPosition"
+              >{{ posLinkModal.saving ? 'Linking…' : 'Link' }}</button>
+            </div>
+            <p v-if="availablePositions.length === 0 && allPositions.length > 0" class="form-hint">All positions are already linked.</p>
+            <p v-if="allPositions.length === 0" class="form-hint">No positions found for this department.</p>
+          </div>
+
+          <p v-if="posLinkModal.error" class="modal-error">{{ posLinkModal.error }}</p>
+          <div class="modal-actions">
+            <button class="cancel-btn" @click="posLinkModal.open = false">Done</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <!-- Add Existing Task modal -->
     <Transition name="modal">
       <div v-if="addExistingModal.open" class="modal-overlay" @click.self="addExistingModal.open = false">
@@ -377,7 +428,8 @@ import { useDepartment } from "../composables/useDepartment.js";
 import { useRouter } from "vue-router";
 import Utils from "../config/utils.js";
 import apiClient from "../services/services.js";
-import { getShiftTaskLists, getTaskListStatuses, updateTaskComplete } from "../services/taskService.js";
+import { getShiftTaskLists, getTaskListStatuses, updateTaskComplete, getTaskListPositions, addPositionTaskList, removePositionTaskList } from "../services/taskService.js";
+import { getPositions } from "../services/departmentService.js";
 
 const router     = useRouter();
 const currentUser = Utils.getStore("user") || {};
@@ -736,6 +788,91 @@ async function toggleEmpTask(status) {
   } catch { /* silent */ }
 }
 
+// ── Position Links ─────────────────────────────────────────────────────────────
+
+const allPositions = ref([]);
+const posLinkModal = ref({
+  open: false,
+  list: null,
+  links: [],            // [{ id_positionTaskList, id_position, positionName }]
+  selectedPositionId: null,
+  saving: false,
+  error: "",
+});
+
+// Positions not yet linked to this task list
+const availablePositions = computed(() =>
+  allPositions.value.filter(
+    p => !posLinkModal.value.links.some(l => l.id_position === p.id_position)
+  )
+);
+
+async function openPositionLink(list) {
+  posLinkModal.value = {
+    open: true,
+    list,
+    links: [],
+    selectedPositionId: null,
+    saving: false,
+    error: "",
+  };
+  try {
+    const deptId = selectedDeptId.value;
+    const [posRes, linkRes] = await Promise.all([
+      getPositions(deptId).catch(() => ({ data: [] })),
+      getTaskListPositions(list.id_taskList).catch(() => []),
+    ]);
+    allPositions.value = posRes.data || [];
+    // Enrich links with position name
+    posLinkModal.value.links = linkRes.map(l => ({
+      ...l,
+      positionName: allPositions.value.find(p => p.id_position === l.id_position)?.name ?? `Position #${l.id_position}`,
+    }));
+    // Default selection to first available
+    posLinkModal.value.selectedPositionId = availablePositions.value[0]?.id_position ?? null;
+  } catch (err) {
+    posLinkModal.value.error = "Could not load positions: " + (err.message || "Network error");
+  }
+}
+
+async function linkPosition() {
+  const { list, selectedPositionId } = posLinkModal.value;
+  if (!selectedPositionId) return;
+  posLinkModal.value.saving = true;
+  posLinkModal.value.error  = "";
+  try {
+    const record = await addPositionTaskList(selectedPositionId, list.id_taskList);
+    const pos = allPositions.value.find(p => p.id_position === selectedPositionId);
+    posLinkModal.value.links.push({
+      ...record,
+      positionName: pos?.name ?? `Position #${selectedPositionId}`,
+    });
+    posLinkModal.value.selectedPositionId = availablePositions.value[0]?.id_position ?? null;
+  } catch (err) {
+    posLinkModal.value.error = err.response?.data?.message || err.message || "Could not link position.";
+  } finally {
+    posLinkModal.value.saving = false;
+  }
+}
+
+async function unlinkPosition(link) {
+  posLinkModal.value.saving = true;
+  posLinkModal.value.error  = "";
+  try {
+    await removePositionTaskList(link.id_positionTaskList);
+    posLinkModal.value.links = posLinkModal.value.links.filter(
+      l => l.id_positionTaskList !== link.id_positionTaskList
+    );
+    if (!posLinkModal.value.selectedPositionId) {
+      posLinkModal.value.selectedPositionId = availablePositions.value[0]?.id_position ?? null;
+    }
+  } catch (err) {
+    posLinkModal.value.error = err.response?.data?.message || err.message || "Could not remove link.";
+  } finally {
+    posLinkModal.value.saving = false;
+  }
+}
+
 // ── Delete ──
 const deleteConfirm = ref({ open: false, type: "", item: null, label: "", saving: false });
 
@@ -834,8 +971,28 @@ async function executeDelete() {
 .existing-task-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 .existing-task-info .task-name { font-size: 13px; font-weight: 500; color: var(--tx-primary); }
 .existing-task-info .task-desc { font-size: 12px; color: var(--tx-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.assign-shift-btn { background: none; border: 1px dashed var(--ok-text); color: var(--tx-ghost); width: 100%; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; margin-top: 8px; transition: border-color 0.15s, color 0.15s; display: block; }
+.card-action-row { display: flex; gap: 8px; margin-top: 8px; }
+.card-action-row .assign-shift-btn,
+.card-action-row .position-link-btn { margin-top: 0; flex: 1; }
+.assign-shift-btn { background: none; border: 1px dashed var(--ok-text); color: var(--tx-ghost); width: 100%; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s, color 0.15s; display: block; }
 .assign-shift-btn:hover { border-color: var(--ok-text); color: var(--ok-text); }
+.position-link-btn { background: none; border: 1px dashed var(--bdr-medium); color: var(--tx-ghost); width: 100%; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s, color 0.15s; display: block; }
+.position-link-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Position link modal ── */
+.modal-hint { font-size: 12px; color: var(--tx-faint); margin: -12px 0 18px; line-height: 1.5; }
+.pos-link-section { margin-bottom: 20px; }
+.pos-link-label { font-size: 10px; font-weight: 700; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+.pos-link-empty { font-size: 12px; color: var(--tx-ghost); font-style: italic; padding: 6px 0; }
+.pos-link-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--bdr-strong); border-radius: 8px; margin-bottom: 6px; }
+.pos-link-name { font-size: 13px; font-weight: 500; color: var(--tx-primary); }
+.pos-unlink-btn { background: none; border: 1px solid var(--bdr-medium); color: var(--tx-muted); font-size: 11px; padding: 3px 10px; border-radius: 6px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s, color 0.15s; }
+.pos-unlink-btn:hover:not(:disabled) { border-color: var(--err-text); color: var(--err-text); }
+.pos-unlink-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pos-link-add-row { display: flex; gap: 8px; align-items: center; }
+.pos-link-select { flex: 1; background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary); padding: 8px 10px; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; }
+.pos-link-select:focus { border-color: var(--accent); }
+.pos-link-select option { background: var(--bg-modal); }
 .form-hint { font-size: 11px; color: var(--tx-faint); font-style: italic; margin-top: 4px; }
 
 .table-wrap { border-radius: 12px; border: 1px solid var(--bdr-subtle); overflow: hidden; max-width: 900px; }
