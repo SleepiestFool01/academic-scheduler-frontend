@@ -17,8 +17,9 @@ export async function fetchTaskLists(id_department = null) {
   return data;
 }
 
-export async function fetchTasks() {
-  const { data } = await apiClient.get("/tasks");
+export async function fetchTasks(id_department = null) {
+  const qs = id_department ? `?id_department=${id_department}` : "";
+  const { data } = await apiClient.get(`/tasks${qs}`);
   return data;
 }
 
@@ -61,6 +62,32 @@ export async function getTaskListStatuses(id_shiftTaskList) {
     `/shift-task-list-status?id_shiftTaskList=${id_shiftTaskList}`
   );
   return data;
+}
+
+// ── Position ↔ TaskList links ───────────────────────────────────────────────────
+
+/**
+ * Get all PositionTaskList entries for a given task list.
+ * Returns: [{ id_positionTaskList, id_position, id_taskList }]
+ */
+export async function getTaskListPositions(id_taskList) {
+  const { data } = await apiClient.get(`/position-task-lists?id_taskList=${id_taskList}`);
+  return data;
+}
+
+/**
+ * Link a task list to a position.
+ */
+export async function addPositionTaskList(id_position, id_taskList) {
+  const { data } = await apiClient.post("/position-task-lists", { id_position, id_taskList });
+  return data;
+}
+
+/**
+ * Unlink a task list from a position.
+ */
+export async function removePositionTaskList(id_positionTaskList) {
+  await apiClient.delete(`/position-task-lists/${id_positionTaskList}`);
 }
 
 /**

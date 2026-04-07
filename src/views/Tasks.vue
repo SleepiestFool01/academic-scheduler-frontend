@@ -18,7 +18,7 @@
         </div>
         <h1 class="page-title">Tasks</h1>
       </div>
-      <div class="nav-tabs">
+      <div v-if="isManager" class="nav-tabs">
         <button class="nav-tab" :class="{ active: activeTab === 'lists' }" @click="activeTab = 'lists'">Task Lists</button>
         <button class="nav-tab" :class="{ active: activeTab === 'tasks' }" @click="activeTab = 'tasks'">All Tasks</button>
       </div>
@@ -35,9 +35,10 @@
     </div>
     <div v-if="apiError" class="error-banner">{{ apiError }}<button class="retry-btn" @click="loadAll">Retry</button></div>
 
-    <div class="content">
+    <!-- ══ MANAGER VIEW ══ -->
+    <div v-if="isManager" class="content">
 
-      <!-- ══ TASK LISTS TAB ══ -->
+      <!-- Task Lists Tab -->
       <div v-if="activeTab === 'lists'">
         <div class="panel-header">
           <div>
@@ -58,7 +59,7 @@
                 <h3 class="list-name">{{ list.name }}</h3>
                 <p class="list-desc">{{ list.description || 'No description' }}</p>
               </div>
-              <div v-if="isManager" class="action-btns">
+              <div class="action-btns">
                 <button class="icon-action" @click="openEditList(list)">✎</button>
                 <button class="icon-action danger" @click="confirmDelete('list', list)">✕</button>
               </div>
@@ -69,7 +70,7 @@
                 <span class="task-bullet">·</span>
                 <span class="task-name">{{ task.name }}</span>
                 <span class="task-desc">{{ task.description }}</span>
-                <div v-if="isManager" class="task-actions">
+                <div class="task-actions">
                   <button class="icon-action sm" @click="openEditTask(task)">✎</button>
                   <button class="icon-action sm danger" @click="confirmDelete('task', task)">✕</button>
                 </div>
@@ -77,18 +78,19 @@
               <div v-if="tasksForList(list.id_taskList).length === 0" class="no-tasks">No tasks in this list yet.</div>
             </div>
 
-            <template v-if="isManager">
-              <div class="list-btn-row">
-                <button class="add-task-btn" @click="openCreateTaskInList(list)">+ New Task</button>
-                <button class="add-task-btn" @click="openAddExisting(list)">+ Add Existing</button>
-              </div>
+            <div class="list-btn-row">
+              <button class="add-task-btn" @click="openCreateTaskInList(list)">+ New Task</button>
+              <button class="add-task-btn" @click="openAddExisting(list)">+ Add Existing</button>
+            </div>
+            <div class="card-action-row">
               <button class="assign-shift-btn" @click="openAssignShift(list)">⟶ Assign to Shift</button>
-            </template>
+              <button class="position-link-btn" @click="openPositionLink(list)">⊕ Link to Position</button>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- ══ ALL TASKS TAB ══ -->
+      <!-- All Tasks Tab -->
       <div v-if="activeTab === 'tasks'">
         <div class="panel-header">
           <div>
@@ -102,8 +104,7 @@
           <table class="data-table">
             <thead>
               <tr>
-                <th>Task</th><th>Description</th><th>Task List</th>
-                <th v-if="isManager">Actions</th>
+                <th>Task</th><th>Description</th><th>Task List</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -111,7 +112,7 @@
                 <td class="task-name-cell">{{ task.name }}</td>
                 <td class="muted">{{ task.description }}</td>
                 <td><span class="list-badge">{{ listName(task.id_taskList) }}</span></td>
-                <td v-if="isManager">
+                <td>
                   <div class="action-btns">
                     <button class="icon-action" @click="openEditTask(task)">✎</button>
                     <button class="icon-action danger" @click="confirmDelete('task', task)">✕</button>
@@ -125,6 +126,94 @@
           </table>
         </div>
       </div>
+    </div>
+
+    <!-- ══ EMPLOYEE VIEW ══ -->
+    <div v-else class="content">
+
+      <!-- Loading -->
+      <div v-if="empLoading" class="emp-loading">
+        <div class="loading-spinner"></div>
+        <span class="loading-text">Loading your tasks…</span>
+      </div>
+
+      <!-- No active shift -->
+      <div v-else-if="!empActiveShift" class="emp-empty-state">
+        <div class="emp-empty-icon">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+            <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="2"/>
+            <path d="M24 14V24L30 30" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <p class="emp-empty-title">No Current Tasks</p>
+        <p class="emp-empty-sub">You don't have an active shift right now. Your tasks will appear here once your shift begins.</p>
+      </div>
+
+      <!-- Active shift -->
+      <template v-else>
+        <!-- Shift banner -->
+        <div class="emp-shift-banner">
+          <div class="emp-shift-left">
+            <span class="emp-live-badge">● Live</span>
+            <span class="emp-shift-name">{{ empActiveShift.name || 'Current Shift' }}</span>
+            <span class="emp-shift-time">{{ fmtHour(empActiveShift.startHour) }} – {{ fmtHour(empActiveShift.endHour) }}</span>
+          </div>
+          <div v-if="empTaskGroups.length" class="emp-overall-progress">
+            <div class="emp-overall-bar">
+              <div class="emp-overall-fill" :style="{ width: empTotalCount ? (empTotalDone / empTotalCount * 100) + '%' : '0%' }"></div>
+            </div>
+            <span class="emp-overall-count">{{ empTotalDone }}/{{ empTotalCount }} completed</span>
+          </div>
+        </div>
+
+        <!-- No tasks on this shift -->
+        <div v-if="empTaskGroups.length === 0" class="emp-empty-state">
+          <div class="emp-empty-icon">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+              <rect x="10" y="8" width="28" height="32" rx="4" stroke="currentColor" stroke-width="2"/>
+              <path d="M17 18h14M17 24h14M17 30h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <p class="emp-empty-title">No Tasks Assigned</p>
+          <p class="emp-empty-sub">No task lists have been assigned to your current shift.</p>
+        </div>
+
+        <!-- Task list cards -->
+        <div v-else class="emp-lists-grid">
+          <div v-for="group in empTaskGroups" :key="group.shiftTaskListId" class="emp-list-card">
+            <div class="emp-list-header">
+              <div class="emp-list-title-row">
+                <h3 class="emp-list-name">{{ group.taskList.name }}</h3>
+                <span class="emp-list-count" :class="{ complete: group.completedCount === group.totalCount && group.totalCount > 0 }">
+                  {{ group.completedCount }}/{{ group.totalCount }}
+                </span>
+              </div>
+              <div class="emp-list-bar">
+                <div class="emp-list-fill" :style="{ width: group.totalCount ? (group.completedCount / group.totalCount * 100) + '%' : '0%' }"></div>
+              </div>
+              <p v-if="group.taskList.description" class="emp-list-desc">{{ group.taskList.description }}</p>
+            </div>
+
+            <div class="emp-task-list">
+              <div
+                v-for="status in group.statuses"
+                :key="status.id_shiftTaskListStatus"
+                class="emp-task-row"
+                :class="{ done: status.isCompleted }"
+                @click="toggleEmpTask(status)"
+              >
+                <button class="emp-check" :class="{ done: status.isCompleted }" @click.stop="toggleEmpTask(status)">
+                  <svg v-if="status.isCompleted" width="11" height="11" viewBox="0 0 11 11" fill="none">
+                    <path d="M2 5.5L4.5 8L9 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+                <span class="emp-task-label" :class="{ done: status.isCompleted }">{{ status.taskName }}</span>
+                <span v-if="status.isCompleted" class="emp-done-badge">Done</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
     </div>
 
     <!-- ══ MODALS ══ -->
@@ -153,7 +242,7 @@
               <input v-model="modal.data.name" type="text" placeholder="Wipe down equipment" />
             </div>
             <div class="form-group">
-              <label>Description</label>
+              <label>Description <span class="optional">(optional)</span></label>
               <input v-model="modal.data.description" type="text" placeholder="Short description of what to do" />
             </div>
             <div class="form-group">
@@ -179,24 +268,93 @@
     <!-- Assign to Shift modal -->
     <Transition name="modal">
       <div v-if="assignModal.open" class="modal-overlay" @click.self="assignModal.open = false">
-        <div class="modal">
+        <div class="modal modal-shift">
           <h3 class="modal-title">Assign "{{ assignModal.list?.name }}" to a Shift</h3>
-          <div class="form-group">
-            <label>Select Shift</label>
-            <select v-model="assignModal.selectedShiftId">
-              <option :value="null" disabled>Pick a shift…</option>
-              <option v-for="s in upcomingShifts" :key="s.id_shift" :value="s.id_shift">
-                {{ s.date }} — {{ s.name }}
-              </option>
-            </select>
-            <p v-if="upcomingShifts.length === 0" class="form-hint">No upcoming shifts found.</p>
+
+          <!-- Week navigation -->
+          <div class="spkr-nav">
+            <button class="spkr-nav-btn" :disabled="!canPrevWeek" @click="assignModal.weekOffset--">‹</button>
+            <span class="spkr-week-label">{{ assignWeekLabel }}</span>
+            <button class="spkr-nav-btn" @click="assignModal.weekOffset++">›</button>
           </div>
+
+          <!-- Shifts for the selected week -->
+          <div class="spkr-body">
+            <div v-if="assignWeekByDay.length === 0" class="spkr-empty">No shifts this week.</div>
+            <template v-else>
+              <div v-for="[date, dayShifts] in assignWeekByDay" :key="date" class="spkr-day-group">
+                <div class="spkr-day-header">{{ formatDayHeader(date) }}</div>
+                <div
+                  v-for="s in dayShifts"
+                  :key="s.id_shift"
+                  class="spkr-shift-row"
+                  :class="{ selected: assignModal.selectedShiftId === s.id_shift }"
+                  @click="assignModal.selectedShiftId = s.id_shift; assignModal.error = ''"
+                >
+                  <div class="spkr-radio" :class="{ selected: assignModal.selectedShiftId === s.id_shift }"></div>
+                  <div class="spkr-shift-info">
+                    <span class="spkr-shift-name">{{ s.name }}</span>
+                    <span class="spkr-shift-time">{{ fmtHour(timeStrToHour(s.startTime)) }} – {{ fmtHour(timeStrToHour(s.endTime)) }}</span>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+
           <p v-if="assignModal.error" class="modal-error">{{ assignModal.error }}</p>
           <div class="modal-actions">
             <button class="cancel-btn" @click="assignModal.open = false">Cancel</button>
             <button class="confirm-btn" :disabled="assignModal.saving || !assignModal.selectedShiftId" @click="saveAssignShift">
               {{ assignModal.saving ? 'Assigning…' : 'Assign' }}
             </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Position Link modal -->
+    <Transition name="modal">
+      <div v-if="posLinkModal.open" class="modal-overlay" @click.self="posLinkModal.open = false">
+        <div class="modal modal-shift">
+          <h3 class="modal-title">Position Links — "{{ posLinkModal.list?.name }}"</h3>
+          <p class="modal-hint">Task lists linked to a position are automatically assigned to every new shift created with that position.</p>
+
+          <!-- Currently linked positions -->
+          <div class="pos-link-section">
+            <p class="pos-link-label">Linked Positions</p>
+            <div v-if="posLinkModal.links.length === 0" class="pos-link-empty">No positions linked yet.</div>
+            <div v-for="link in posLinkModal.links" :key="link.id_positionTaskList" class="pos-link-row">
+              <span class="pos-link-name">{{ link.positionName }}</span>
+              <button class="pos-unlink-btn" :disabled="posLinkModal.saving" @click="unlinkPosition(link)">Remove</button>
+            </div>
+          </div>
+
+          <!-- Add a new link -->
+          <div class="pos-link-section">
+            <p class="pos-link-label">Add Position</p>
+            <div class="pos-link-add-row">
+              <select v-model="posLinkModal.selectedPositionId" class="pos-link-select">
+                <option :value="null" disabled>Select a position…</option>
+                <option
+                  v-for="p in availablePositions"
+                  :key="p.id_position"
+                  :value="p.id_position"
+                >{{ p.name }}</option>
+              </select>
+              <button
+                class="confirm-btn"
+                style="flex-shrink:0"
+                :disabled="!posLinkModal.selectedPositionId || posLinkModal.saving"
+                @click="linkPosition"
+              >{{ posLinkModal.saving ? 'Linking…' : 'Link' }}</button>
+            </div>
+            <p v-if="availablePositions.length === 0 && allPositions.length > 0" class="form-hint">All positions are already linked.</p>
+            <p v-if="allPositions.length === 0" class="form-hint">No positions found for this department.</p>
+          </div>
+
+          <p v-if="posLinkModal.error" class="modal-error">{{ posLinkModal.error }}</p>
+          <div class="modal-actions">
+            <button class="cancel-btn" @click="posLinkModal.open = false">Done</button>
           </div>
         </div>
       </div>
@@ -265,12 +423,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useDepartment } from "../composables/useDepartment.js";
 import { useRouter } from "vue-router";
 import Utils from "../config/utils.js";
 import apiClient from "../services/services.js";
-import { getShiftTaskLists } from "../services/taskService.js";
+import { getShiftTaskLists, getTaskListStatuses, updateTaskComplete, getTaskListPositions, addPositionTaskList, removePositionTaskList } from "../services/taskService.js";
+import { getPositions } from "../services/departmentService.js";
 
 const router     = useRouter();
 const currentUser = Utils.getStore("user") || {};
@@ -302,12 +461,27 @@ async function loadAll() {
     loading.value = false;
   }
 }
-watch(selectedDeptId, () => { loadAll(); loadShifts(); });
-onMounted(() => { loadAll(); loadShifts(); });
+watch(selectedDeptId, () => {
+  if (isManager) { loadAll(); loadShifts(); }
+  else { loadEmployeeTasks(); }
+});
+onMounted(() => {
+  if (isManager) {
+    loadAll();
+    loadShifts();
+  } else {
+    loadEmployeeTasks();
+    clockInterval = setInterval(() => {
+      const now = new Date();
+      currentTimeHour.value = now.getHours() + now.getMinutes() / 60;
+    }, 60_000);
+  }
+});
+onUnmounted(() => clearInterval(clockInterval));
 
 // ── Shifts (for task list assignment) ─────────────────────────────────────────
 const allShifts  = ref([]);
-const assignModal = ref({ open: false, list: null, selectedShiftId: null, saving: false, error: "" });
+const assignModal = ref({ open: false, list: null, selectedShiftId: null, saving: false, error: "", weekOffset: 0 });
 
 const upcomingShifts = computed(() => {
   const today = new Date().toISOString().slice(0, 10);
@@ -316,9 +490,51 @@ const upcomingShifts = computed(() => {
     .sort((a, b) => a.date.localeCompare(b.date));
 });
 
+// ── Week picker helpers ────────────────────────────────────────────────────────
+function weekSunday(offset) {
+  const d = new Date();
+  d.setDate(d.getDate() - d.getDay() + offset * 7);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+const assignWeekStart = computed(() => weekSunday(assignModal.value.weekOffset));
+const assignWeekEnd   = computed(() => {
+  const d = new Date(assignWeekStart.value);
+  d.setDate(d.getDate() + 6);
+  return d;
+});
+const assignWeekLabel = computed(() => {
+  const fmt = { month: 'short', day: 'numeric' };
+  const s = assignWeekStart.value.toLocaleDateString('en-US', fmt);
+  const e = assignWeekEnd.value.toLocaleDateString('en-US', fmt);
+  return `${s} – ${e}, ${assignWeekEnd.value.getFullYear()}`;
+});
+const canPrevWeek = computed(() => assignModal.value.weekOffset > 0);
+
+const assignWeekByDay = computed(() => {
+  const today    = new Date().toISOString().slice(0, 10);
+  const startKey = assignWeekStart.value.toISOString().slice(0, 10);
+  const endKey   = assignWeekEnd.value.toISOString().slice(0, 10);
+  const groups   = {};
+  for (const s of upcomingShifts.value) {
+    if (s.date < startKey || s.date > endKey || s.date < today) continue;
+    if (!groups[s.date]) groups[s.date] = [];
+    groups[s.date].push(s);
+  }
+  return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+});
+
+function formatDayHeader(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+}
+
 async function loadShifts() {
   try {
-    const res = await apiClient.get("/shifts");
+    const deptId = selectedDeptId.value;
+    const qs = deptId ? `?id_department=${deptId}` : "";
+    const res = await apiClient.get(`/shifts${qs}`);
     allShifts.value = res.data;
   } catch { /* non-critical */ }
 }
@@ -327,9 +543,10 @@ function openAssignShift(list) {
   assignModal.value = {
     open: true,
     list,
-    selectedShiftId: upcomingShifts.value[0]?.id_shift ?? null,
+    selectedShiftId: null,
     saving: false,
     error: "",
+    weekOffset: 0,
   };
 }
 
@@ -446,7 +663,7 @@ async function saveModal() {
         taskLists.value.push(res.data);
       }
     } else {
-      if (!data.name || !data.description) throw new Error("Name and description are required.");
+      if (!data.name) throw new Error("Name is required.");
       if (isEdit) {
         await apiClient.put(`/tasks/${editId}`, data);
         const idx = tasks.value.findIndex(t => t.id_task === editId);
@@ -461,6 +678,198 @@ async function saveModal() {
     modal.value.error = err.message || "Save failed.";
   } finally {
     modal.value.saving = false;
+  }
+}
+
+// ── Employee task view ─────────────────────────────────────────────────────────
+
+function timeStrToHour(t) {
+  if (!t) return 0;
+  const [h, m] = t.split(":").map(Number);
+  return h + m / 60;
+}
+
+function fmtHour(h) {
+  const total  = Math.round(h * 60);
+  const hr     = Math.floor(total / 60);
+  const min    = total % 60;
+  const suffix = hr >= 12 ? "pm" : "am";
+  const disp   = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
+  return min === 0 ? `${disp}${suffix}` : `${disp}:${String(min).padStart(2, "0")}${suffix}`;
+}
+
+const empLoading    = ref(false);
+const empActiveShift = ref(null);
+const empTaskGroups  = ref([]);
+const currentTimeHour = ref(new Date().getHours() + new Date().getMinutes() / 60);
+let clockInterval = null;
+
+const empTotalDone  = computed(() => empTaskGroups.value.reduce((acc, g) => acc + g.completedCount, 0));
+const empTotalCount = computed(() => empTaskGroups.value.reduce((acc, g) => acc + g.totalCount, 0));
+
+// Re-check active shift whenever the clock ticks
+watch(currentTimeHour, () => { if (!isManager) loadEmployeeTasks(); });
+
+async function loadEmployeeTasks() {
+  empLoading.value = true;
+  apiError.value = "";
+  try {
+    const deptId = selectedDeptId.value || currentUser.id_department;
+    const deptQs = deptId ? `?id_department=${deptId}` : "";
+    const today  = new Date().toISOString().slice(0, 10);
+    const now    = currentTimeHour.value;
+    const myId   = currentUser.id_employee;
+
+    const [shiftsRes, assignRes, listsRes, tasksRes] = await Promise.all([
+      apiClient.get(`/shifts${deptQs}`),
+      apiClient.get("/shift-assignments"),
+      apiClient.get(`/task-lists${deptQs}`),
+      apiClient.get(`/tasks${deptQs}`),
+    ]);
+
+    taskLists.value = listsRes.data;
+    tasks.value     = tasksRes.data;
+
+    const todayShifts = shiftsRes.data.filter(s => s.date === today);
+    const myAssigns   = assignRes.data.filter(a =>
+      a.id_employee === myId && todayShifts.some(s => s.id_shift === a.id_shift)
+    );
+
+    // Find the shift currently in progress
+    let active = null;
+    for (const a of myAssigns) {
+      const shift = todayShifts.find(s => s.id_shift === a.id_shift);
+      if (!shift) continue;
+      const startHour = timeStrToHour(shift.startTime);
+      const endHour   = timeStrToHour(shift.endTime);
+      if (startHour <= now && now < endHour) {
+        active = { ...shift, startHour, endHour };
+        break;
+      }
+    }
+
+    empActiveShift.value = active;
+    if (!active) { empTaskGroups.value = []; return; }
+
+    // Load task lists assigned to this shift
+    const stls    = await getShiftTaskLists(active.id_shift);
+    const results = [];
+    for (const stl of stls) {
+      const statuses  = await getTaskListStatuses(stl.id_shiftTaskList);
+      const taskList  = taskLists.value.find(l => l.id_taskList === stl.id_taskList);
+      if (!taskList) continue;
+      const enriched = statuses.map(s => ({
+        ...s,
+        taskName: tasks.value.find(t => t.id_task === s.id_task)?.name ?? `Task #${s.id_task}`,
+      }));
+      results.push({
+        shiftTaskListId: stl.id_shiftTaskList,
+        taskList,
+        statuses:        enriched,
+        completedCount:  enriched.filter(s => s.isCompleted).length,
+        totalCount:      enriched.length,
+      });
+    }
+    empTaskGroups.value = results;
+  } catch (err) {
+    apiError.value = "Could not load tasks: " + (err.message || "Network error");
+  } finally {
+    empLoading.value = false;
+  }
+}
+
+async function toggleEmpTask(status) {
+  const newVal = !status.isCompleted;
+  try {
+    await updateTaskComplete(status.id_shiftTaskListStatus, newVal);
+    status.isCompleted = newVal;
+    const group = empTaskGroups.value.find(g => g.shiftTaskListId === status.id_shiftTaskList);
+    if (group) group.completedCount = group.statuses.filter(s => s.isCompleted).length;
+  } catch { /* silent */ }
+}
+
+// ── Position Links ─────────────────────────────────────────────────────────────
+
+const allPositions = ref([]);
+const posLinkModal = ref({
+  open: false,
+  list: null,
+  links: [],            // [{ id_positionTaskList, id_position, positionName }]
+  selectedPositionId: null,
+  saving: false,
+  error: "",
+});
+
+// Positions not yet linked to this task list
+const availablePositions = computed(() =>
+  allPositions.value.filter(
+    p => !posLinkModal.value.links.some(l => l.id_position === p.id_position)
+  )
+);
+
+async function openPositionLink(list) {
+  posLinkModal.value = {
+    open: true,
+    list,
+    links: [],
+    selectedPositionId: null,
+    saving: false,
+    error: "",
+  };
+  try {
+    const deptId = selectedDeptId.value;
+    const [posRes, linkRes] = await Promise.all([
+      getPositions(deptId).catch(() => ({ data: [] })),
+      getTaskListPositions(list.id_taskList).catch(() => []),
+    ]);
+    allPositions.value = posRes.data || [];
+    // Enrich links with position name
+    posLinkModal.value.links = linkRes.map(l => ({
+      ...l,
+      positionName: allPositions.value.find(p => p.id_position === l.id_position)?.name ?? `Position #${l.id_position}`,
+    }));
+    // Default selection to first available
+    posLinkModal.value.selectedPositionId = availablePositions.value[0]?.id_position ?? null;
+  } catch (err) {
+    posLinkModal.value.error = "Could not load positions: " + (err.message || "Network error");
+  }
+}
+
+async function linkPosition() {
+  const { list, selectedPositionId } = posLinkModal.value;
+  if (!selectedPositionId) return;
+  posLinkModal.value.saving = true;
+  posLinkModal.value.error  = "";
+  try {
+    const record = await addPositionTaskList(selectedPositionId, list.id_taskList);
+    const pos = allPositions.value.find(p => p.id_position === selectedPositionId);
+    posLinkModal.value.links.push({
+      ...record,
+      positionName: pos?.name ?? `Position #${selectedPositionId}`,
+    });
+    posLinkModal.value.selectedPositionId = availablePositions.value[0]?.id_position ?? null;
+  } catch (err) {
+    posLinkModal.value.error = err.response?.data?.message || err.message || "Could not link position.";
+  } finally {
+    posLinkModal.value.saving = false;
+  }
+}
+
+async function unlinkPosition(link) {
+  posLinkModal.value.saving = true;
+  posLinkModal.value.error  = "";
+  try {
+    await removePositionTaskList(link.id_positionTaskList);
+    posLinkModal.value.links = posLinkModal.value.links.filter(
+      l => l.id_positionTaskList !== link.id_positionTaskList
+    );
+    if (!posLinkModal.value.selectedPositionId) {
+      posLinkModal.value.selectedPositionId = availablePositions.value[0]?.id_position ?? null;
+    }
+  } catch (err) {
+    posLinkModal.value.error = err.response?.data?.message || err.message || "Could not remove link.";
+  } finally {
+    posLinkModal.value.saving = false;
   }
 }
 
@@ -562,8 +971,28 @@ async function executeDelete() {
 .existing-task-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 .existing-task-info .task-name { font-size: 13px; font-weight: 500; color: var(--tx-primary); }
 .existing-task-info .task-desc { font-size: 12px; color: var(--tx-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.assign-shift-btn { background: none; border: 1px dashed var(--ok-text); color: var(--tx-ghost); width: 100%; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; margin-top: 8px; transition: border-color 0.15s, color 0.15s; display: block; }
+.card-action-row { display: flex; gap: 8px; margin-top: 8px; }
+.card-action-row .assign-shift-btn,
+.card-action-row .position-link-btn { margin-top: 0; flex: 1; }
+.assign-shift-btn { background: none; border: 1px dashed var(--ok-text); color: var(--tx-ghost); width: 100%; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s, color 0.15s; display: block; }
 .assign-shift-btn:hover { border-color: var(--ok-text); color: var(--ok-text); }
+.position-link-btn { background: none; border: 1px dashed var(--bdr-medium); color: var(--tx-ghost); width: 100%; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s, color 0.15s; display: block; }
+.position-link-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Position link modal ── */
+.modal-hint { font-size: 12px; color: var(--tx-faint); margin: -12px 0 18px; line-height: 1.5; }
+.pos-link-section { margin-bottom: 20px; }
+.pos-link-label { font-size: 10px; font-weight: 700; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+.pos-link-empty { font-size: 12px; color: var(--tx-ghost); font-style: italic; padding: 6px 0; }
+.pos-link-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--bdr-strong); border-radius: 8px; margin-bottom: 6px; }
+.pos-link-name { font-size: 13px; font-weight: 500; color: var(--tx-primary); }
+.pos-unlink-btn { background: none; border: 1px solid var(--bdr-medium); color: var(--tx-muted); font-size: 11px; padding: 3px 10px; border-radius: 6px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s, color 0.15s; }
+.pos-unlink-btn:hover:not(:disabled) { border-color: var(--err-text); color: var(--err-text); }
+.pos-unlink-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pos-link-add-row { display: flex; gap: 8px; align-items: center; }
+.pos-link-select { flex: 1; background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary); padding: 8px 10px; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; }
+.pos-link-select:focus { border-color: var(--accent); }
+.pos-link-select option { background: var(--bg-modal); }
 .form-hint { font-size: 11px; color: var(--tx-faint); font-style: italic; margin-top: 4px; }
 
 .table-wrap { border-radius: 12px; border: 1px solid var(--bdr-subtle); overflow: hidden; max-width: 900px; }
@@ -612,4 +1041,86 @@ async function executeDelete() {
 .confirm-btn.danger:hover { background: var(--danger-btn-h); }
 .modal-enter-active, .modal-leave-active { transition: opacity 0.2s, transform 0.2s; }
 .modal-enter-from, .modal-leave-to { opacity: 0; transform: scale(0.96); }
+
+/* ── Shift picker modal ── */
+.modal-shift { width: 480px; }
+
+.spkr-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; background: var(--bg-panel); border: 1px solid var(--bdr-faint); border-radius: 8px; padding: 6px 8px; }
+.spkr-nav-btn { background: none; border: none; color: var(--tx-muted); cursor: pointer; font-size: 18px; width: 30px; height: 30px; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: background 0.12s, color 0.12s; }
+.spkr-nav-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--accent); }
+.spkr-nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.spkr-week-label { font-size: 13px; font-weight: 600; color: var(--tx-primary); font-family: 'DM Mono', monospace; }
+
+.spkr-body { max-height: 320px; overflow-y: auto; margin-bottom: 16px; display: flex; flex-direction: column; gap: 16px; }
+.spkr-body::-webkit-scrollbar { width: 4px; }
+.spkr-body::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
+
+.spkr-empty { text-align: center; padding: 32px 0; font-size: 13px; color: var(--tx-ghost); font-style: italic; }
+
+.spkr-day-group { display: flex; flex-direction: column; gap: 4px; }
+.spkr-day-header { font-size: 11px; font-weight: 700; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.08em; padding: 0 2px 6px; border-bottom: 1px solid var(--bdr-strong); margin-bottom: 2px; }
+
+.spkr-shift-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--bdr-strong); background: var(--bg-card); cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.spkr-shift-row:hover { border-color: var(--bdr-medium); background: var(--bg-hover); }
+.spkr-shift-row.selected { border-color: var(--accent); background: var(--accent-subtle); }
+
+.spkr-radio { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--tx-muted); flex-shrink: 0; transition: border-color 0.15s, background 0.15s; position: relative; }
+.spkr-radio.selected { border-color: var(--accent); background: var(--accent); }
+.spkr-radio.selected::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: #fff; }
+
+.spkr-shift-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.spkr-shift-name { font-size: 13px; font-weight: 600; color: var(--tx-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spkr-shift-time { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--tx-faint); }
+
+/* ── Employee task view ── */
+.emp-loading { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 80px 0; color: var(--tx-muted); }
+
+.emp-empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 24px; text-align: center; max-width: 480px; margin: 0 auto; }
+.emp-empty-icon { color: var(--tx-faint); margin-bottom: 20px; }
+.emp-empty-title { font-size: 20px; font-weight: 700; color: var(--tx-secondary); margin-bottom: 10px; }
+.emp-empty-sub { font-size: 14px; color: var(--tx-ghost); line-height: 1.6; }
+
+.emp-shift-banner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 12px; padding: 16px 20px; margin-bottom: 28px; }
+.emp-shift-left { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.emp-live-badge { background: var(--ok-bg); color: var(--ok-text); font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px; border: 1px solid rgba(34,197,94,0.3); letter-spacing: 0.04em; }
+.emp-shift-name { font-size: 15px; font-weight: 600; color: var(--tx-heading); }
+.emp-shift-time { font-size: 13px; font-family: 'DM Mono', monospace; color: var(--tx-faint); }
+.emp-overall-progress { display: flex; align-items: center; gap: 10px; }
+.emp-overall-bar { width: 140px; height: 6px; background: var(--bdr-subtle); border-radius: 3px; overflow: hidden; }
+.emp-overall-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.4s ease; }
+.emp-overall-count { font-size: 12px; font-family: 'DM Mono', monospace; color: var(--tx-faint); white-space: nowrap; }
+
+.emp-lists-grid { display: flex; flex-direction: column; gap: 16px; max-width: 700px; }
+
+.emp-list-card { background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 12px; overflow: hidden; }
+.emp-list-header { padding: 16px 20px 14px; border-bottom: 1px solid var(--bdr-strong); }
+.emp-list-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.emp-list-name { font-size: 15px; font-weight: 700; color: var(--tx-heading); }
+.emp-list-count { font-size: 12px; font-family: 'DM Mono', monospace; color: var(--tx-ghost); background: var(--bg-hover); border: 1px solid var(--bdr-faint); border-radius: 10px; padding: 2px 9px; transition: color 0.2s, background 0.2s; }
+.emp-list-count.complete { color: var(--ok-text); background: var(--ok-bg); border-color: rgba(34,197,94,0.3); }
+.emp-list-bar { height: 5px; background: var(--bdr-subtle); border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
+.emp-list-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.4s ease; }
+.emp-list-desc { font-size: 12px; color: var(--tx-faint); margin-top: 2px; }
+
+.emp-task-list { display: flex; flex-direction: column; }
+.emp-task-row { display: flex; align-items: center; gap: 12px; padding: 13px 20px; border-bottom: 1px solid var(--bdr-strong); cursor: pointer; transition: background 0.12s; }
+.emp-task-row:last-child { border-bottom: none; }
+.emp-task-row:hover { background: var(--bg-hover); }
+.emp-task-row.done { background: var(--bg-card); }
+.emp-check {
+  width: 20px; height: 20px; flex-shrink: 0;
+  border-radius: 6px;
+  border: 2px solid var(--tx-muted);
+  background: var(--bg-input);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: transparent;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  padding: 0;
+}
+.emp-task-row:hover .emp-check { border-color: var(--accent); }
+.emp-check.done { background: var(--accent); border-color: var(--accent); color: #fff; }
+.emp-task-label { font-size: 14px; color: var(--tx-primary); flex: 1; line-height: 1.4; }
+.emp-task-label.done { color: var(--tx-faint); text-decoration: line-through; text-decoration-color: var(--tx-ghost); }
+.emp-done-badge { font-size: 10px; font-weight: 600; color: var(--ok-text); background: var(--ok-bg); border-radius: 10px; padding: 2px 8px; border: 1px solid rgba(34,197,94,0.25); flex-shrink: 0; }
 </style>

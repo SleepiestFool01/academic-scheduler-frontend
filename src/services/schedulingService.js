@@ -305,12 +305,12 @@ export async function deleteShift(id_shiftAssignment, id_shift) {
 export async function fetchSwapRequests(employeeMap) {
   const { data } = await apiClient.get(SWAP_REQS);
   return data
-    .filter((r) => r.status === "Pending")
+    .filter((r) => r.status === "Pending" && employeeMap[r.id_employeeRequester])
     .map((r) => {
       const emp = employeeMap[r.id_employeeRequester];
       return {
         id:   r.id_swapRequest,
-        name: emp ? `${emp.fName} ${emp.lName}` : `Employee #${r.id_employeeRequester}`,
+        name: `${emp.fName} ${emp.lName}`,
         type: "Shift Swap",
         raw:  r,
       };
