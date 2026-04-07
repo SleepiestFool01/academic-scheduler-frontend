@@ -1,5 +1,5 @@
 <template>
-  <div class="app" @mousemove="onGlobalMouseMove" @mouseup="onGlobalMouseUp">
+  <div class="app" @mousemove="onGlobalMouseMove" @mouseup="onGlobalMouseUp" :style="{ '--cell-h': cellHeight + 'px' }">
 
     <!-- ── Loading overlay ── -->
     <Transition name="fade">
@@ -31,7 +31,7 @@
       </div>
       <div class="nav-right">
         <button v-if="currentUser?.role === 'Manager' || currentUser?.role === 'Admin'"
-          class="manage-btn" @click="router.push('/manage')">
+          class="manage-btn" @click="router.push('/department')">
           ⚙ Manage
         </button>
         <button class="theme-toggle" @click="toggleTheme" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
@@ -79,7 +79,7 @@
           <div v-if="todaysEmployees.length === 0" class="sidebar-empty">No shifts today</div>
         </div>
         <div v-if="isManager" class="sidebar-section">
-          <div class="sidebar-sec-header clickable" @click="activeTab = 'Shifts'">
+          <div class="sidebar-sec-header">
             <span class="sidebar-sec-title">Open Shifts</span>
             <span class="sidebar-sec-sub">this week</span>
           </div>
@@ -87,19 +87,54 @@
           <div v-for="s in computedOpenShifts" :key="s.key" class="open-shift-item">
             <span class="open-shift-day">{{ s.dayLabel }}</span>
             <div class="open-shift-gaps">
-              <span v-for="gap in s.gaps" :key="gap" class="open-shift-gap">{{ gap }}</span>
+              <div v-for="(gap, gi) in s.gaps" :key="gi" class="open-shift-gap-row">
+                <span class="open-shift-gap">{{ gap.label }}<span v-if="gap.positionName" class="open-shift-pos">{{ gap.positionName }}</span></span>
+              </div>
             </div>
           </div>
         </div>
         <div v-if="isManager" class="sidebar-section">
-          <div class="sidebar-sec-header clickable" @click="activeTab = 'Requests'">
-            <span class="sidebar-sec-title">Requests</span>
-            <span v-if="pendingRequests.length" class="sidebar-sec-count">{{ pendingRequests.length }}</span>
+          <div class="sidebar-sec-header clickable" @click="router.push('/tradeboard')">
+            <span class="sidebar-sec-title">Tradeboard</span>
+            <span v-if="managerTradeboardItems.length" class="sidebar-sec-count">{{ managerTradeboardItems.length }}</span>
           </div>
-          <div v-if="pendingRequests.length === 0" class="sidebar-empty">No pending requests</div>
-          <div v-for="r in pendingRequests" :key="r.id" class="request-item">
-            <span class="request-name">{{ r.name }}</span>
-            <span class="request-type">{{ r.type }}</span>
+          <div v-if="managerTradeboardItems.length === 0" class="sidebar-empty">No pending requests</div>
+          <div v-for="item in managerTradeboardItems" :key="item.id_swapRequest" class="sb-trade-item">
+            <div class="sb-trade-row">
+              <span class="sb-trade-name">{{ item.requesterName }}</span>
+              <span class="sb-trade-time">{{ item.shiftTime }}</span>
+            </div>
+            <div class="sb-trade-meta">
+              <span class="sb-trade-date">{{ item.shiftDate }}</span>
+              <span v-if="item.positionName" class="sb-trade-pos">{{ item.positionName }}</span>
+            </div>
+            <div v-if="item.needsApproval" class="sb-trade-claim">
+              <span class="sb-trade-claimer">← {{ item.requestedName }}</span>
+              <div class="sb-trade-actions">
+                <button class="sb-approve-btn" @click.stop="sidebarApproveDecline(item, 'Approved')">✓</button>
+                <button class="sb-deny-btn"    @click.stop="sidebarApproveDecline(item, 'Denied')">✕</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="isManager" class="sidebar-section">
+          <div class="sidebar-sec-header clickable" @click="router.push('/requests')">
+            <span class="sidebar-sec-title">Requests</span>
+            <span v-if="managerRequestItems.length" class="sidebar-sec-count">{{ managerRequestItems.length }}</span>
+          </div>
+          <div v-if="managerRequestItems.length === 0" class="sidebar-empty">No pending requests</div>
+          <div v-for="item in managerRequestItems" :key="item.id_personalAvailability" class="sb-req-item">
+            <div class="sb-req-row">
+              <span class="sb-req-name">{{ item.empName }}</span>
+              <span class="sb-req-type">Time Off</span>
+            </div>
+            <div class="sb-req-dates">{{ item.startDate }} → {{ item.endDate }}</div>
+            <div v-if="item.status === 'pending'" class="sb-req-actions">
+              <button class="sb-approve-btn" @click.stop="sidebarRequestAction(item, 'approved')">✓ Approve</button>
+              <button class="sb-deny-btn"    @click.stop="sidebarRequestAction(item, 'denied')">✕ Deny</button>
+            </div>
+            <span v-else class="sb-req-status" :class="item.status">{{ item.status }}</span>
           </div>
         </div>
 
@@ -165,7 +200,7 @@
 
         <!-- 4. Requests -->
         <div v-if="!isManager" class="sidebar-section">
-          <div class="sidebar-sec-header clickable" @click="activeTab = 'Requests'">
+          <div class="sidebar-sec-header clickable" @click="router.push('/requests')">
             <span class="sidebar-sec-title">Requests</span>
             <span v-if="myRequests.length" class="sidebar-sec-count">{{ myRequests.length }}</span>
           </div>
@@ -178,7 +213,7 @@
       </aside>
 
       <!-- ── Main Calendar ── -->
-      <main class="cal-main">
+      <main class="cal-main" :class="{ 'cmd-create-mode': cmdHeld && isManager }">
         <div v-if="deptName" class="dept-name-bar">{{ deptName }}</div>
         <div class="cal-toolbar">
           <div class="cal-nav-group">
@@ -190,6 +225,12 @@
           <div class="cal-view-group">
             <button v-for="v in ['Day','Week','Month']" :key="v" class="view-btn"
               :class="{ active: calView === v }" @click="setView(v)">{{ v }}</button>
+          </div>
+          <div v-if="calView !== 'Month'" class="zoom-group">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" class="zoom-icon"><circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.6"/><line x1="10.5" y1="10.5" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="4" y1="6.5" x2="9" y2="6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <input type="range" class="zoom-slider" min="20" max="160" step="4" :value="cellHeight" @input="cellHeight = +$event.target.value" title="Adjust zoom" />
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" class="zoom-icon"><circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.6"/><line x1="10.5" y1="10.5" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="4" y1="6.5" x2="9" y2="6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="6.5" y1="4" x2="6.5" y2="9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <button class="fit-btn" @click="fitToView" title="Fit business hours to screen">Fit</button>
           </div>
           <button v-if="isManager" class="add-shift-btn" @click="openBlankModal"><span>+</span> Add Shift</button>
         </div>
@@ -240,7 +281,7 @@
                   :data-shift-id="String(shift.id)"
                   :style="shiftStyle(shift)"
                   :class="{ 'shift-block--multi-selected': selectedShiftIds.has(String(shift.id)) }"
-                  @mousedown.stop @click.stop="onShiftBlockClick(shift, $event)">
+                  @mousedown="onShiftBlockMouseDown($event, 0)" @click.stop="onShiftBlockClick(shift, $event)">
                   <div class="shift-employee">{{ shift.employee || 'Unassigned' }}</div>
                   <div class="shift-time">{{ shift.startLabel }} – {{ shift.endLabel }}</div>
                   <div v-if="shift.positionName" class="shift-pos-badge">{{ shift.positionName }}</div>
@@ -297,7 +338,7 @@
                   :data-shift-id="String(shift.id)"
                   :style="shiftStyle(shift)"
                   :class="{ 'shift-block--multi-selected': selectedShiftIds.has(String(shift.id)) }"
-                  @mousedown.stop @click.stop="onShiftBlockClick(shift, $event)">
+                  @mousedown="onShiftBlockMouseDown($event, colIdx)" @click.stop="onShiftBlockClick(shift, $event)">
                   <div class="shift-employee">{{ shift.employee || 'Unassigned' }}</div>
                   <div class="shift-time">{{ shift.startLabel }} – {{ shift.endLabel }}</div>
                   <div v-if="shift.positionName" class="shift-pos-badge">{{ shift.positionName }}</div>
@@ -615,7 +656,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import Utils from "../config/utils.js";
 import AuthServices from "../services/authServices.js";
@@ -644,9 +685,10 @@ import {
   getTaskListStatuses,
   updateTaskComplete,
 } from "../services/taskService.js";
+import apiClient from "../services/services.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-const CELL_HEIGHT    = 60;
+const cellHeight     = ref(60);
 const CAL_START_HOUR = 0;   // full 24-hour grid
 const SNAP_MINUTES   = 15;
 const MAX_PILLS      = 3;
@@ -691,7 +733,7 @@ async function logout() {
   Utils.removeItem("user");
   router.push("/start");
 }
-const activeTab      = ref("Schedules");
+const activeTab      = ref("Dashboard");
 const calView        = ref("Week");
 const weekOffset     = ref(0);
 const dayOffset      = ref(0);
@@ -707,7 +749,7 @@ const loading = ref(true);
 const apiError = ref(null);
 
 const tabs = computed(() => {
-  const base = ["Schedules", "Shifts", "Tradeboard", "Tasks", "Requests"];
+  const base = ["Dashboard", "Shifts", "Tradeboard", "Tasks", "Requests"];
   if (currentUser.value?.role === "Manager" || currentUser.value?.role === "Admin") {
     base.splice(1, 0, "Templates", "Department");
   }
@@ -722,8 +764,9 @@ const employees    = ref([]);
 // employeeMap: { [id_employee]: employee } — for fast lookups
 const employeeMap  = ref({});
 
-const shifts          = ref([]);
-const pendingRequests = ref([]);
+const shifts             = ref([]);
+const pendingRequests    = ref([]);
+const sidebarAvailability = ref([]);
 const calendarHours   = ref([]); // hours of operation from department calendar
 const activeSeason    = ref(""); // currently active season name (empty = no filter)
 const deptEvents      = ref([]); // department events
@@ -767,6 +810,8 @@ const newShift = ref({ employee: "", id_employee: null, id_position: null, dayIn
 
 // Drag state
 const drag = ref({ active: false, dayIndex: null, startHour: null, currentHour: null, colEl: null });
+const cmdHeld = ref(false);
+let dragStartedFromShiftBlock = false;
 const quickCreate = ref({ visible: false, dayIndex: null, date: null, startHour: null, endHour: null, startLabel: "", endLabel: "", startTime: "", endTime: "", dateLabel: "", id_position: null, employee: "", notes: "", style: {} });
 
 // ── Multi-select state ─────────────────────────────────────────────────────────
@@ -953,16 +998,64 @@ const myRequests = computed(() => {
   return pendingRequests.value.filter(r => r.raw.id_employeeRequester === myId);
 });
 
+// Manager tradeboard sidebar — all pending swap requests enriched with shift + employee info
+const managerTradeboardItems = computed(() => {
+  if (!isManager.value) return [];
+  return pendingRequests.value.map(r => {
+    const raw      = r.raw;
+    const shift    = shifts.value.find(s => s.id_shift === raw.id_shift);
+    const reqsted  = raw.id_employeeRequested ? employeeMap.value[raw.id_employeeRequested] : null;
+    return {
+      id_swapRequest: raw.id_swapRequest,
+      requesterName:  r.name,
+      requestedName:  reqsted ? `${reqsted.fName} ${reqsted.lName}` : null,
+      shiftDate:      shift?.date || '—',
+      shiftTime:      shift ? `${shift.startLabel} – ${shift.endLabel}` : '—',
+      positionName:   shift?.positionName || '',
+      needsApproval:  raw.id_employeeRequested != null,
+    };
+  });
+});
+
+async function sidebarApproveDecline(item, status) {
+  try {
+    await apiClient.put(`/swap-requests/${item.id_swapRequest}`, { status });
+    pendingRequests.value = pendingRequests.value.filter(r => r.id !== item.id_swapRequest);
+  } catch { /* silent */ }
+}
+
+// Manager Requests sidebar — pending time-off requests
+const managerRequestItems = computed(() => {
+  if (!isManager.value) return [];
+  return sidebarAvailability.value.map(a => {
+    const emp = employeeMap.value[a.id_employee];
+    return {
+      id_personalAvailability: a.id_personalAvailability,
+      empName:   emp ? `${emp.fName} ${emp.lName}` : `Employee #${a.id_employee}`,
+      startDate: a.startDate || '—',
+      endDate:   a.endDate   || '—',
+      status:    a.status,
+    };
+  });
+});
+
+function sidebarRequestAction(item, status) {
+  const idx = sidebarAvailability.value.findIndex(
+    a => a.id_personalAvailability === item.id_personalAvailability
+  );
+  if (idx !== -1) sidebarAvailability.value[idx] = { ...sidebarAvailability.value[idx], status };
+}
+
 const currentTimePx = computed(() => {
   const now = new Date();
-  return (now.getHours() + now.getMinutes() / 60 - CAL_START_HOUR) * CELL_HEIGHT;
+  return (now.getHours() + now.getMinutes() / 60 - CAL_START_HOUR) * cellHeight.value;
 });
 
 const ghostStyle = computed(() => {
   if (!drag.value.active) return {};
   const s = Math.min(drag.value.startHour, drag.value.currentHour);
   const e = Math.max(drag.value.startHour, drag.value.currentHour) + SNAP_MINUTES / 60;
-  return { position: "absolute", top: `${(s - CAL_START_HOUR) * CELL_HEIGHT}px`, height: `${Math.max((e - s) * CELL_HEIGHT - 2, 20)}px`, left: "3px", right: "3px", zIndex: 10 };
+  return { position: "absolute", top: `${(s - CAL_START_HOUR) * cellHeight.value}px`, height: `${Math.max((e - s) * cellHeight.value - 2, 20)}px`, left: "3px", right: "3px", zIndex: 10 };
 });
 
 const ghostLabel = computed(() => {
@@ -1033,17 +1126,25 @@ const computedOpenShifts = computed(() => {
     if (cursor < biz.end) gapItems.push({ sortHour: cursor, label: `${fmtHour(cursor)} – ${fmtHour(biz.end)}` });
 
     // Unassigned shifts shown as open shift entries
+    const posMap = Object.fromEntries(positions.value.map(p => [p.id_position, p]));
     const unassignedItems = unassigned
       .filter(s => s.startHour < biz.end && s.endHour > biz.start)
-      .map(s => ({ sortHour: s.startHour, label: `${fmtHour(s.startHour)} – ${fmtHour(s.endHour)}` }));
+      .map(s => ({
+        sortHour: s.startHour,
+        label: `${fmtHour(s.startHour)} – ${fmtHour(s.endHour)}`,
+        positionName: posMap[s.id_position]?.name || '',
+      }));
 
-    const items = [...gapItems, ...unassignedItems].sort((a, b) => a.sortHour - b.sortHour);
+    const items = [
+      ...gapItems.map(g => ({ ...g, positionName: '' })),
+      ...unassignedItems,
+    ].sort((a, b) => a.sortHour - b.sortHour);
 
     if (items.length > 0) {
       result.push({
         key,
         dayLabel: abbr[date.getDay()],
-        gaps:     items.map(i => i.label),
+        gaps:     items.map(i => ({ label: i.label, positionName: i.positionName })),
         isToday:  isTodayDate(date),
       });
     }
@@ -1173,8 +1274,8 @@ function hoursLinesForDate(date) {
     .filter(e => e.dayOfWeek === dayName)
     .map(e => ({
       key:        e.id_hours_of_operation,
-      openPx:     parseTimeToHour(e.startTime) * CELL_HEIGHT,
-      closePx:    parseTimeToHour(e.endTime)   * CELL_HEIGHT,
+      openPx:     parseTimeToHour(e.startTime) * cellHeight.value,
+      closePx:    parseTimeToHour(e.endTime)   * cellHeight.value,
       openLabel:  fmtHour(parseTimeToHour(e.startTime)),
       closeLabel: fmtHour(parseTimeToHour(e.endTime)),
     }));
@@ -1196,8 +1297,8 @@ function eventsForDate(date) {
 function eventBlockStyle(ev) {
   return {
     position: "absolute",
-    top:    `${ev.startHour * CELL_HEIGHT}px`,
-    height: `${Math.max((ev.endHour - ev.startHour) * CELL_HEIGHT - 3, 22)}px`,
+    top:    `${ev.startHour * cellHeight.value}px`,
+    height: `${Math.max((ev.endHour - ev.startHour) * cellHeight.value - 3, 22)}px`,
     left: "3px", right: "3px",
     background: "rgba(74,144,164,0.18)",
     border: "1px solid rgba(74,144,164,0.5)",
@@ -1280,8 +1381,8 @@ function shiftStyle(shift) {
   const pct    = 100 / layout.totalCols;
   return {
     position: "absolute",
-    top:    `${(shift.startHour - CAL_START_HOUR) * CELL_HEIGHT}px`,
-    height: `${Math.max((shift.endHour - shift.startHour) * CELL_HEIGHT - 3, 18)}px`,
+    top:    `${(shift.startHour - CAL_START_HOUR) * cellHeight.value}px`,
+    height: `${Math.max((shift.endHour - shift.startHour) * cellHeight.value - 3, 18)}px`,
     left:   `calc(${layout.colIndex * pct}% + ${GAP}px)`,
     width:  `calc(${pct}% - ${GAP * 2}px)`,
     right:  "unset",
@@ -1303,7 +1404,7 @@ function getHourFromEvent(e, colEl) {
   // so e.clientY - colRect.top gives the exact pixel offset within the column directly.
   const colRect = colEl.getBoundingClientRect();
   const relY    = e.clientY - colRect.top;
-  return snap(CAL_START_HOUR + relY / CELL_HEIGHT);
+  return snap(CAL_START_HOUR + relY / cellHeight.value);
 }
 
 // ── Drag handlers ──────────────────────────────────────────────────────────────
@@ -1320,15 +1421,41 @@ function onColumnMouseDown(e, colIdx) {
   const startHour = getHourFromEvent(e, e.currentTarget);
   drag.value = { active: true, dayIndex: colIdx, startHour, currentHour: startHour, colEl: e.currentTarget };
 }
+// ── Drag-scroll (auto-scroll while dragging near edges) ────────────────────────
+let dragScrollSpeed = 0;
+let dragScrollRAF   = null;
+function runDragScroll() {
+  if (!calBody.value || dragScrollSpeed === 0) { dragScrollRAF = null; return; }
+  calBody.value.scrollTop += dragScrollSpeed;
+  dragScrollRAF = requestAnimationFrame(runDragScroll);
+}
+function setDragScroll(speed) {
+  dragScrollSpeed = speed;
+  if (speed !== 0 && !dragScrollRAF) dragScrollRAF = requestAnimationFrame(runDragScroll);
+}
+function stopDragScroll() { dragScrollSpeed = 0; if (dragScrollRAF) { cancelAnimationFrame(dragScrollRAF); dragScrollRAF = null; } }
+
 function onGlobalMouseMove(e) {
   if (rubberBand.value.active) {
     rubberBand.value = { ...rubberBand.value, x: e.clientX, y: e.clientY };
     return;
   }
-  if (!drag.value.active || !drag.value.colEl) return;
+  if (!drag.value.active || !drag.value.colEl) { stopDragScroll(); return; }
   drag.value.currentHour = getHourFromEvent(e, drag.value.colEl);
+
+  // Auto-scroll when cursor is within 60px of the top/bottom of calBody
+  if (calBody.value) {
+    const { top, bottom } = calBody.value.getBoundingClientRect();
+    const ZONE = 60;
+    const fromTop    = e.clientY - top;
+    const fromBottom = bottom - e.clientY;
+    if (fromTop < ZONE && fromTop >= 0)         setDragScroll(-Math.max(2, Math.round((ZONE - fromTop)    / 10)));
+    else if (fromBottom < ZONE && fromBottom >= 0) setDragScroll( Math.max(2, Math.round((ZONE - fromBottom) / 10)));
+    else                                           setDragScroll(0);
+  }
 }
 function onGlobalMouseUp(e) {
+  stopDragScroll();
   if (rubberBand.value.active) {
     finalizeDashRubberBand();
     return;
@@ -1339,7 +1466,11 @@ function onGlobalMouseUp(e) {
   const colIdx    = drag.value.dayIndex;
   drag.value.active = false;
 
-  if (endHour - startHour < SNAP_MINUTES / 60 + 0.001) return;
+  if (endHour - startHour < SNAP_MINUTES / 60 + 0.001) {
+    // Too short to be a drag — was a click. Let the click handler handle it (e.g. multi-select).
+    dragStartedFromShiftBlock = false;
+    return;
+  }
 
   // Resolve actual date from view
   let date;
@@ -1396,6 +1527,15 @@ async function loadAll() {
     const positionMap = Object.fromEntries(positions.value.map(p => [p.id_position, p]));
     shifts.value = await fetchShiftsWithAssignments(map, positionMap, deptId);
     pendingRequests.value = await fetchSwapRequests(map);
+    // Load time-off requests for manager sidebar (non-blocking)
+    if (isManager.value) {
+      apiClient.get("/personal-availability").then(res => {
+        const deptEmpIds = new Set(empList.map(e => e.id_employee));
+        sidebarAvailability.value = (res.data || [])
+          .filter(a => deptEmpIds.has(a.id_employee) && a.status === "pending")
+          .map(a => ({ ...a }));
+      }).catch(() => {});
+    }
     // Load hours of operation + events for this user's department (non-blocking)
     if (deptId) {
       getDepartment(deptId).then(r => { deptName.value = r.data?.name || ''; }).catch(() => {});
@@ -1674,7 +1814,33 @@ function clearSelection() {
   selectedShiftIds.value = new Set();
 }
 
+// Called on mousedown over a shift block.
+// If Cmd/Ctrl is held: start a drag-to-create on the underlying column instead of selecting the shift.
+function onShiftBlockMouseDown(e, colIdx) {
+  if ((e.metaKey || e.ctrlKey) && isManager.value) {
+    e.stopPropagation();
+    dragStartedFromShiftBlock = true;
+    const colEl = e.currentTarget.closest('.day-column');
+    if (colEl) {
+      clearSelection();
+      selectedShift.value       = null;
+      quickCreate.value.visible = false;
+      const startHour = getHourFromEvent(e, colEl);
+      drag.value = { active: true, dayIndex: colIdx, startHour, currentHour: startHour, colEl };
+    }
+    return;
+  }
+  dragStartedFromShiftBlock = false;
+  e.stopPropagation();
+}
+
 function onShiftBlockClick(shift, e) {
+  e.stopPropagation();
+  if (dragStartedFromShiftBlock) {
+    // The mousedown was the start of a drag-to-create; suppress this click
+    dragStartedFromShiftBlock = false;
+    return;
+  }
   if (e.metaKey || e.ctrlKey) {
     toggleShiftSelection(shift.id);
     return;
@@ -1795,6 +1961,7 @@ async function deleteSelectedShifts() {
 }
 
 function onDashKeydown(e) {
+  if (e.key === "Meta" || e.key === "Control") cmdHeld.value = true;
   const meta = e.metaKey || e.ctrlKey;
   if (meta && e.key === "a") {
     // Only intercept if not in an input
@@ -1849,18 +2016,66 @@ let clockInterval = null;
 onMounted(async () => {
   if (isManager.value) await loadDepts(currentUser.value);
   await loadAll();
-  if (calBody.value) calBody.value.scrollTop = 7 * CELL_HEIGHT; // scroll to 7am
+  if (calBody.value) calBody.value.scrollTop = 7 * cellHeight.value; // scroll to 7am
   window.addEventListener("keydown", onDashKeydown);
+  window.addEventListener("keyup", onDashKeyup);
+  window.addEventListener("blur",  onDashBlur);
   // Tick every minute to keep the current-time line accurate
   clockInterval = setInterval(() => {
     currentTimeHour.value = new Date().getHours() + new Date().getMinutes() / 60;
   }, 60_000);
 });
+function onDashKeyup(e)  { if (e.key === "Meta" || e.key === "Control") cmdHeld.value = false; }
+function onDashBlur()    { cmdHeld.value = false; } // window lost focus, key release won't fire
+
 onUnmounted(() => {
+  stopDragScroll();
   window.removeEventListener("keydown", onDashKeydown);
+  window.removeEventListener("keyup",   onDashKeyup);
+  window.removeEventListener("blur",    onDashBlur);
   clearInterval(clockInterval);
 });
-watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrollTop = 7 * CELL_HEIGHT; }, 50); });
+watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrollTop = 7 * cellHeight.value; }, 50); });
+
+// ── Zoom / fit ─────────────────────────────────────────────────────────────────
+function fitToView() {
+  if (!calBody.value) return;
+
+  // Subtract the sticky header height from available space
+  const headerEl = calBody.value.querySelector('.cal-header-row');
+  const headerH  = headerEl ? headerEl.offsetHeight : 0;
+  const availableH = calBody.value.clientHeight - headerH;
+
+  // Collect all defined business hour entries from calendarHours
+  const pool = activeSeason.value
+    ? calendarHours.value.filter(h => h.season === activeSeason.value)
+    : calendarHours.value;
+
+  let minHour = 24, maxHour = 0;
+  for (const entry of pool) {
+    const start = fromTimeInput(entry.startTime);
+    const end   = fromTimeInput(entry.endTime);
+    if (start < minHour) minHour = start;
+    if (end   > maxHour) maxHour = end;
+  }
+
+  // Fallback: no business hours configured — infer from visible shifts
+  if (maxHour <= minHour) {
+    const dates   = calView.value === 'Day' ? [dayViewDate.value] : weekDates.value;
+    const dateSet = new Set(dates.map(d => dateToKey(d)));
+    const visible = shifts.value.filter(s => dateSet.has(s.date));
+    if (visible.length) {
+      minHour = Math.min(...visible.map(s => s.startHour));
+      maxHour = Math.max(...visible.map(s => s.endHour));
+    } else {
+      minHour = 7; maxHour = 19;
+    }
+  }
+
+  const spanHours = maxHour - minHour;
+  cellHeight.value = Math.max(20, Math.min(160, Math.floor(availableH / spanHours)));
+  nextTick(() => { if (calBody.value) calBody.value.scrollTop = minHour * cellHeight.value; });
+}
 </script>
 
 <style scoped>
@@ -1883,25 +2098,25 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .loading-overlay { position: fixed; inset: 0; background: var(--bg-overlay); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; z-index: 999; backdrop-filter: blur(4px); }
 .loading-spinner { width: 36px; height: 36px; border: 3px solid var(--bdr-subtle); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.loading-text { font-size: 13px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
-.api-error-banner { background: var(--err-bg); border-bottom: 1px solid var(--err-border); color: var(--err-text); font-size: 12px; padding: 8px 20px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.retry-btn { background: none; border: 1px solid var(--err-text); color: var(--err-text); padding: 2px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-family: 'DM Sans', sans-serif; }
+.loading-text { font-size: 14px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
+.api-error-banner { background: var(--err-bg); border-bottom: 1px solid var(--err-border); color: var(--err-text); font-size: 13px; padding: 8px 20px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.retry-btn { background: none; border: 1px solid var(--err-text); color: var(--err-text); padding: 2px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: 'DM Sans', sans-serif; }
 .retry-btn:hover { background: var(--err-text); color: #fff; }
 
 /* ── Nav ── */
 .topnav { display: flex; align-items: center; gap: 24px; padding: 0 24px; height: 56px; background: var(--bg-surface); border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0; z-index: 10; }
 .nav-logo { display: flex; align-items: center; gap: 8px; }
-.logo-icon { font-size: 20px; color: var(--accent); }
-.logo-text { font-family: 'DM Mono', monospace; font-size: 15px; font-weight: 500; letter-spacing: 0.05em; }
+.logo-icon { font-size: 21px; color: var(--accent); }
+.logo-text { font-family: 'DM Mono', monospace; font-size: 16px; font-weight: 500; letter-spacing: 0.05em; }
 .nav-tabs { display: flex; gap: 2px; flex: 1; }
-.nav-tab { padding: 6px 16px; background: transparent; border: none; color: var(--tx-muted); font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer; border-radius: 6px; transition: background 0.15s, color 0.15s; }
+.nav-tab { padding: 6px 16px; background: transparent; border: none; color: var(--tx-muted); font-family: 'DM Sans', sans-serif; font-size: 14px; cursor: pointer; border-radius: 6px; transition: background 0.15s, color 0.15s; }
 .nav-tab:hover  { background: var(--bdr-subtle); color: var(--tx-secondary); }
 .nav-tab.active { background: var(--bg-active); color: var(--accent); font-weight: 600; }
 .nav-divider { width: 1px; height: 20px; background: var(--bdr-subtle); flex-shrink: 0; }
 .nav-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
-.icon-btn { position: relative; background: none; border: none; cursor: pointer; font-size: 16px; color: var(--tx-muted); }
+.icon-btn { position: relative; background: none; border: none; cursor: pointer; font-size: 17px; color: var(--tx-muted); }
 .notif-dot { position: absolute; top: 0; right: 0; width: 7px; height: 7px; background: var(--err-text); border-radius: 50%; border: 1px solid var(--bg-surface); }
-.avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #FF1744, #F0E6D3); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #000; cursor: pointer; }
+.avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #FF1744, #F0E6D3); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #000; cursor: pointer; }
 
 /* ── Theme toggle ── */
 .theme-toggle { background: none; border: 1px solid var(--bdr-subtle); color: var(--tx-muted); width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s; flex-shrink: 0; }
@@ -1915,12 +2130,12 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .sidebar::-webkit-scrollbar { width: 4px; }
 .sidebar::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
 .mini-cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; padding: 0 2px; }
-.cal-nav-btn { background: none; border: none; color: var(--tx-dim); cursor: pointer; font-size: 16px; padding: 2px 6px; border-radius: 4px; transition: color 0.15s; }
+.cal-nav-btn { background: none; border: none; color: var(--tx-dim); cursor: pointer; font-size: 17px; padding: 2px 6px; border-radius: 4px; transition: color 0.15s; }
 .cal-nav-btn:hover { color: var(--accent); }
-.mini-cal-month { font-size: 11px; color: var(--tx-secondary); font-family: 'DM Mono', monospace; }
+.mini-cal-month { font-size: 12px; color: var(--tx-secondary); font-family: 'DM Mono', monospace; }
 .mini-calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--bdr-subtle); }
-.mini-cal-day-label { text-align: center; font-size: 10px; color: var(--tx-label-dim); padding: 3px 0; font-family: 'DM Mono', monospace; }
-.mini-cal-cell { text-align: center; font-size: 11px; padding: 3px 1px; border-radius: 4px; cursor: pointer; color: var(--tx-dim); font-family: 'DM Mono', monospace; transition: background 0.12s; }
+.mini-cal-day-label { text-align: center; font-size: 11px; color: var(--tx-label-dim); padding: 3px 0; font-family: 'DM Mono', monospace; }
+.mini-cal-cell { text-align: center; font-size: 12px; padding: 3px 1px; border-radius: 4px; cursor: pointer; color: var(--tx-dim); font-family: 'DM Mono', monospace; transition: background 0.12s; }
 .mini-cal-cell:hover { background: var(--bdr-subtle); color: var(--tx-secondary); }
 .mini-cal-cell.in-week { background: var(--bg-active); color: var(--tasks-tx); }
 .mini-cal-cell.selected-day { background: var(--accent-bg); color: var(--accent); font-weight: 600; outline: 1px solid var(--accent-border); }
@@ -1930,21 +2145,21 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 
 /* Section header — used by both manager and employee sections */
 .sidebar-sec-header { display: flex; align-items: center; justify-content: space-between; padding: 11px 0 9px; margin-bottom: 8px; border-bottom: 1px solid var(--bdr-faint); }
-.sidebar-sec-title { font-size: 13px; font-weight: 700; color: var(--tx-primary); letter-spacing: 0.01em; font-family: 'DM Sans', sans-serif; }
-.sidebar-sec-sub { font-size: 10px; color: var(--tx-faintest); font-style: italic; }
-.sidebar-sec-count { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--tx-ghost); background: var(--bg-hover); border: 1px solid var(--bdr-faint); border-radius: 10px; padding: 1px 7px; flex-shrink: 0; }
+.sidebar-sec-title { font-size: 14px; font-weight: 700; color: var(--tx-primary); letter-spacing: 0.01em; font-family: 'DM Sans', sans-serif; }
+.sidebar-sec-sub { font-size: 11px; color: var(--tx-faintest); font-style: italic; }
+.sidebar-sec-count { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--tx-ghost); background: var(--bg-hover); border: 1px solid var(--bdr-faint); border-radius: 10px; padding: 1px 7px; flex-shrink: 0; }
 .sidebar-sec-header.clickable { cursor: pointer; }
 .sidebar-sec-header.clickable:hover .sidebar-sec-title { color: var(--accent); }
 
 /* Legacy sidebar label — kept for any remaining usages */
-.sidebar-label { font-size: 11px; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 8px; }
+.sidebar-label { font-size: 12px; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 8px; }
 .sidebar-label.underline-link { cursor: pointer; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
-.employee-chip { border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 600; color: #000; margin-bottom: 5px; text-align: center; cursor: pointer; transition: opacity 0.15s; }
+.employee-chip { border-radius: 6px; padding: 6px 10px; font-size: 13px; font-weight: 600; color: #000; margin-bottom: 5px; text-align: center; cursor: pointer; transition: opacity 0.15s; }
 .employee-chip:hover { opacity: 0.85; }
-.sidebar-empty { font-size: 11px; color: var(--tx-faintest); font-style: italic; padding: 2px 0 4px; }
+.sidebar-empty { font-size: 12px; color: var(--tx-faintest); font-style: italic; padding: 2px 0 4px; }
 .open-shifts-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
 .open-shifts-header .sidebar-label { margin-bottom: 0; }
-.open-shifts-week { font-size: 10px; color: var(--tx-faintest); font-style: italic; }
+.open-shifts-week { font-size: 11px; color: var(--tx-faintest); font-style: italic; }
 
 .open-shift-item {
   display: flex;
@@ -1954,16 +2169,20 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
   align-items: flex-start;
 }
 .open-shift-day {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--tx-secondary);
   width: 28px;
   flex-shrink: 0;
   padding-top: 1px;
 }
-.open-shift-gaps { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.open-shift-gaps { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.open-shift-gap-row { display: flex; }
 .open-shift-gap {
-  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
   font-family: 'DM Mono', monospace;
   color: var(--tx-dim);
   background: var(--bg-hover);
@@ -1972,42 +2191,106 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
   padding: 1px 5px;
   white-space: nowrap;
 }
+.open-shift-pos {
+  font-size: 10px;
+  font-family: 'DM Sans', sans-serif;
+  color: var(--tx-faintest);
+}
 
-.request-item { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--bdr-subtle); color: var(--tx-muted); }
+.request-item { display: flex; justify-content: space-between; font-size: 13px; padding: 5px 0; border-bottom: 1px solid var(--bdr-subtle); color: var(--tx-muted); }
 .request-name { color: var(--tx-secondary); font-weight: 500; }
-.request-type { font-size: 11px; color: var(--accent); }
+.request-type { font-size: 12px; color: var(--accent); }
+
+/* Sidebar tradeboard items (manager) */
+.sb-trade-item {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--bdr-subtle);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.sb-trade-row { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.sb-trade-name { font-size: 13px; font-weight: 600; color: var(--tx-secondary); }
+.sb-trade-time { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--tx-dim); white-space: nowrap; }
+.sb-trade-meta { display: flex; gap: 6px; align-items: center; }
+.sb-trade-date { font-size: 11px; color: var(--tx-faintest); font-family: 'DM Mono', monospace; }
+.sb-trade-pos  { font-size: 10px; color: var(--tx-faintest); background: var(--bg-hover); border-radius: 3px; padding: 0 4px; }
+.sb-trade-claim { display: flex; justify-content: space-between; align-items: center; margin-top: 2px; }
+.sb-trade-claimer { font-size: 11px; color: var(--accent); }
+.sb-trade-actions { display: flex; gap: 4px; }
+.sb-approve-btn, .sb-deny-btn {
+  font-size: 12px; font-weight: 700; border: none; border-radius: 4px; padding: 2px 7px; cursor: pointer; transition: opacity 0.15s;
+}
+.sb-approve-btn { background: #1a7a3a; color: #d6f5e0; }
+.sb-approve-btn:hover { opacity: 0.85; }
+.sb-deny-btn    { background: #6b1a1a; color: #f5d6d6; }
+.sb-deny-btn:hover    { opacity: 0.85; }
+
+/* Sidebar requests items (manager) */
+.sb-req-item {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--bdr-subtle);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.sb-req-row { display: flex; justify-content: space-between; align-items: baseline; }
+.sb-req-name { font-size: 13px; font-weight: 600; color: var(--tx-secondary); }
+.sb-req-type { font-size: 11px; color: var(--accent); }
+.sb-req-dates { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--tx-dim); }
+.sb-req-actions { display: flex; gap: 4px; margin-top: 3px; }
+.sb-req-status { font-size: 11px; font-weight: 600; margin-top: 2px; text-transform: capitalize; }
+.sb-req-status.approved { color: #4caf50; }
+.sb-req-status.denied   { color: var(--accent); }
 
 .my-shift-item { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--bdr-subtle); }
-.my-shift-pos { font-size: 12px; font-weight: 600; color: var(--tx-secondary); }
-.my-shift-time { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--tx-dim); }
+.my-shift-pos { font-size: 13px; font-weight: 600; color: var(--tx-secondary); }
+.my-shift-time { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--tx-dim); }
 
 .trade-preview-item { padding: 6px 0; border-bottom: 1px solid var(--bdr-subtle); cursor: pointer; transition: background 0.12s; border-radius: 4px; }
 .trade-preview-item:hover { background: var(--bg-hover); }
 .trade-preview-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
-.trade-preview-name { font-size: 12px; font-weight: 600; color: var(--tx-secondary); }
-.trade-preview-day { font-size: 10px; font-weight: 700; color: var(--tx-dim); }
-.trade-preview-time { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--accent); }
+.trade-preview-name { font-size: 13px; font-weight: 600; color: var(--tx-secondary); }
+.trade-preview-day { font-size: 11px; font-weight: 700; color: var(--tx-dim); }
+.trade-preview-time { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--accent); }
 
 /* ── Main ── */
 .cal-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.dept-name-bar { padding: 10px 20px 0; font-size: 18px; font-weight: 700; letter-spacing: 0.02em; color: var(--tx-heading); font-family: 'DM Sans', sans-serif; flex-shrink: 0; }
+.dept-name-bar { padding: 10px 20px 0; font-size: 19px; font-weight: 700; letter-spacing: 0.02em; color: var(--tx-heading); font-family: 'DM Sans', sans-serif; flex-shrink: 0; }
 .cal-toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0; }
 .cal-nav-group { display: flex; align-items: center; gap: 8px; flex: 1; }
-.toolbar-btn { background: var(--bdr-subtle); border: none; color: var(--tx-secondary); width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; transition: background 0.15s; }
+.toolbar-btn { background: var(--bdr-subtle); border: none; color: var(--tx-secondary); width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 17px; display: flex; align-items: center; justify-content: center; transition: background 0.15s; }
 .toolbar-btn:hover { background: var(--bg-active); color: var(--accent); }
-.cal-range-label { font-size: 14px; font-weight: 600; color: var(--tx-primary); font-family: 'DM Mono', monospace; white-space: nowrap; }
-.today-btn { background: none; border: 1px solid var(--bdr-accent); color: var(--tx-muted); padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s, color 0.15s; }
+.cal-range-label { font-size: 15px; font-weight: 600; color: var(--tx-primary); font-family: 'DM Mono', monospace; white-space: nowrap; }
+.today-btn { background: none; border: 1px solid var(--bdr-accent); color: var(--tx-muted); padding: 4px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s, color 0.15s; }
 .today-btn:hover { border-color: var(--accent); color: var(--accent); }
 .cal-view-group { display: flex; gap: 2px; background: var(--bdr-subtle); border-radius: 8px; padding: 3px; }
-.view-btn { background: none; border: none; color: var(--tx-muted); padding: 4px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: background 0.15s, color 0.15s; }
+.view-btn { background: none; border: none; color: var(--tx-muted); padding: 4px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: background 0.15s, color 0.15s; }
 .view-btn.active { background: var(--bg-active); color: var(--accent); font-weight: 600; }
-.add-shift-btn { background: var(--accent); border: none; color: #fff; padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px; font-family: 'DM Sans', sans-serif; transition: background 0.15s, transform 0.12s; white-space: nowrap; }
+.add-shift-btn { background: var(--accent); border: none; color: #fff; padding: 7px 16px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px; font-family: 'DM Sans', sans-serif; transition: background 0.15s, transform 0.12s; white-space: nowrap; }
+
+.zoom-group { display: flex; align-items: center; gap: 6px; padding: 0 4px; }
+.zoom-icon { color: var(--tx-dim); flex-shrink: 0; }
+.zoom-slider {
+  -webkit-appearance: none; appearance: none;
+  width: 80px; height: 4px;
+  background: var(--bdr-subtle); border-radius: 2px; outline: none; cursor: pointer;
+}
+.zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 13px; height: 13px; border-radius: 50%;
+  background: var(--accent); cursor: pointer; transition: transform 0.1s;
+}
+.zoom-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+.fit-btn {
+  background: none; border: 1px solid var(--bdr-accent); color: var(--tx-muted);
+  padding: 3px 10px; border-radius: 6px; font-size: 12px; cursor: pointer;
+  font-family: 'DM Sans', sans-serif; transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.fit-btn:hover { border-color: var(--accent); color: var(--accent); }
 .add-shift-btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
 
 /* ── Shared time-grid (Day + Week) ── */
 .cal-grid-wrapper { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .cal-body { flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; }
-.cal-header-row { display: flex; border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0; background: var(--bg-surface); position: sticky; top: 0; z-index: 2; }
+.cal-header-row { display: flex; border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0; background: var(--bg-surface); position: sticky; top: 0; z-index: 20; }
 .time-gutter { width: 60px; flex-shrink: 0; }
 
 .day-header {
@@ -2019,9 +2302,9 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .day-header:hover { background: var(--bg-hover); }
 .day-header.single-day { cursor: default; }
 .day-header.single-day:hover { background: transparent; }
-.day-letter { font-size: 11px; color: var(--tx-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
-.day-number { font-size: 18px; font-family: 'DM Mono', monospace; color: var(--tx-muted); width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-weight: 500; }
-.day-month-label { font-size: 11px; color: var(--tx-dim); font-style: italic; }
+.day-letter { font-size: 12px; color: var(--tx-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+.day-number { font-size: 19px; font-family: 'DM Mono', monospace; color: var(--tx-muted); width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-weight: 500; }
+.day-month-label { font-size: 12px; color: var(--tx-dim); font-style: italic; }
 .day-header.today .day-letter { color: var(--accent); }
 .day-header.today .day-number { background: var(--accent); color: var(--today-badge-tx); font-weight: 700; }
 
@@ -2029,26 +2312,27 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .cal-body::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
 .cal-inner { display: flex; min-height: fit-content; }
 .time-column { width: 60px; flex-shrink: 0; }
-.time-slot-label { height: 60px; padding: 4px 8px 0; font-size: 10px; color: var(--tx-faintest); font-family: 'DM Mono', monospace; display: flex; align-items: flex-start; justify-content: flex-end; }
+.time-slot-label { height: var(--cell-h, 60px); padding: 4px 8px 0; font-size: 11px; color: var(--tx-faintest); font-family: 'DM Mono', monospace; display: flex; align-items: flex-start; justify-content: flex-end; }
 
 .day-column { flex: 1; position: relative; border-left: 1px solid var(--bdr-strong); cursor: crosshair; }
 .day-column.is-dragging-col { background: var(--accent-drag); }
 .day-column.no-edit { cursor: default; }
-.hour-cell { height: 60px; border-bottom: 1px solid var(--bdr-faint); }
+.hour-cell { height: var(--cell-h, 60px); border-bottom: 1px solid var(--bdr-faint); }
 .hour-cell:nth-child(even) { background: var(--hour-even); }
 
 .ghost-block { border: 2px solid var(--accent); background: var(--accent-bg); border-radius: 6px; display: flex; align-items: flex-start; padding: 4px 8px; pointer-events: none; }
-.ghost-label { font-size: 11px; color: var(--accent); font-family: 'DM Mono', monospace; font-weight: 500; white-space: nowrap; }
+.ghost-label { font-size: 12px; color: var(--accent); font-family: 'DM Mono', monospace; font-weight: 500; white-space: nowrap; }
 
 .shift-block { position: absolute; border-radius: 6px; padding: 5px 8px; cursor: pointer; overflow: hidden; z-index: 2; transition: filter 0.15s; }
 .shift-block:hover { filter: brightness(1.12); }
-.shift-employee { font-size: 12px; font-weight: 700; color: rgba(0,0,0,0.85); line-height: 1.2; }
-.shift-time { font-size: 10px; color: rgba(0,0,0,0.6); font-family: 'DM Mono', monospace; }
-.shift-pos-badge { font-size: 9px; color: rgba(0,0,0,0.5); margin-top: 2px; background: rgba(0,0,0,0.1); border-radius: 3px; padding: 1px 4px; display: inline-block; }
+.cmd-create-mode .shift-block { cursor: crosshair !important; }
+.shift-employee { font-size: 13px; font-weight: 700; color: rgba(0,0,0,0.85); line-height: 1.2; }
+.shift-time { font-size: 11px; color: rgba(0,0,0,0.6); font-family: 'DM Mono', monospace; }
+.shift-pos-badge { font-size: 10px; color: rgba(0,0,0,0.5); margin-top: 2px; background: rgba(0,0,0,0.1); border-radius: 3px; padding: 1px 4px; display: inline-block; }
 
 .event-block { position: absolute; left: 3px; right: 3px; border-radius: 6px; overflow: hidden; z-index: 1; }
-.event-block-title { font-size: 11px; font-weight: 700; color: #4A90A4; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.event-block-time  { font-size: 9px; color: rgba(74,144,164,0.8); font-family: 'DM Mono', monospace; }
+.event-block-title { font-size: 12px; font-weight: 700; color: #4A90A4; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event-block-time  { font-size: 10px; color: rgba(74,144,164,0.8); font-family: 'DM Mono', monospace; }
 
 .month-event-pill {
   display: flex; align-items: center; gap: 5px;
@@ -2056,7 +2340,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
   background: rgba(74,144,164,0.15); border-left: 2px solid #4A90A4;
 }
 .month-event-dot  { width: 5px; height: 5px; border-radius: 50%; background: #4A90A4; flex-shrink: 0; }
-.month-event-name { font-size: 11px; font-weight: 600; color: #4A90A4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.month-event-name { font-size: 12px; font-weight: 600; color: #4A90A4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
 
 .current-time-line { position: absolute; left: 0; right: 0; height: 2px; background: #EF4444; z-index: 5; box-shadow: 0 0 8px #EF444488; pointer-events: none; }
 .current-time-line::before { content: ''; position: absolute; left: -4px; top: -4px; width: 10px; height: 10px; background: #EF4444; border-radius: 50%; }
@@ -2070,7 +2354,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .hours-op-line.close { background: rgba(248, 113, 113, 0.65); box-shadow: 0 0 6px rgba(248,113,113,0.3); }
 .hours-line-label {
   position: absolute; right: 6px; bottom: 4px;
-  font-size: 9px; font-family: 'DM Mono', monospace; font-weight: 600;
+  font-size: 10px; font-family: 'DM Mono', monospace; font-weight: 600;
   white-space: nowrap; padding: 1px 5px; border-radius: 3px;
   pointer-events: none; line-height: 13px;
 }
@@ -2089,7 +2373,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
   border-bottom: 1px solid var(--bdr-subtle);
   flex-shrink: 0;
 }
-.month-dow { text-align: center; padding: 10px 0; font-size: 11px; font-weight: 600; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.08em; }
+.month-dow { text-align: center; padding: 10px 0; font-size: 12px; font-weight: 600; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.08em; }
 
 .month-grid {
   display: grid;
@@ -2118,7 +2402,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .month-cell-num {
   display: inline-flex;
   font-family: 'DM Mono', monospace;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--tx-dim);
   line-height: 1;
   margin-bottom: 6px;
@@ -2144,60 +2428,60 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 }
 .month-shift-pill:hover { filter: brightness(1.12); }
 .pill-dot { width: 5px; height: 5px; border-radius: 50%; background: rgba(0,0,0,0.4); flex-shrink: 0; }
-.pill-name { font-size: 11px; font-weight: 600; color: rgba(0,0,0,0.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
-.pill-time { font-size: 10px; color: rgba(0,0,0,0.6); font-family: 'DM Mono', monospace; white-space: nowrap; }
+.pill-name { font-size: 12px; font-weight: 600; color: rgba(0,0,0,0.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.pill-time { font-size: 11px; color: rgba(0,0,0,0.6); font-family: 'DM Mono', monospace; white-space: nowrap; }
 
-.month-shift-more { font-size: 11px; color: var(--tx-dim); padding: 2px 6px; cursor: pointer; }
+.month-shift-more { font-size: 12px; color: var(--tx-dim); padding: 2px 6px; cursor: pointer; }
 .month-shift-more:hover { color: var(--accent); }
 
 /* ── Shared form styles ── */
 .form-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
 .form-row { display: flex; gap: 10px; }
 .form-row .form-group { flex: 1; }
-.form-group label { font-size: 10px; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
+.form-group label { font-size: 11px; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
 .label-optional { font-weight: 400; text-transform: none; font-style: italic; letter-spacing: 0; color: var(--tx-faintest); }
 .form-group select,
 .form-group input[type="time"],
-.form-group input[type="text"] { background: var(--bg-input); border: 1px solid var(--bdr-accent); color: var(--tx-primary); padding: 7px 10px; border-radius: 8px; font-size: 12px; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; }
+.form-group input[type="text"] { background: var(--bg-input); border: 1px solid var(--bdr-accent); color: var(--tx-primary); padding: 7px 10px; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; }
 .form-group select:focus, .form-group input:focus { border-color: var(--accent); }
 
 /* ── Quick-create popover ── */
 .quick-create-popover { position: fixed; width: 290px; background: var(--bg-modal); border: 1px solid var(--bdr-pop); border-radius: 14px; padding: 18px 20px 20px; box-shadow: 0 20px 60px var(--bg-moverlay), 0 0 0 1px var(--accent-bg); z-index: 200; }
 .qc-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 4px; }
-.qc-time-badge { background: var(--accent-bg); color: var(--accent); font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--accent-border); }
-.qc-close { background: none; border: none; color: var(--tx-dim); cursor: pointer; font-size: 13px; transition: color 0.15s; padding: 2px 4px; }
+.qc-time-badge { background: var(--accent-bg); color: var(--accent); font-family: 'DM Mono', monospace; font-size: 14px; font-weight: 500; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--accent-border); }
+.qc-close { background: none; border: none; color: var(--tx-dim); cursor: pointer; font-size: 14px; transition: color 0.15s; padding: 2px 4px; }
 .qc-close:hover { color: var(--tx-secondary); }
-.qc-date-label { font-size: 12px; color: var(--tx-dim); margin-bottom: 16px; font-style: italic; }
+.qc-date-label { font-size: 13px; color: var(--tx-dim); margin-bottom: 16px; font-style: italic; }
 .qc-actions { display: flex; gap: 8px; margin-top: 4px; }
-.qc-cancel { flex: 1; background: none; border: 1px solid var(--bdr-accent); color: var(--tx-muted); padding: 8px; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 13px; }
+.qc-cancel { flex: 1; background: none; border: 1px solid var(--bdr-accent); color: var(--tx-muted); padding: 8px; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 14px; }
 .qc-cancel:hover { border-color: var(--bdr-medium); color: var(--tx-secondary); }
-.qc-confirm { flex: 2; background: var(--accent); border: none; color: #fff; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.15s, transform 0.12s; }
+.qc-confirm { flex: 2; background: var(--accent); border: none; color: #fff; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.15s, transform 0.12s; }
 .qc-confirm:hover { background: var(--accent-hover); transform: translateY(-1px); }
 
 /* ── Full modal ── */
 .modal-overlay { position: fixed; inset: 0; background: var(--bg-moverlay); display: flex; align-items: center; justify-content: center; z-index: 300; backdrop-filter: blur(4px); }
 .modal { background: var(--bg-modal); border: 1px solid var(--bdr-accent); border-radius: 14px; padding: 28px; width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
-.modal-title { font-size: 18px; font-weight: 700; color: var(--tx-primary); margin-bottom: 0; }
+.modal-title { font-size: 19px; font-weight: 700; color: var(--tx-primary); margin-bottom: 0; }
 .modal:not(.stm-modal) .modal-title { margin-bottom: 20px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-.modal-cancel { background: none; border: 1px solid var(--bdr-accent); color: var(--tx-muted); padding: 8px 18px; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 13px; }
-.modal-confirm { background: var(--accent); border: none; color: #fff; padding: 8px 18px; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 700; transition: background 0.15s; }
+.modal-cancel { background: none; border: 1px solid var(--bdr-accent); color: var(--tx-muted); padding: 8px 18px; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 14px; }
+.modal-confirm { background: var(--accent); border: none; color: #fff; padding: 8px 18px; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 700; transition: background 0.15s; }
 .modal-confirm:hover { background: var(--accent-hover); }
 
 /* ── Shift detail popover ── */
 .shift-popover { position: fixed; background: var(--bg-modal); border: 1px solid var(--bdr-accent); border-radius: 12px; padding: 16px 18px; width: 220px; box-shadow: 0 12px 40px rgba(0,0,0,0.3); z-index: 150; }
-.popover-close { position: absolute; top: 10px; right: 12px; background: none; border: none; color: var(--tx-dim); cursor: pointer; font-size: 12px; }
+.popover-close { position: absolute; top: 10px; right: 12px; background: none; border: none; color: var(--tx-dim); cursor: pointer; font-size: 13px; }
 .popover-dot { width: 10px; height: 10px; border-radius: 50%; margin-bottom: 8px; }
-.popover-employee { font-size: 15px; font-weight: 700; color: var(--tx-primary); margin-bottom: 4px; }
-.popover-time { font-size: 12px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
-.popover-day { font-size: 12px; color: var(--tx-muted); margin-top: 2px; }
-.popover-notes { font-size: 11px; color: var(--tx-secondary); font-style: italic; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--bdr-accent); }
+.popover-employee { font-size: 16px; font-weight: 700; color: var(--tx-primary); margin-bottom: 4px; }
+.popover-time { font-size: 13px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
+.popover-day { font-size: 13px; color: var(--tx-muted); margin-top: 2px; }
+.popover-notes { font-size: 12px; color: var(--tx-secondary); font-style: italic; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--bdr-accent); }
 .popover-actions { display: flex; gap: 8px; margin-top: 14px; }
-.popover-edit { flex: 1; background: var(--bdr-accent); border: none; color: var(--tx-secondary); padding: 6px; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
+.popover-edit { flex: 1; background: var(--bdr-accent); border: none; color: var(--tx-secondary); padding: 6px; border-radius: 6px; cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
 .popover-edit:hover { background: var(--bg-active); color: var(--accent); }
-.popover-tasks { flex: 1; background: var(--tasks-bg); border: none; color: var(--tasks-tx); padding: 6px; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
+.popover-tasks { flex: 1; background: var(--tasks-bg); border: none; color: var(--tasks-tx); padding: 6px; border-radius: 6px; cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
 .popover-tasks:hover { background: var(--tasks-bg-h); color: var(--tasks-tx-h); }
-.popover-delete { flex: 1; background: var(--err-bg); border: none; color: var(--err-text); padding: 6px; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
+.popover-delete { flex: 1; background: var(--err-bg); border: none; color: var(--err-text); padding: 6px; border-radius: 6px; cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
 .popover-delete:hover { background: var(--deny-bg-h); }
 
 .avatar { cursor: pointer; transition: opacity 0.15s, transform 0.15s; }
@@ -2228,7 +2512,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
   width: 80px; height: 80px; border-radius: 50%;
   background: linear-gradient(135deg, #FF1744, #F0E6D3);
   display: flex; align-items: center; justify-content: center;
-  font-size: 26px; font-weight: 700; color: #fff;
+  font-size: 27px; font-weight: 700; color: #fff;
   margin: 0 auto;
   overflow: hidden;
   border: 2px solid var(--accent-border);
@@ -2237,23 +2521,23 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .profile-close {
   position: absolute; top: 16px; right: 16px;
   background: none; border: none; color: var(--tx-faint);
-  font-size: 14px; cursor: pointer;
+  font-size: 15px; cursor: pointer;
   transition: color 0.15s;
 }
 .profile-close:hover { color: var(--accent); }
 .profile-body { padding: 0 24px 20px; text-align: center; }
-.profile-name { font-size: 20px; font-weight: 700; color: var(--tx-heading); margin-bottom: 6px; }
-.profile-email { font-size: 13px; color: var(--tx-faint); margin-bottom: 12px; font-family: 'DM Mono', monospace; }
+.profile-name { font-size: 21px; font-weight: 700; color: var(--tx-heading); margin-bottom: 6px; }
+.profile-email { font-size: 14px; color: var(--tx-faint); margin-bottom: 12px; font-family: 'DM Mono', monospace; }
 .profile-role-badge {
   display: inline-block; padding: 3px 14px; border-radius: 100px;
-  font-size: 11px; font-weight: 600;
+  font-size: 12px; font-weight: 600;
 }
 .profile-role-badge.employee { background: rgba(255,23,68,0.1);  color: #FF4569; }
 .profile-role-badge.manager  { background: rgba(240,230,211,0.1); color: #c8903a; }
 .profile-role-badge.admin    { background: rgba(74,144,164,0.15); color: #4A90A4; }
 .profile-divider { height: 1px; background: var(--bdr-subtle); margin: 0 24px; }
 .profile-info { padding: 16px 24px; }
-.profile-info-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 6px 0; }
+.profile-info-row { display: flex; justify-content: space-between; align-items: center; font-size: 14px; padding: 6px 0; }
 .info-label { color: var(--tx-faint); }
 .info-val { color: var(--tx-secondary); }
 .mono { font-family: 'DM Mono', monospace; }
@@ -2266,7 +2550,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
   padding: 12px; border-radius: 10px;
   cursor: pointer;
   font-family: 'DM Sans', sans-serif;
-  font-size: 14px; font-weight: 600;
+  font-size: 15px; font-weight: 600;
   transition: background 0.15s, border-color 0.15s;
   width: calc(100% - 48px);
 }
@@ -2279,7 +2563,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .manage-btn {
   background: none; border: 1px solid var(--accent); color: var(--accent);
   padding: 5px 14px; border-radius: 8px; cursor: pointer;
-  font-size: 12px; font-weight: 600; font-family: 'DM Sans', sans-serif;
+  font-size: 13px; font-weight: 600; font-family: 'DM Sans', sans-serif;
   transition: background 0.15s, color 0.15s;
 }
 .manage-btn:hover { background: var(--accent); color: #fff; }
@@ -2288,11 +2572,11 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .stm-modal { width: 480px; max-height: 80vh; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
 .stm-header { display: flex; align-items: flex-start; justify-content: space-between; padding: 24px 24px 16px; border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0; }
 .stm-header .modal-title { margin-bottom: 4px; }
-.stm-sub { font-size: 12px; color: var(--tx-faint); font-family: 'DM Mono', monospace; }
-.stm-close { background: none; border: none; color: var(--tx-faint); font-size: 14px; cursor: pointer; padding: 4px 6px; border-radius: 6px; transition: color 0.15s, background 0.15s; flex-shrink: 0; margin-top: 2px; }
+.stm-sub { font-size: 13px; color: var(--tx-faint); font-family: 'DM Mono', monospace; }
+.stm-close { background: none; border: none; color: var(--tx-faint); font-size: 15px; cursor: pointer; padding: 4px 6px; border-radius: 6px; transition: color 0.15s, background 0.15s; flex-shrink: 0; margin-top: 2px; }
 .stm-close:hover { color: var(--accent); background: var(--bg-active); }
-.stm-error { margin: 12px 24px 0; padding: 8px 12px; background: var(--err-bg); border: 1px solid var(--err-border); border-radius: 8px; color: var(--err-text); font-size: 12px; }
-.stm-loading { display: flex; align-items: center; gap: 10px; padding: 32px 24px; color: var(--tx-faint); font-size: 13px; }
+.stm-error { margin: 12px 24px 0; padding: 8px 12px; background: var(--err-bg); border: 1px solid var(--err-border); border-radius: 8px; color: var(--err-text); font-size: 13px; }
+.stm-loading { display: flex; align-items: center; gap: 10px; padding: 32px 24px; color: var(--tx-faint); font-size: 14px; }
 .stm-spinner { width: 18px; height: 18px; border: 2px solid var(--bdr-subtle); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
 
 .stm-lists { flex: 1; overflow-y: auto; padding: 16px 24px; display: flex; flex-direction: column; gap: 12px; }
@@ -2302,9 +2586,9 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .stm-list-card { background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 10px; overflow: hidden; }
 .stm-list-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 8px; }
 .stm-list-meta { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.stm-list-name { font-size: 13px; font-weight: 600; color: var(--tx-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.stm-progress { font-size: 11px; font-weight: 600; font-family: 'DM Mono', monospace; color: var(--tx-faint); background: var(--bg-modal); border: 1px solid var(--bdr-medium); padding: 2px 8px; border-radius: 100px; flex-shrink: 0; }
-.stm-remove-btn { background: none; border: none; color: var(--tx-ghost); font-size: 12px; cursor: pointer; width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; flex-shrink: 0; }
+.stm-list-name { font-size: 14px; font-weight: 600; color: var(--tx-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stm-progress { font-size: 12px; font-weight: 600; font-family: 'DM Mono', monospace; color: var(--tx-faint); background: var(--bg-modal); border: 1px solid var(--bdr-medium); padding: 2px 8px; border-radius: 100px; flex-shrink: 0; }
+.stm-remove-btn { background: none; border: none; color: var(--tx-ghost); font-size: 13px; cursor: pointer; width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; flex-shrink: 0; }
 .stm-remove-btn:hover { background: var(--err-bg); color: var(--err-text); }
 
 .stm-prog-bar { height: 3px; background: var(--bdr-subtle); margin: 0 14px 10px; border-radius: 2px; overflow: hidden; }
@@ -2316,30 +2600,30 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .stm-task-disabled { cursor: default; }
 .stm-checkbox { accent-color: var(--accent); width: 14px; height: 14px; flex-shrink: 0; cursor: pointer; }
 .stm-task-disabled .stm-checkbox { cursor: default; }
-.stm-task-name { font-size: 13px; color: var(--tx-secondary); flex: 1; }
+.stm-task-name { font-size: 14px; color: var(--tx-secondary); flex: 1; }
 .stm-task-name.done { color: var(--tx-ghost); text-decoration: line-through; }
-.stm-no-tasks { padding: 10px 14px; font-size: 12px; color: var(--tx-ghost); font-style: italic; border-top: 1px solid var(--bdr-strong); }
+.stm-no-tasks { padding: 10px 14px; font-size: 13px; color: var(--tx-ghost); font-style: italic; border-top: 1px solid var(--bdr-strong); }
 
-.stm-empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 16px; gap: 6px; text-align: center; color: var(--tx-faint); font-size: 13px; }
-.stm-empty-sub { font-size: 12px; color: var(--tx-ghost); }
+.stm-empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 16px; gap: 6px; text-align: center; color: var(--tx-faint); font-size: 14px; }
+.stm-empty-sub { font-size: 13px; color: var(--tx-ghost); }
 
 .stm-assign-section { padding: 14px 24px 20px; border-top: 1px solid var(--bdr-subtle); flex-shrink: 0; background: var(--bg-surface); }
-.stm-assign-label { font-size: 10px; font-weight: 600; color: var(--tx-faint); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; }
+.stm-assign-label { font-size: 11px; font-weight: 600; color: var(--tx-faint); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; }
 .stm-assign-row { display: flex; gap: 8px; }
-.stm-select { flex: 1; background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary); padding: 8px 10px; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; }
+.stm-select { flex: 1; background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary); padding: 8px 10px; border-radius: 8px; font-size: 14px; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; }
 .stm-select:focus { border-color: var(--accent); }
 .stm-select option { background: var(--bg-modal); }
-.stm-assign-btn { background: var(--accent); border: none; color: #fff; padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: background 0.15s; flex-shrink: 0; }
+.stm-assign-btn { background: var(--accent); border: none; color: #fff; padding: 8px 18px; border-radius: 8px; font-size: 14px; font-weight: 600; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: background 0.15s; flex-shrink: 0; }
 .stm-assign-btn:hover { background: var(--accent-hover); }
 .stm-assign-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.stm-hint { font-size: 11px; color: var(--tx-faint); margin-top: 8px; font-style: italic; }
+.stm-hint { font-size: 12px; color: var(--tx-faint); margin-top: 8px; font-style: italic; }
 .stm-link { color: var(--accent-hover); cursor: pointer; text-decoration: underline; }
 .stm-link:hover { color: var(--accent); }
 
 /* ── Sidebar task section ── */
 .sb-tasklist-header { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; margin: 10px 0 5px; }
-.sb-tasklist-name { font-size: 11px; font-weight: 700; color: var(--tx-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
-.sb-tasklist-shift { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--tx-ghost); flex-shrink: 0; }
+.sb-tasklist-name { font-size: 12px; font-weight: 700; color: var(--tx-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.sb-tasklist-shift { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--tx-ghost); flex-shrink: 0; }
 .sb-task-row { display: flex; align-items: center; gap: 7px; padding: 3px 0; }
 .sb-task-check {
   width: 16px; height: 16px; flex-shrink: 0;
@@ -2354,7 +2638,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 }
 .sb-task-check:hover { border-color: var(--accent); background: var(--accent-bg); }
 .sb-task-check.done { background: var(--accent); border-color: var(--accent); color: #fff; }
-.sb-task-label { font-size: 11px; color: var(--tx-muted); line-height: 1.35; flex: 1; }
+.sb-task-label { font-size: 12px; color: var(--tx-muted); line-height: 1.35; flex: 1; }
 .sb-task-label.done { color: var(--tx-faintest); text-decoration: line-through; }
 .sb-task-progress { display: flex; align-items: center; gap: 6px; margin: 6px 0 4px; }
 
@@ -2362,7 +2646,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .my-task-progress { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
 .my-task-bar { flex: 1; height: 3px; background: var(--bdr-subtle); border-radius: 2px; overflow: hidden; }
 .my-task-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s ease; }
-.my-task-count { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--tx-ghost); flex-shrink: 0; }
+.my-task-count { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--tx-ghost); flex-shrink: 0; }
 
 /* ── Multi-selected shift block ── */
 .shift-block--multi-selected {
@@ -2397,18 +2681,18 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
   box-shadow: 0 8px 32px rgba(0,0,0,0.45);
   white-space: nowrap;
 }
-.sel-count { font-size: 13px; color: var(--tx-primary); font-weight: 600; }
+.sel-count { font-size: 14px; color: var(--tx-primary); font-weight: 600; }
 .sel-divider { width: 1px; height: 16px; background: var(--bdr-faint); margin: 0 2px; }
 .sel-btn {
   background: var(--bg-hover); border: 1px solid var(--bdr-faint); color: var(--tx-muted);
-  border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 600;
+  border-radius: 6px; padding: 5px 12px; font-size: 13px; font-weight: 600;
   cursor: pointer; transition: all 0.15s; font-family: 'DM Sans', sans-serif;
 }
 .sel-btn:disabled { opacity: .4; cursor: not-allowed; }
 .sel-btn:not(:disabled):hover { color: var(--tx-primary); border-color: var(--bdr-medium); }
 .sel-btn--delete { color: var(--accent); border-color: var(--accent-border); }
 .sel-btn--delete:not(:disabled):hover { background: var(--accent-bg); border-color: var(--accent); }
-.sel-btn--clear { background: none; border: none; color: var(--tx-faint); padding: 4px 8px; font-size: 15px; line-height: 1; }
+.sel-btn--clear { background: none; border: none; color: var(--tx-faint); padding: 4px 8px; font-size: 16px; line-height: 1; }
 .sel-btn--clear:hover { color: var(--tx-primary); }
 .toolbar-anim-enter-active, .toolbar-anim-leave-active { transition: opacity .15s, transform .15s; }
 .toolbar-anim-enter-from, .toolbar-anim-leave-to { opacity: 0; transform: translateX(-50%) translateY(8px); }

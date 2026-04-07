@@ -1,5 +1,5 @@
 <template>
-  <div class="editor-root" @mousemove="onGlobalMouseMove" @mouseup="onGlobalMouseUp">
+  <div class="editor-root" @mousemove="onGlobalMouseMove" @mouseup="onGlobalMouseUp" :class="{ 'cmd-create-mode': cmdHeld }">
 
     <!-- ── Loading overlay ── -->
     <div v-if="loading" class="loading-overlay">
@@ -78,7 +78,7 @@
                   'shift-block--selected': selectedShift?.id_templateShift === shift.id_templateShift,
                   'shift-block--multi-selected': selectedShiftIds.has(shift.id_templateShift)
                 }"
-                @mousedown.stop
+                @mousedown="onShiftBlockMouseDown($event, colIdx)"
                 @click.stop="onShiftBlockClick(shift, $event)"
               >
                 <div class="shift-label">
@@ -434,6 +434,8 @@ async function undoLastAction() {
 
 // ── Drag ──────────────────────────────────────────────────────────────────────
 const drag = ref({ active: false, dayIndex: 0, startHour: 0, currentHour: 0, colEl: null });
+const cmdHeld = ref(false);
+let dragStartedFromShiftBlock = false;
 
 const quickCreate = ref({
   visible: false, dayIndex: 0, startHour: 0, endHour: 0,
@@ -898,16 +900,42 @@ function onColumnMouseDown(e, colIdx) {
   drag.value = { active: true, dayIndex: colIdx, startHour, currentHour: startHour, colEl: e.currentTarget };
 }
 
+// ── Drag-scroll (auto-scroll while dragging near edges) ────────────────────────
+let dragScrollSpeed = 0;
+let dragScrollRAF   = null;
+function runDragScroll() {
+  if (!calBody.value || dragScrollSpeed === 0) { dragScrollRAF = null; return; }
+  calBody.value.scrollTop += dragScrollSpeed;
+  dragScrollRAF = requestAnimationFrame(runDragScroll);
+}
+function setDragScroll(speed) {
+  dragScrollSpeed = speed;
+  if (speed !== 0 && !dragScrollRAF) dragScrollRAF = requestAnimationFrame(runDragScroll);
+}
+function stopDragScroll() { dragScrollSpeed = 0; if (dragScrollRAF) { cancelAnimationFrame(dragScrollRAF); dragScrollRAF = null; } }
+
 function onGlobalMouseMove(e) {
   if (rubberBand.value.active) {
     rubberBand.value = { ...rubberBand.value, x: e.clientX, y: e.clientY };
     return;
   }
-  if (!drag.value.active || !drag.value.colEl) return;
+  if (!drag.value.active || !drag.value.colEl) { stopDragScroll(); return; }
   drag.value.currentHour = getHourFromEvent(e, drag.value.colEl);
+
+  // Auto-scroll when cursor is within 60px of the top/bottom of calBody
+  if (calBody.value) {
+    const { top, bottom } = calBody.value.getBoundingClientRect();
+    const ZONE = 60;
+    const fromTop    = e.clientY - top;
+    const fromBottom = bottom - e.clientY;
+    if (fromTop < ZONE && fromTop >= 0)            setDragScroll(-Math.max(2, Math.round((ZONE - fromTop)    / 10)));
+    else if (fromBottom < ZONE && fromBottom >= 0) setDragScroll( Math.max(2, Math.round((ZONE - fromBottom) / 10)));
+    else                                           setDragScroll(0);
+  }
 }
 
 function onGlobalMouseUp(e) {
+  stopDragScroll();
   if (rubberBand.value.active) {
     finalizeRubberBand();
     return;
@@ -918,7 +946,10 @@ function onGlobalMouseUp(e) {
   const colIdx    = drag.value.dayIndex;
   drag.value.active = false;
 
-  if (endHour - startHour < SNAP_MINUTES / 60 + 0.001) return;
+  if (endHour - startHour < SNAP_MINUTES / 60 + 0.001) {
+    dragStartedFromShiftBlock = false;
+    return;
+  }
 
   quickCreate.value = {
     visible:    true,
@@ -945,7 +976,11 @@ function onGlobalMouseUp(e) {
 }
 
 // Window-level keyboard listener — handles quick-create and multi-select shortcuts
+function onWindowKeyup(e)  { if (e.key === "Meta" || e.key === "Control") cmdHeld.value = false; }
+function onWindowBlur()    { cmdHeld.value = false; }
+
 function onWindowKeydown(e) {
+  if (e.key === "Meta" || e.key === "Control") cmdHeld.value = true;
   // Quick-create popover has priority
   if (quickCreate.value.visible) {
     if (e.key === "Escape") { quickCreate.value.visible = false; return; }
@@ -987,8 +1022,17 @@ function onWindowKeydown(e) {
     if (selectedShiftIds.value.size > 0) { clearSelection(); return; }
   }
 }
-onMounted(()   => window.addEventListener("keydown",  onWindowKeydown));
-onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
+onMounted(() => {
+  window.addEventListener("keydown", onWindowKeydown);
+  window.addEventListener("keyup",   onWindowKeyup);
+  window.addEventListener("blur",    onWindowBlur);
+});
+onUnmounted(() => {
+  stopDragScroll();
+  window.removeEventListener("keydown", onWindowKeydown);
+  window.removeEventListener("keyup",   onWindowKeyup);
+  window.removeEventListener("blur",    onWindowBlur);
+});
 
 // ── Multi-select helpers ───────────────────────────────────────────────────────
 function toggleShiftSelection(id) {
@@ -1001,7 +1045,30 @@ function clearSelection() {
   selectedShiftIds.value = new Set();
 }
 
+function onShiftBlockMouseDown(e, colIdx) {
+  if (e.metaKey || e.ctrlKey) {
+    e.stopPropagation();
+    dragStartedFromShiftBlock = true;
+    const colEl = e.currentTarget.closest('.day-column');
+    if (colEl) {
+      clearSelection();
+      selectedShift.value       = null;
+      quickCreate.value.visible = false;
+      const startHour = getHourFromEvent(e, colEl);
+      drag.value = { active: true, dayIndex: colIdx, startHour, currentHour: startHour, colEl };
+    }
+    return;
+  }
+  dragStartedFromShiftBlock = false;
+  e.stopPropagation();
+}
+
 function onShiftBlockClick(shift, e) {
+  e.stopPropagation();
+  if (dragStartedFromShiftBlock) {
+    dragStartedFromShiftBlock = false;
+    return;
+  }
   if (e.metaKey || e.ctrlKey) {
     toggleShiftSelection(shift.id_templateShift);
     return;
@@ -1277,6 +1344,7 @@ function fromTimeInput(t) {
 /* ── Shift blocks ── */
 .shift-block { position: absolute; transition: filter .1s; }
 .shift-block:hover { filter: brightness(1.12); }
+.cmd-create-mode .shift-block { cursor: crosshair !important; }
 .shift-label { font-size: 12px; font-weight: 700; color: rgba(0,0,0,.85); line-height: 1.2; }
 .shift-time  { font-size: 10px; color: rgba(0,0,0,.6); font-family: 'DM Mono', monospace; }
 .shift-pos-badge { font-size: 9px; color: rgba(0,0,0,.5); margin-top: 2px; background: rgba(0,0,0,.1); border-radius: 3px; padding: 1px 4px; display: inline-block; }
