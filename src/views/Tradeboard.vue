@@ -236,8 +236,10 @@
               <button
                 v-if="r.id_employeeRequester !== currentUser.id_employee"
                 class="take-btn"
+                :disabled="!canClaim(r)"
+                :title="!canClaim(r) ? `You aren't assigned to the ${r.positionName || 'required'} position` : ''"
                 @click="claimShift(r)">
-                Take this shift
+                {{ canClaim(r) ? 'Take this shift' : 'Not eligible' }}
               </button>
               <button
                 v-else
@@ -334,15 +336,39 @@
             </button>
           </div>
           <p class="modal-desc">Select one of your shifts to post to the board. Coworkers can claim it and a manager will approve the swap.</p>
-          <div class="form-group">
-            <label>Your shift</label>
-            <select v-model="modal.id_shift">
-              <option disabled value="">Select a shift…</option>
-              <option v-for="s in availableMyShifts" :key="s.id_shiftAssignment" :value="s.id_shift">
-                {{ s.date }} · {{ s.startLabel }} – {{ s.endLabel }}{{ s.positionName ? ' · ' + s.positionName : '' }}
-              </option>
-            </select>
-            <p v-if="availableMyShifts.length === 0" class="form-hint">You have no unposted upcoming shifts.</p>
+          <div class="shift-picker">
+            <p v-if="availableMyShifts.length === 0" class="picker-empty">
+              You have no upcoming shifts available to post.
+            </p>
+            <button
+              v-for="s in availableMyShifts"
+              :key="s.id_shiftAssignment"
+              type="button"
+              class="shift-card"
+              :class="{ 'shift-card--selected': modal.id_shift === s.id_shift }"
+              @click="modal.id_shift = s.id_shift">
+              <div class="shift-card-left">
+                <div class="shift-card-month">{{ formatShiftMonth(s.date) }}</div>
+                <div class="shift-card-day">{{ formatShiftDay(s.date) }}</div>
+                <div class="shift-card-weekday">{{ formatShiftWeekday(s.date) }}</div>
+              </div>
+              <div class="shift-card-body">
+                <div class="shift-card-time">{{ s.startLabel }} – {{ s.endLabel }}</div>
+                <div class="shift-card-meta">
+                  <span v-if="s.positionName" class="pos-badge">{{ s.positionName }}</span>
+                  <span class="shift-card-duration">{{ formatDuration(s.startHour, s.endHour) }}</span>
+                </div>
+              </div>
+              <div class="shift-card-check">
+                <svg v-if="modal.id_shift === s.id_shift" width="18" height="18" viewBox="0 0 20 20" fill="none">
+                  <circle cx="10" cy="10" r="9" fill="currentColor" />
+                  <path d="M6 10.5l2.5 2.5L14 7.5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <svg v-else width="18" height="18" viewBox="0 0 20 20" fill="none">
+                  <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.5" />
+                </svg>
+              </div>
+            </button>
           </div>
           <p v-if="modal.error" class="modal-error">{{ modal.error }}</p>
           <div class="modal-actions">
@@ -367,6 +393,7 @@ import { useTheme } from "../composables/useTheme.js";
 import DeptSwitcher from "../components/DeptSwitcher.vue";
 import apiClient from "../services/services.js";
 import { timeStrToHour, fmtHour } from "../services/employeeManagementService.js";
+import { getEmployeePositions } from "../services/departmentService.js";
 
 useTheme();
 
@@ -385,12 +412,53 @@ const positions    = ref([]);
 const empMap = ref({});
 const posMap = ref({});
 
+// Set of id_position the current user is qualified for. Used to gate which
+// open trades the user is allowed to claim.
+const myPositionIds = ref(new Set());
+
 const { selectedDeptId, myDepts, loadDepts } = useDepartment();
 
 const userInitials = computed(() => {
   const u = currentUser.value;
   return `${u?.fName?.[0] ?? ""}${u?.lName?.[0] ?? ""}`.toUpperCase() || "??";
 });
+
+// ── Date / duration formatters for the shift picker ──────────────────────────
+function parseLocalDate(dateStr) {
+  // Parse YYYY-MM-DD as a local date so we don't drift across timezones.
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+function formatShiftMonth(dateStr) {
+  return parseLocalDate(dateStr).toLocaleDateString("en-US", { month: "short" }).toUpperCase();
+}
+function formatShiftDay(dateStr) {
+  return parseLocalDate(dateStr).getDate();
+}
+function formatShiftWeekday(dateStr) {
+  return parseLocalDate(dateStr).toLocaleDateString("en-US", { weekday: "short" });
+}
+// Display format used in the trade cards / tables — e.g. "Tue, Apr 7".
+// Falls back to the raw string when given anything unparseable.
+function formatTradeDate(dateStr) {
+  if (!dateStr || typeof dateStr !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return dateStr || "—";
+  }
+  return parseLocalDate(dateStr).toLocaleDateString("en-US", {
+    weekday: "short",
+    month:   "short",
+    day:     "numeric",
+  });
+}
+
+function formatDuration(startHour, endHour) {
+  const total = Math.max(0, endHour - startHour);
+  const h = Math.floor(total);
+  const m = Math.round((total - h) * 60);
+  if (h && m) return `${h}h ${m}m`;
+  if (h)      return `${h}h`;
+  return `${m}m`;
+}
 
 // ── Colors ────────────────────────────────────────────────────────────────────
 const COLORS = ["#EF4444","#C0392B","#E8724A","#9B6B9B","#4A90A4","#C8973A","#D4756B","#6C8EAD"];
@@ -433,11 +501,21 @@ async function loadAll() {
         const s = shiftById[r.id_shift];
         return {
           ...r,
-          shiftDate:    s?.date || "—",
+          shiftDate:    formatTradeDate(s?.date),
           shiftTime:    s ? `${fmtHour(timeStrToHour(s.startTime))} – ${fmtHour(timeStrToHour(s.endTime))}` : "—",
+          id_position:  s?.id_position ?? null,
           positionName: s?.id_position ? posMap.value[s.id_position]?.name || "" : "",
         };
       });
+
+    // Load the positions the current user is qualified for, so we can
+    // restrict which open trades they're allowed to claim.
+    try {
+      const peRes = await getEmployeePositions(currentUser.value.id_employee);
+      myPositionIds.value = new Set((peRes.data || []).map(r => r.id_position));
+    } catch {
+      myPositionIds.value = new Set();
+    }
 
     // My shifts: assigned to me, upcoming, not already posted to the board
     const postedShiftIds = new Set(
@@ -446,7 +524,6 @@ async function loadAll() {
         .map(r => r.id_shift)
     );
 
-    const today = new Date().toISOString().slice(0, 10);
     myShifts.value = assignRes.data
       .filter(a => a.id_employee === currentUser.value.id_employee && deptShiftIds.has(a.id_shift))
       .map(a => {
@@ -456,6 +533,9 @@ async function loadAll() {
           id_shift:         a.id_shift,
           id_shiftAssignment: a.id_shiftAssignment,
           date:             a.date,
+          id_position:      s.id_position ?? null,
+          startHour:        timeStrToHour(s.startTime),
+          endHour:          timeStrToHour(s.endTime),
           startLabel:       fmtHour(timeStrToHour(s.startTime)),
           endLabel:         fmtHour(timeStrToHour(s.endTime)),
           positionName:     s.id_position ? posMap.value[s.id_position]?.name || "" : "",
@@ -490,9 +570,18 @@ const allRequests = computed(() => swapRequests.value);
 
 // Employee
 const openTrades = computed(() =>
-  // Unclaimed shifts: no claimer yet, still pending
+  // Unclaimed shifts: no claimer yet, still pending. All shifts are visible
+  // to every employee — eligibility just controls whether the "Take this
+  // shift" button is enabled below.
   swapRequests.value.filter(r => r.status === "Pending" && r.id_employeeRequested == null)
 );
+
+// True if the current user belongs to the position required by the given
+// trade. Trades with no position set are considered open to anyone.
+function canClaim(r) {
+  if (r.id_position == null) return true;
+  return myPositionIds.value.has(r.id_position);
+}
 const myClaims = computed(() =>
   // Shifts I've claimed, awaiting approval
   swapRequests.value.filter(r => r.status === "Pending" && r.id_employeeRequested === currentUser.value.id_employee)
@@ -501,16 +590,26 @@ const myPosts = computed(() =>
   swapRequests.value.filter(r => r.id_employeeRequester === currentUser.value.id_employee)
 );
 
-// Shifts I can post: assigned to me, not already on the board as pending
-const availableMyShifts = computed(() =>
-  myShifts.value.filter(s => !s.alreadyPosted)
-);
+// Shifts I can post: assigned to me, not already on the board as pending,
+// and starting strictly in the future (past + in-progress shifts excluded).
+const availableMyShifts = computed(() => {
+  const now      = new Date();
+  const todayKey = now.toISOString().slice(0, 10);
+  const nowHour  = now.getHours() + now.getMinutes() / 60;
+  return myShifts.value.filter(s => {
+    if (s.alreadyPosted) return false;
+    if (s.date < todayKey) return false;                    // past day
+    if (s.date === todayKey && s.startHour <= nowHour) return false; // today, already started
+    return true;
+  });
+});
 
 // ── Post modal ────────────────────────────────────────────────────────────────
 const modal = ref({ open: false, id_shift: "", saving: false, error: "" });
 
 function openPostModal() {
-  modal.value = { open: true, id_shift: availableMyShifts.value[0]?.id_shift || "", saving: false, error: "" };
+  // Don't pre-select; force the user to consciously pick a shift card.
+  modal.value = { open: true, id_shift: "", saving: false, error: "" };
 }
 
 async function postShift() {
@@ -527,8 +626,9 @@ async function postShift() {
     const shift = myShifts.value.find(s => s.id_shift === modal.value.id_shift);
     swapRequests.value.push({
       ...data,
-      shiftDate:    shift?.date || "—",
+      shiftDate:    formatTradeDate(shift?.date),
       shiftTime:    shift ? `${shift.startLabel} – ${shift.endLabel}` : "—",
+      id_position:  shift?.id_position ?? null,
       positionName: shift?.positionName || "",
     });
     // Mark as posted in myShifts so it disappears from the modal
@@ -544,6 +644,11 @@ async function postShift() {
 
 // ── Claim a shift ─────────────────────────────────────────────────────────────
 async function claimShift(r) {
+  // Guard: only employees assigned to this shift's position may claim it.
+  if (r.id_position != null && !myPositionIds.value.has(r.id_position)) {
+    apiError.value = `You are not assigned to the ${r.positionName || "required"} position and cannot take this shift.`;
+    return;
+  }
   try {
     await apiClient.put(`/swap-requests/${r.id_swapRequest}`, {
       id_employeeRequested: currentUser.value.id_employee,
@@ -757,7 +862,11 @@ async function updateStatus(r, status) {
   cursor: pointer; font-size: 13px; font-weight: 600;
   font-family: 'DM Sans', sans-serif; transition: background 0.15s;
 }
-.take-btn:hover { background: var(--accent-subtle); }
+.take-btn:hover:not(:disabled) { background: var(--accent-subtle); }
+.take-btn:disabled {
+  background: none; border-color: var(--bdr-medium); color: var(--tx-ghost);
+  cursor: not-allowed; opacity: 0.7;
+}
 
 .withdraw-btn {
   width: 100%; background: none; border: 1px solid var(--bdr-medium);
@@ -808,6 +917,64 @@ async function updateStatus(r, status) {
 }
 .form-group select:focus { border-color: var(--accent); }
 .form-hint { font-size: 11px; color: var(--tx-ghost); font-style: italic; }
+
+/* ── Shift picker (Post a Shift modal) ──────────────────────────────────── */
+.shift-picker {
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: 320px; overflow-y: auto; padding: 2px;
+  margin-bottom: 14px;
+}
+.picker-empty {
+  padding: 24px 12px; text-align: center; font-size: 12px;
+  color: var(--tx-faint); font-style: italic;
+}
+.shift-card {
+  display: flex; align-items: center; gap: 14px;
+  width: 100%; text-align: left;
+  background: var(--bg-input); border: 1px solid var(--bdr-medium);
+  border-radius: 10px; padding: 12px 14px; cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  transition: border-color 0.15s, background 0.15s, transform 0.05s;
+}
+.shift-card:hover { border-color: var(--accent); background: var(--accent-bg); }
+.shift-card:active { transform: scale(0.995); }
+.shift-card--selected {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.shift-card-left {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  flex-shrink: 0; min-width: 48px;
+  padding-right: 14px; border-right: 1px solid var(--bdr-medium);
+}
+.shift-card-month {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+  color: var(--accent); font-family: 'DM Mono', monospace;
+}
+.shift-card-day {
+  font-size: 22px; font-weight: 700; color: var(--tx-primary); line-height: 1;
+  margin: 2px 0;
+}
+.shift-card-weekday {
+  font-size: 10px; font-weight: 500; color: var(--tx-faint);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.shift-card-body {
+  flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0;
+}
+.shift-card-time {
+  font-size: 14px; font-weight: 600; color: var(--tx-primary);
+  font-family: 'DM Mono', monospace;
+}
+.shift-card-meta {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.shift-card-duration {
+  font-size: 11px; color: var(--tx-faint); font-family: 'DM Mono', monospace;
+}
+.shift-card-check { color: var(--accent); flex-shrink: 0; display: flex; }
+.shift-card:not(.shift-card--selected) .shift-card-check { color: var(--bdr-medium); }
 
 .modal-error { font-size: 12px; color: var(--err-text); margin-bottom: 12px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
