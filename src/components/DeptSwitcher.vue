@@ -1,6 +1,5 @@
 <template>
   <div v-if="myDepts.length > 1" class="dept-switcher">
-    <div class="dept-color-dot"></div>
     <select class="dept-switcher-select" :value="selectedDeptId" @change="onChange">
       <option v-for="d in myDepts" :key="d.id_department" :value="d.id_department">
         {{ d.name }}
@@ -11,7 +10,6 @@
     </svg>
   </div>
   <div v-else-if="myDepts.length === 1" class="dept-switcher dept-switcher--single">
-    <div class="dept-color-dot"></div>
     <span class="dept-switcher-name">{{ myDepts.find(d => d.id_department === selectedDeptId)?.name || myDepts[0]?.name }}</span>
   </div>
 </template>
@@ -30,16 +28,17 @@ function onChange(e) {
 .dept-switcher {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   position: relative;
+  background: var(--bg-surface);
+  border: 1px solid var(--bdr-subtle);
+  border-radius: 8px;
+  padding: 8px 16px;
+  transition: border-color 0.15s;
 }
 
-.dept-color-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  background: #FF1744;
-  flex-shrink: 0;
+.dept-switcher:hover {
+  border-color: var(--bdr-medium);
 }
 
 .dept-switcher-select {
@@ -47,7 +46,7 @@ function onChange(e) {
   background: transparent;
   border: none;
   color: var(--tx-primary);
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
@@ -70,7 +69,7 @@ function onChange(e) {
 }
 
 .dept-switcher-name {
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--tx-primary);
 }

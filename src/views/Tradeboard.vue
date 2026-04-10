@@ -1,38 +1,6 @@
 <template>
   <div class="page-root">
 
-    <!-- ── Nav ── -->
-    <div class="topnav">
-      <div class="nav-left">
-        <button class="back-btn" @click="router.push('/dashboard')">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          Dashboard
-        </button>
-        <div class="nav-logo">
-          <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
-            <rect x="2" y="4" width="11" height="7" rx="2" fill="#FF1744"/>
-            <rect x="15" y="4" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-            <rect x="2" y="14" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-            <rect x="15" y="14" width="11" height="7" rx="2" fill="#F0E6D3"/>
-          </svg>
-        </div>
-        <div class="nav-divider"></div>
-        <DeptSwitcher />
-        <span class="page-title">Tradeboard</span>
-      </div>
-      <div class="nav-right">
-        <button v-if="!isManager" class="primary-btn" @click="openPostModal">
-          + Post Shift
-        </button>
-        <div v-if="currentUser" class="avatar" :title="`${currentUser.fName} ${currentUser.lName}`">
-          <img v-if="currentUser.picture" :src="currentUser.picture" class="avatar-img" referrerpolicy="no-referrer"/>
-          <span v-else>{{ userInitials }}</span>
-        </div>
-      </div>
-    </div>
-
     <!-- ── Loading / Error ── -->
     <div v-if="loading" class="loading-overlay">
       <div class="loading-spinner"></div>
@@ -45,6 +13,15 @@
 
     <!-- ── Content ── -->
     <div v-if="!loading" class="content">
+
+      <!-- Page header -->
+      <div v-if="!isManager" class="page-header">
+        <h1 class="page-heading">Tradeboard</h1>
+        <button class="primary-btn" @click="openPostModal">+ Post a Shift</button>
+      </div>
+      <div v-else class="page-header">
+        <h1 class="page-heading">Tradeboard</h1>
+      </div>
 
       <!-- ════════════════ MANAGER VIEW ════════════════ -->
       <template v-if="isManager">
@@ -687,13 +664,14 @@ async function updateStatus(r, status) {
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,600,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap');
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 .page-root {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Satoshi', sans-serif;
   display: flex; flex-direction: column;
-  height: 100vh; overflow: hidden;
+  flex: 1; overflow: hidden;
   background: var(--bg-page); color: var(--tx-primary);
 }
 
@@ -709,21 +687,21 @@ async function updateStatus(r, status) {
 .back-btn {
   display: flex; align-items: center; gap: 6px;
   background: none; border: none; color: var(--tx-muted);
-  font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer; transition: color 0.15s;
+  font-family: 'Satoshi', sans-serif; font-size: 15px; cursor: pointer; transition: color 0.15s;
 }
 .back-btn:hover { color: var(--accent); }
-.page-title { font-size: 15px; font-weight: 700; color: var(--tx-heading); }
+.page-title { font-size: 17px; font-weight: 700; color: var(--tx-heading); }
 .primary-btn {
   background: var(--accent); border: none; color: #fff;
-  padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
-  cursor: pointer; font-family: 'DM Sans', sans-serif; transition: background 0.15s;
+  padding: 7px 16px; border-radius: 8px; font-size: 15px; font-weight: 600;
+  cursor: pointer; font-family: 'Satoshi', sans-serif; transition: background 0.15s;
 }
 .primary-btn:hover { background: var(--accent-hover); }
 .avatar {
   width: 32px; height: 32px; border-radius: 50%;
   background: var(--accent); color: #fff;
   display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 600; overflow: hidden; flex-shrink: 0;
+  font-size: 14px; font-weight: 600; overflow: hidden; flex-shrink: 0;
 }
 .avatar-img { width: 100%; height: 100%; object-fit: cover; }
 
@@ -737,16 +715,23 @@ async function updateStatus(r, status) {
   border-radius: 50%; animation: spin 0.7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.loading-text { font-size: 13px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
+.loading-text { font-size: 15px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
 .error-banner {
   background: var(--err-bg); border-bottom: 1px solid var(--err-border);
-  color: var(--err-text); font-size: 12px; padding: 8px 24px;
+  color: var(--err-text); font-size: 14px; padding: 8px 24px;
   display: flex; align-items: center; gap: 12px;
 }
 .retry-btn {
   background: none; border: 1px solid var(--err-text); color: var(--err-text);
-  padding: 2px 10px; border-radius: 4px; cursor: pointer; font-size: 11px;
+  padding: 2px 10px; border-radius: 4px; cursor: pointer; font-size: 13px;
 }
+
+/* ── Page header ── */
+.page-header {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.page-heading { font-size: 24px; font-weight: 700; color: var(--tx-heading); }
 
 /* ── Content ── */
 .content {
@@ -761,8 +746,8 @@ async function updateStatus(r, status) {
 .section { display: flex; flex-direction: column; gap: 14px; max-width: 1100px; }
 .section-header { display: flex; flex-direction: column; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--bdr-subtle); }
 .section-title-row { display: flex; align-items: center; gap: 10px; }
-.section-title { font-size: 16px; font-weight: 700; color: var(--tx-heading); }
-.section-sub { font-size: 12px; color: var(--tx-faint); }
+.section-title { font-size: 18px; font-weight: 700; color: var(--tx-heading); }
+.section-sub { font-size: 14px; color: var(--tx-faint); }
 
 .section-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .dot--accent  { background: var(--accent); }
@@ -770,7 +755,7 @@ async function updateStatus(r, status) {
 .dot--faint   { background: var(--tx-faint); }
 
 .section-badge {
-  font-size: 11px; font-weight: 600; color: var(--tx-faint);
+  font-size: 13px; font-weight: 600; color: var(--tx-faint);
   background: var(--bg-input); border: 1px solid var(--bdr-subtle);
   padding: 1px 8px; border-radius: 100px;
 }
@@ -779,11 +764,11 @@ async function updateStatus(r, status) {
 
 /* ── Tables ── */
 .table-wrap { border-radius: 12px; border: 1px solid var(--bdr-subtle); overflow: hidden; }
-.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 15px; }
 .data-table thead { background: var(--bg-card); }
 .data-table th {
   text-align: left; padding: 11px 16px;
-  font-size: 10px; font-weight: 600; color: var(--tx-faint);
+  font-size: 12px; font-weight: 600; color: var(--tx-faint);
   text-transform: uppercase; letter-spacing: 0.08em;
   border-bottom: 1px solid var(--bdr-subtle);
 }
@@ -795,20 +780,20 @@ async function updateStatus(r, status) {
 .data-table tr:hover td { background: var(--bg-hover); }
 .empty-row { text-align: center; color: var(--tx-ghost); font-style: italic; padding: 32px 0 !important; }
 
-.mono { font-family: 'DM Mono', monospace; font-size: 12px; }
+.mono { font-family: 'DM Mono', monospace; font-size: 14px; }
 
 /* ── Employee cells ── */
 .emp-cell { display: flex; align-items: center; gap: 8px; }
 .emp-avatar {
   width: 28px; height: 28px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 10px; font-weight: 700; color: #fff; flex-shrink: 0;
+  font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0;
 }
 
 /* ── Badges ── */
 .status-badge {
   display: inline-block; padding: 2px 10px; border-radius: 100px;
-  font-size: 11px; font-weight: 600;
+  font-size: 13px; font-weight: 600;
 }
 .status-badge.pending  { background: var(--warn-bg);  color: var(--warn-text); }
 .status-badge.approved { background: var(--ok-bg);    color: var(--ok-text); }
@@ -818,22 +803,22 @@ async function updateStatus(r, status) {
   display: inline-block; padding: 2px 9px;
   background: var(--bg-active); color: var(--tx-secondary);
   border: 1px solid var(--bdr-faint);
-  border-radius: 100px; font-size: 11px; font-weight: 500;
+  border-radius: 100px; font-size: 13px; font-weight: 500;
 }
-.tx-ghost { color: var(--tx-ghost); font-style: italic; font-size: 12px; }
+.tx-ghost { color: var(--tx-ghost); font-style: italic; font-size: 14px; }
 
 /* ── Action buttons ── */
 .action-btns { display: flex; gap: 6px; }
 .approve-btn {
   background: var(--ok-bg); border: none; color: var(--ok-text);
   padding: 5px 12px; border-radius: 6px; cursor: pointer;
-  font-size: 12px; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s;
+  font-size: 14px; font-family: 'Satoshi', sans-serif; transition: opacity 0.15s;
 }
 .approve-btn:hover { opacity: 0.8; }
 .deny-btn {
   background: var(--deny-bg); border: none; color: var(--err-text);
   padding: 5px 12px; border-radius: 6px; cursor: pointer;
-  font-size: 12px; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s;
+  font-size: 14px; font-family: 'Satoshi', sans-serif; transition: opacity 0.15s;
 }
 .deny-btn:hover { opacity: 0.8; }
 
@@ -849,18 +834,18 @@ async function updateStatus(r, status) {
 .trade-card--mine { opacity: 0.75; }
 
 .trade-card-top { display: flex; justify-content: space-between; align-items: flex-start; }
-.trade-name  { font-size: 14px; font-weight: 600; color: var(--tx-primary); }
-.trade-label { font-size: 11px; color: var(--tx-faint); margin-top: 2px; }
+.trade-name  { font-size: 16px; font-weight: 600; color: var(--tx-primary); }
+.trade-label { font-size: 13px; color: var(--tx-faint); margin-top: 2px; }
 
 .trade-details { display: flex; flex-direction: column; gap: 6px; }
-.trade-detail-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+.trade-detail-row { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
 .detail-label { color: var(--tx-ghost); }
 
 .take-btn {
   width: 100%; background: var(--accent-bg); border: 1px solid var(--accent-border);
   color: var(--accent); padding: 8px; border-radius: 8px;
-  cursor: pointer; font-size: 13px; font-weight: 600;
-  font-family: 'DM Sans', sans-serif; transition: background 0.15s;
+  cursor: pointer; font-size: 15px; font-weight: 600;
+  font-family: 'Satoshi', sans-serif; transition: background 0.15s;
 }
 .take-btn:hover:not(:disabled) { background: var(--accent-subtle); }
 .take-btn:disabled {
@@ -871,7 +856,7 @@ async function updateStatus(r, status) {
 .withdraw-btn {
   width: 100%; background: none; border: 1px solid var(--bdr-medium);
   color: var(--tx-muted); padding: 8px; border-radius: 8px;
-  cursor: pointer; font-size: 12px; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s;
+  cursor: pointer; font-size: 14px; font-family: 'Satoshi', sans-serif; transition: border-color 0.15s;
 }
 .withdraw-btn:hover { border-color: var(--err-text); color: var(--err-text); }
 
@@ -880,10 +865,10 @@ async function updateStatus(r, status) {
   background: var(--bg-surface); border: 1px solid var(--bdr-subtle);
   border-radius: 12px; padding: 48px; text-align: center;
 }
-.empty-icon  { font-size: 28px; margin-bottom: 10px; }
-.empty-title { font-size: 15px; font-weight: 600; color: var(--tx-faint); margin-bottom: 6px; }
-.empty-sub   { font-size: 12px; color: var(--tx-ghost); }
-.empty-text  { font-size: 13px; color: var(--tx-faint); }
+.empty-icon  { font-size: 30px; margin-bottom: 10px; }
+.empty-title { font-size: 17px; font-weight: 600; color: var(--tx-faint); margin-bottom: 6px; }
+.empty-sub   { font-size: 14px; color: var(--tx-ghost); }
+.empty-text  { font-size: 15px; color: var(--tx-faint); }
 
 /* ── Modal ── */
 .modal-overlay {
@@ -897,26 +882,26 @@ async function updateStatus(r, status) {
   box-shadow: 0 20px 60px rgba(0,0,0,0.4);
 }
 .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.modal-title  { font-size: 18px; font-weight: 700; color: var(--tx-primary); }
+.modal-title  { font-size: 20px; font-weight: 700; color: var(--tx-primary); }
 .modal-close  {
   background: none; border: none; color: var(--tx-muted); cursor: pointer; padding: 4px;
   border-radius: 6px; transition: color 0.15s;
 }
 .modal-close:hover { color: var(--tx-primary); }
-.modal-desc { font-size: 12px; color: var(--tx-faint); margin-bottom: 20px; line-height: 1.5; }
+.modal-desc { font-size: 14px; color: var(--tx-faint); margin-bottom: 20px; line-height: 1.5; }
 
 .form-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
 .form-group label {
-  font-size: 10px; color: var(--tx-dim); text-transform: uppercase;
+  font-size: 12px; color: var(--tx-dim); text-transform: uppercase;
   letter-spacing: 0.1em; font-weight: 600;
 }
 .form-group select {
   background: var(--bg-input); border: 1px solid var(--bdr-medium);
   color: var(--tx-primary); padding: 8px 10px; border-radius: 8px;
-  font-size: 13px; font-family: 'DM Sans', sans-serif; outline: none; width: 100%;
+  font-size: 15px; font-family: 'Satoshi', sans-serif; outline: none; width: 100%;
 }
 .form-group select:focus { border-color: var(--accent); }
-.form-hint { font-size: 11px; color: var(--tx-ghost); font-style: italic; }
+.form-hint { font-size: 13px; color: var(--tx-ghost); font-style: italic; }
 
 /* ── Shift picker (Post a Shift modal) ──────────────────────────────────── */
 .shift-picker {
@@ -925,7 +910,7 @@ async function updateStatus(r, status) {
   margin-bottom: 14px;
 }
 .picker-empty {
-  padding: 24px 12px; text-align: center; font-size: 12px;
+  padding: 24px 12px; text-align: center; font-size: 14px;
   color: var(--tx-faint); font-style: italic;
 }
 .shift-card {
@@ -933,7 +918,7 @@ async function updateStatus(r, status) {
   width: 100%; text-align: left;
   background: var(--bg-input); border: 1px solid var(--bdr-medium);
   border-radius: 10px; padding: 12px 14px; cursor: pointer;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Satoshi', sans-serif;
   transition: border-color 0.15s, background 0.15s, transform 0.05s;
 }
 .shift-card:hover { border-color: var(--accent); background: var(--accent-bg); }
@@ -949,45 +934,45 @@ async function updateStatus(r, status) {
   padding-right: 14px; border-right: 1px solid var(--bdr-medium);
 }
 .shift-card-month {
-  font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.1em;
   color: var(--accent); font-family: 'DM Mono', monospace;
 }
 .shift-card-day {
-  font-size: 22px; font-weight: 700; color: var(--tx-primary); line-height: 1;
+  font-size: 24px; font-weight: 700; color: var(--tx-primary); line-height: 1;
   margin: 2px 0;
 }
 .shift-card-weekday {
-  font-size: 10px; font-weight: 500; color: var(--tx-faint);
+  font-size: 12px; font-weight: 500; color: var(--tx-faint);
   text-transform: uppercase; letter-spacing: 0.08em;
 }
 .shift-card-body {
   flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0;
 }
 .shift-card-time {
-  font-size: 14px; font-weight: 600; color: var(--tx-primary);
+  font-size: 16px; font-weight: 600; color: var(--tx-primary);
   font-family: 'DM Mono', monospace;
 }
 .shift-card-meta {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
 }
 .shift-card-duration {
-  font-size: 11px; color: var(--tx-faint); font-family: 'DM Mono', monospace;
+  font-size: 13px; color: var(--tx-faint); font-family: 'DM Mono', monospace;
 }
 .shift-card-check { color: var(--accent); flex-shrink: 0; display: flex; }
 .shift-card:not(.shift-card--selected) .shift-card-check { color: var(--bdr-medium); }
 
-.modal-error { font-size: 12px; color: var(--err-text); margin-bottom: 12px; }
+.modal-error { font-size: 14px; color: var(--err-text); margin-bottom: 12px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 .cancel-btn {
   background: none; border: 1px solid var(--bdr-medium); color: var(--tx-muted);
   padding: 8px 18px; border-radius: 8px; cursor: pointer;
-  font-family: 'DM Sans', sans-serif; font-size: 13px; transition: border-color 0.15s;
+  font-family: 'Satoshi', sans-serif; font-size: 15px; transition: border-color 0.15s;
 }
 .cancel-btn:hover { border-color: var(--bdr-subtle); color: var(--tx-secondary); }
 .confirm-btn {
   background: var(--accent); border: none; color: #fff;
   padding: 8px 18px; border-radius: 8px; cursor: pointer;
-  font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600; transition: background 0.15s;
+  font-family: 'Satoshi', sans-serif; font-size: 15px; font-weight: 600; transition: background 0.15s;
 }
 .confirm-btn:hover { background: var(--accent-hover); }
 .confirm-btn:disabled { opacity: 0.5; cursor: not-allowed; }

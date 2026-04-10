@@ -1,41 +1,5 @@
 <template>
   <div class="mgmt-root">
-    <!-- ── Top nav ── -->
-    <div class="topnav">
-      <div class="nav-left">
-        <button class="back-btn" @click="router.push('/dashboard')">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          Dashboard
-        </button>
-        <div class="nav-logo">
-          <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
-            <rect x="2" y="4" width="11" height="7" rx="2" fill="#FF1744"/>
-            <rect x="15" y="4" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-            <rect x="2" y="14" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-            <rect x="15" y="14" width="11" height="7" rx="2" fill="#F0E6D3"/>
-          </svg>
-        </div>
-        <div class="nav-divider"></div>
-        <DeptSwitcher />
-      </div>
-      <div class="nav-tabs">
-        <button v-for="tab in DEPT_TABS" :key="tab" class="nav-tab"
-          :class="{ active: tab === 'Employees' }"
-          @click="tab === 'Employees' ? null : router.push('/department')">{{ tab }}</button>
-      </div>
-      <div class="nav-right">
-        <button class="primary-btn" @click="openCreateModal">
-          + Add {{ activeTab === 'Employees' ? 'Employee' : 'Shift' }}
-        </button>
-        <div v-if="currentUser" class="avatar" :title="`${currentUser.fName} ${currentUser.lName}`">
-          <img v-if="currentUser.picture" :src="currentUser.picture" class="avatar-img" referrerpolicy="no-referrer" />
-          <span v-else>{{ userInitials }}</span>
-        </div>
-      </div>
-    </div>
-
     <!-- ── Loading / error ── -->
     <div v-if="loading" class="loading-overlay">
       <div class="loading-spinner"></div>
@@ -714,14 +678,15 @@ async function executeDelete() {
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,600,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 .mgmt-root {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Satoshi', sans-serif;
   display: flex; flex-direction: column;
-  height: 100vh; background: var(--bg-page); color: var(--tx-primary); overflow: hidden;
+  flex: 1; background: var(--bg-page); color: var(--tx-primary); overflow: hidden;
 }
 
 .topnav {
@@ -736,28 +701,28 @@ async function executeDelete() {
   width: 32px; height: 32px; border-radius: 50%;
   background: #FF1744; color: #fff;
   display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 600; overflow: hidden; flex-shrink: 0;
+  font-size: 14px; font-weight: 600; overflow: hidden; flex-shrink: 0;
 }
 .avatar-img { width: 100%; height: 100%; object-fit: cover; }
 .back-btn {
   display: flex; align-items: center; gap: 6px;
   background: none; border: none; color: var(--tx-muted);
-  font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer; transition: color 0.15s;
+  font-family: 'Satoshi', sans-serif; font-size: 15px; cursor: pointer; transition: color 0.15s;
 }
 .back-btn:hover { color: var(--accent); }
 .nav-logo { display: flex; align-items: center; }
 .nav-tabs { display: flex; gap: 2px; }
 .nav-tab {
   padding: 6px 18px; background: transparent; border: none;
-  color: var(--tx-muted); font-family: 'DM Sans', sans-serif; font-size: 13px;
+  color: var(--tx-muted); font-family: 'Satoshi', sans-serif; font-size: 15px;
   cursor: pointer; border-radius: 6px; transition: background 0.15s, color 0.15s;
 }
 .nav-tab:hover  { background: var(--bdr-subtle); color: var(--tx-secondary); }
 .nav-tab.active { background: var(--bg-active); color: var(--accent); font-weight: 600; }
 .primary-btn {
   background: var(--accent); border: none; color: #fff;
-  padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
-  cursor: pointer; font-family: 'DM Sans', sans-serif; transition: background 0.15s, transform 0.12s;
+  padding: 7px 16px; border-radius: 8px; font-size: 15px; font-weight: 600;
+  cursor: pointer; font-family: 'Satoshi', sans-serif; transition: background 0.15s, transform 0.12s;
 }
 .primary-btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
 
@@ -771,14 +736,14 @@ async function executeDelete() {
   border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.loading-text { font-size: 13px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
+.loading-text { font-size: 15px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
 .error-banner {
   background: var(--err-bg); border-bottom: 1px solid var(--err-border);
-  color: var(--err-text); font-size: 12px; padding: 8px 20px; display: flex; align-items: center; gap: 10px;
+  color: var(--err-text); font-size: 14px; padding: 8px 20px; display: flex; align-items: center; gap: 10px;
 }
 .retry-btn {
   background: none; border: 1px solid var(--err-text); color: var(--err-text);
-  padding: 2px 10px; border-radius: 4px; cursor: pointer; font-size: 11px;
+  padding: 2px 10px; border-radius: 4px; cursor: pointer; font-size: 13px;
 }
 .retry-btn:hover { background: var(--err-text); color: #fff; }
 
@@ -790,21 +755,21 @@ async function executeDelete() {
   display: flex; align-items: flex-start; justify-content: space-between;
   margin-bottom: 24px; flex-wrap: wrap; gap: 16px;
 }
-.panel-title { font-size: 22px; font-weight: 700; color: var(--tx-heading); margin-bottom: 4px; }
-.panel-sub   { font-size: 13px; color: var(--tx-faint); }
+.panel-title { font-size: 24px; font-weight: 700; color: var(--tx-heading); margin-bottom: 4px; }
+.panel-sub   { font-size: 15px; color: var(--tx-faint); }
 .search-input {
   background: var(--bg-surface); border: 1px solid var(--bdr-medium); color: var(--tx-primary);
-  padding: 8px 14px; border-radius: 8px; font-size: 13px;
-  font-family: 'DM Sans', sans-serif; outline: none; width: 260px; transition: border-color 0.15s;
+  padding: 8px 14px; border-radius: 8px; font-size: 15px;
+  font-family: 'Satoshi', sans-serif; outline: none; width: 260px; transition: border-color 0.15s;
 }
 .search-input:focus { border-color: var(--accent); }
 .search-input::placeholder { color: var(--tx-ghost); }
 
 .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--bdr-subtle); }
-.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 15px; }
 .data-table thead { background: var(--bg-surface); }
 .data-table th {
-  text-align: left; padding: 12px 16px; font-size: 11px; font-weight: 600;
+  text-align: left; padding: 12px 16px; font-size: 13px; font-weight: 600;
   color: var(--tx-faint); text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 1px solid var(--bdr-subtle);
 }
 .data-table td {
@@ -816,14 +781,14 @@ async function executeDelete() {
 .emp-avatar {
   width: 30px; height: 30px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 10px; font-weight: 700; color: #fff; flex-shrink: 0;
+  font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0;
 }
 .muted { color: var(--tx-faint); }
-.mono  { font-family: 'DM Mono', monospace; font-size: 12px; }
-.small { font-size: 12px; }
+.mono  { font-family: 'DM Mono', monospace; font-size: 14px; }
+.small { font-size: 14px; }
 .role-badge {
   display: inline-block; padding: 2px 10px; border-radius: 100px;
-  font-size: 11px; font-weight: 600; background: var(--bdr-subtle); color: var(--tx-muted);
+  font-size: 13px; font-weight: 600; background: var(--bdr-subtle); color: var(--tx-muted);
 }
 .role-badge.employee { background: rgba(255,23,68,0.1);   color: #FF4569; }
 .role-badge.manager  { background: rgba(240,230,211,0.1);  color: #c8903a; }
@@ -831,7 +796,7 @@ async function executeDelete() {
 .action-btns { display: flex; gap: 6px; }
 .icon-action {
   background: var(--bdr-subtle); border: none; color: var(--tx-muted);
-  width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 15px;
   display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s;
 }
 .icon-action:hover        { background: var(--bg-active); color: var(--accent); }
@@ -847,36 +812,36 @@ async function executeDelete() {
   border-radius: 14px; padding: 28px; width: 400px; box-shadow: 0 20px 60px rgba(0,0,0,0.4);
 }
 .modal-sm { width: 320px; }
-.modal-title { font-size: 18px; font-weight: 700; color: var(--tx-primary); margin-bottom: 20px; }
-.modal-body-text { font-size: 14px; color: var(--tx-muted); margin-bottom: 20px; }
+.modal-title { font-size: 20px; font-weight: 700; color: var(--tx-primary); margin-bottom: 20px; }
+.modal-body-text { font-size: 16px; color: var(--tx-muted); margin-bottom: 20px; }
 .form-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
 .form-row   { display: flex; gap: 12px; }
 .form-row .form-group { flex: 1; }
 .form-group label {
-  font-size: 10px; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;
+  font-size: 12px; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;
 }
 .optional { font-weight: 400; text-transform: none; font-style: italic; letter-spacing: 0; }
 .form-group input,
 .form-group select {
   background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary);
-  padding: 8px 10px; border-radius: 8px; font-size: 13px;
-  font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; width: 100%;
+  padding: 8px 10px; border-radius: 8px; font-size: 15px;
+  font-family: 'Satoshi', sans-serif; outline: none; transition: border-color 0.15s; width: 100%;
 }
 .form-group input:focus,
 .form-group select:focus { border-color: var(--accent); }
 .form-group select option { background: var(--bg-modal); }
-.modal-error { font-size: 12px; color: var(--err-text); margin-bottom: 12px; }
+.modal-error { font-size: 14px; color: var(--err-text); margin-bottom: 12px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 .cancel-btn {
   background: none; border: 1px solid var(--bdr-medium); color: var(--tx-muted);
   padding: 8px 18px; border-radius: 8px; cursor: pointer;
-  font-family: 'DM Sans', sans-serif; font-size: 13px; transition: border-color 0.15s;
+  font-family: 'Satoshi', sans-serif; font-size: 15px; transition: border-color 0.15s;
 }
 .cancel-btn:hover { border-color: var(--bdr-subtle); color: var(--tx-secondary); }
 .confirm-btn {
   background: var(--accent); border: none; color: #fff;
   padding: 8px 18px; border-radius: 8px; cursor: pointer;
-  font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600; transition: background 0.15s;
+  font-family: 'Satoshi', sans-serif; font-size: 15px; font-weight: 600; transition: background 0.15s;
 }
 .confirm-btn:hover    { background: var(--accent-hover); }
 .confirm-btn:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -888,21 +853,21 @@ async function executeDelete() {
 .modal-lg { width: 480px; }
 .pos-modal-loading { display: flex; justify-content: center; padding: 20px 0; }
 .loading-spinner.sm { width: 22px; height: 22px; border-width: 2px; }
-.pos-empty { font-size: 13px; color: var(--tx-ghost); font-style: italic; padding: 12px 0; }
+.pos-empty { font-size: 15px; color: var(--tx-ghost); font-style: italic; padding: 12px 0; }
 .assigned-pos-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
 .assigned-pos-row {
   display: flex; align-items: center; gap: 10px;
   background: var(--bg-input); border: 1px solid var(--bdr-subtle);
   border-radius: 8px; padding: 8px 12px;
 }
-.pos-tag { font-size: 13px; font-weight: 600; color: var(--tx-primary); flex: 1; }
-.pos-tag-pay { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--tx-faint); }
-.icon-action.sm { width: 22px; height: 22px; font-size: 11px; }
+.pos-tag { font-size: 15px; font-weight: 600; color: var(--tx-primary); flex: 1; }
+.pos-tag-pay { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--tx-faint); }
+.icon-action.sm { width: 22px; height: 22px; font-size: 13px; }
 .add-pos-row { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
 .pos-select {
   flex: 1; background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary);
-  padding: 8px 10px; border-radius: 8px; font-size: 13px;
-  font-family: 'DM Sans', sans-serif; outline: none;
+  padding: 8px 10px; border-radius: 8px; font-size: 15px;
+  font-family: 'Satoshi', sans-serif; outline: none;
 }
 .pos-select:focus { border-color: var(--accent); }
 .pos-select option { background: var(--bg-modal); }
@@ -913,5 +878,5 @@ async function executeDelete() {
 .color-swatch.active { border-color: var(--tx-primary); transform: scale(1.2); }
 .color-native { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--bdr-medium); cursor: pointer; padding: 0; background: none; flex-shrink: 0; }
 .color-preview { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-.color-hex { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--tx-muted); }
+.color-hex { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--tx-muted); }
 </style>
