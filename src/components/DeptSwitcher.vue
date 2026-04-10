@@ -1,5 +1,5 @@
 <template>
-  <div v-if="isManager && myDepts.length > 1" class="dept-switcher">
+  <div v-if="myDepts.length > 1" class="dept-switcher">
     <div class="dept-color-dot"></div>
     <select class="dept-switcher-select" :value="selectedDeptId" @change="onChange">
       <option v-for="d in myDepts" :key="d.id_department" :value="d.id_department">
@@ -10,7 +10,7 @@
       <path d="M2 4L6 8L10 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
   </div>
-  <div v-else-if="myDepts.length >= 1" class="dept-switcher dept-switcher--single">
+  <div v-else-if="myDepts.length === 1" class="dept-switcher dept-switcher--single">
     <div class="dept-color-dot"></div>
     <span class="dept-switcher-name">{{ myDepts.find(d => d.id_department === selectedDeptId)?.name || myDepts[0]?.name }}</span>
   </div>
@@ -18,12 +18,8 @@
 
 <script setup>
 import { useDepartment } from "../composables/useDepartment.js";
-import Utils from "../config/utils.js";
 
 const { myDepts, selectedDeptId, setDept } = useDepartment();
-
-const currentUser = Utils.getStore("user") || {};
-const isManager = currentUser.role === "Manager" || currentUser.role === "Admin";
 
 function onChange(e) {
   setDept(Number(e.target.value));
