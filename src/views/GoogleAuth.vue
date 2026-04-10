@@ -63,10 +63,8 @@
         }
 
         // Route based on saved DB role
-        if (user.value.role === "coach") {
-        return router.push({ name: "coachDashboard" });
-        } else if (user.value.role === "athlete") {
-        return router.push({ name: "athleteDashboard" });
+        if (user.value.role === "Manager" || user.value.role === "Admin" || user.value.role === "Employee") {
+        return router.push("/dashboard");
         } else {
         console.warn("Unknown role — redirecting to role selection...");
         return router.push("/select-role");
