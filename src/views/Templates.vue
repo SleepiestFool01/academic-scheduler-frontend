@@ -1,32 +1,6 @@
 <template>
   <div class="page-root">
 
-    <!-- ── Top Nav ── -->
-    <div class="topnav">
-      <div class="nav-left">
-        <button class="back-btn" @click="router.push('/dashboard')">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          Dashboard
-        </button>
-        <div class="nav-logo">
-          <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
-            <rect x="2" y="4" width="11" height="7" rx="2" fill="#FF1744"/>
-            <rect x="15" y="4" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-            <rect x="2" y="14" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-            <rect x="15" y="14" width="11" height="7" rx="2" fill="#F0E6D3"/>
-          </svg>
-        </div>
-        <div class="nav-divider"></div>
-        <DeptSwitcher />
-        <h1 class="page-title">Templates</h1>
-      </div>
-      <div class="nav-right">
-        <button class="primary-btn" @click="openCreate">+ New Template</button>
-      </div>
-    </div>
-
     <!-- ── Loading / Error ── -->
     <div v-if="loading" class="loading-overlay">
       <div class="loading-spinner"></div>
@@ -729,12 +703,14 @@ function formatDate(iso) {
 </script>
 
 <style scoped>
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,600,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap');
 /* ── Root ── */
 .page-root {
-  min-height: 100vh;
+  flex: 1;
   background: var(--bg-page);
   color: var(--tx-primary);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Satoshi', sans-serif;
 }
 
 /* ── Top Nav ── */
@@ -760,21 +736,21 @@ function formatDate(iso) {
   background: none;
   border: none;
   color: var(--tx-muted);
-  font-size: 13px;
+  font-size: 15px;
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 6px;
   transition: color .15s, background .15s;
 }
 .back-btn:hover { color: var(--tx-primary); background: var(--bg-hover); }
-.page-title { font-size: 16px; font-weight: 600; color: var(--tx-heading); margin: 0; letter-spacing: -.2px; }
+.page-title { font-size: 18px; font-weight: 600; color: var(--tx-heading); margin: 0; letter-spacing: -.2px; }
 .primary-btn {
   background: var(--accent);
   color: #fff;
   border: none;
   border-radius: 7px;
   padding: 7px 16px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
   transition: opacity .15s;
@@ -791,13 +767,13 @@ function formatDate(iso) {
   animation: spin .7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.loading-text { color: var(--tx-faint); font-size: 13px; }
+.loading-text { color: var(--tx-faint); font-size: 15px; }
 .error-banner {
   background: var(--err-bg);
   border: 1px solid var(--accent);
   color: var(--err-text);
   padding: 10px 20px;
-  font-size: 13px;
+  font-size: 15px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -808,7 +784,7 @@ function formatDate(iso) {
   color: var(--accent);
   border-radius: 5px;
   padding: 3px 10px;
-  font-size: 12px;
+  font-size: 14px;
   cursor: pointer;
 }
 
@@ -822,15 +798,15 @@ function formatDate(iso) {
   margin-bottom: 28px;
   flex-wrap: wrap;
 }
-.panel-title { font-size: 20px; font-weight: 700; margin: 0 0 4px; color: var(--tx-heading); }
-.panel-sub   { font-size: 13px; color: var(--tx-faint); margin: 0; }
+.panel-title { font-size: 22px; font-weight: 700; margin: 0 0 4px; color: var(--tx-heading); }
+.panel-sub   { font-size: 15px; color: var(--tx-faint); margin: 0; }
 .search-input {
   background: var(--bg-modal);
   border: 1px solid var(--bdr-faint);
   border-radius: 7px;
   padding: 7px 12px;
   color: var(--tx-primary);
-  font-size: 13px;
+  font-size: 15px;
   width: 220px;
   outline: none;
   transition: border-color .15s;
@@ -847,8 +823,8 @@ function formatDate(iso) {
   border-radius: 12px;
 }
 .empty-icon  { font-size: 40px; margin: 0 0 12px; }
-.empty-title { font-size: 16px; font-weight: 600; color: var(--tx-heading); margin: 0 0 6px; }
-.empty-sub   { font-size: 13px; color: var(--tx-faint); margin: 0; }
+.empty-title { font-size: 18px; font-weight: 600; color: var(--tx-heading); margin: 0 0 6px; }
+.empty-sub   { font-size: 15px; color: var(--tx-faint); margin: 0; }
 
 /* ── Templates Grid ── */
 .templates-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
@@ -865,8 +841,8 @@ function formatDate(iso) {
 .template-card:hover { border-color: var(--bdr-faint); box-shadow: 0 4px 20px rgba(0,0,0,.25); }
 .card-header { display: flex; flex-direction: column; gap: 6px; }
 .card-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-.card-name { font-size: 15px; font-weight: 600; color: var(--tx-heading); margin: 0; line-height: 1.3; }
-.card-desc { font-size: 12px; color: var(--tx-faint); margin: 0; line-height: 1.5; }
+.card-name { font-size: 17px; font-weight: 600; color: var(--tx-heading); margin: 0; line-height: 1.3; }
+.card-desc { font-size: 14px; color: var(--tx-faint); margin: 0; line-height: 1.5; }
 .card-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .icon-action {
   background: none;
@@ -875,7 +851,7 @@ function formatDate(iso) {
   border-radius: 5px;
   width: 28px; height: 28px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 15px;
   display: flex; align-items: center; justify-content: center;
   transition: color .15s, border-color .15s, background .15s;
 }
@@ -888,7 +864,7 @@ function formatDate(iso) {
   background: var(--bg-modal);
   border: 1px solid var(--bdr-subtle);
   border-radius: 20px; padding: 3px 10px;
-  font-size: 11px; color: var(--tx-faint);
+  font-size: 13px; color: var(--tx-faint);
   font-family: 'DM Mono', monospace;
 }
 .card-footer {
@@ -902,7 +878,7 @@ function formatDate(iso) {
   background: none;
   border: 1px solid var(--bdr-faint);
   color: var(--tx-muted);
-  border-radius: 7px; padding: 7px 0; font-size: 13px;
+  border-radius: 7px; padding: 7px 0; font-size: 15px;
   cursor: pointer;
   transition: color .15s, border-color .15s, background .15s;
 }
@@ -912,7 +888,7 @@ function formatDate(iso) {
   background: var(--accent-bg);
   border: 1px solid var(--accent-border);
   color: var(--accent);
-  border-radius: 7px; padding: 7px 0; font-size: 13px; font-weight: 600;
+  border-radius: 7px; padding: 7px 0; font-size: 15px; font-weight: 600;
   cursor: pointer;
   transition: background .15s, border-color .15s;
 }
@@ -933,11 +909,11 @@ function formatDate(iso) {
   display: flex; flex-direction: column; gap: 16px;
 }
 .modal.modal-sm { width: 340px; }
-.modal-title { font-size: 16px; font-weight: 700; color: var(--tx-heading); margin: 0; }
-.modal-body-text { font-size: 13px; color: var(--tx-secondary); margin: 0; line-height: 1.5; }
+.modal-title { font-size: 18px; font-weight: 700; color: var(--tx-heading); margin: 0; }
+.modal-body-text { font-size: 15px; color: var(--tx-secondary); margin: 0; line-height: 1.5; }
 .form-group { display: flex; flex-direction: column; gap: 6px; }
 .form-group label {
-  font-size: 12px; font-weight: 600;
+  font-size: 14px; font-weight: 600;
   color: var(--tx-muted);
   text-transform: uppercase; letter-spacing: .5px;
 }
@@ -947,7 +923,7 @@ function formatDate(iso) {
   border: 1px solid var(--bdr-faint);
   border-radius: 7px; padding: 9px 12px;
   color: var(--tx-primary);
-  font-size: 13px; font-family: 'DM Sans', sans-serif;
+  font-size: 15px; font-family: 'Satoshi', sans-serif;
   outline: none; transition: border-color .15s; resize: vertical;
 }
 .form-group input:focus,
@@ -955,20 +931,20 @@ function formatDate(iso) {
 .form-group input::placeholder,
 .form-group textarea::placeholder { color: var(--tx-faded); }
 .optional { color: var(--tx-faint); font-weight: 400; text-transform: none; letter-spacing: 0; }
-.modal-error { color: var(--accent); font-size: 12px; margin: 0; }
+.modal-error { color: var(--accent); font-size: 14px; margin: 0; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
 .cancel-btn {
   background: none;
   border: 1px solid var(--bdr-faint);
   color: var(--tx-muted);
-  border-radius: 7px; padding: 7px 16px; font-size: 13px;
+  border-radius: 7px; padding: 7px 16px; font-size: 15px;
   cursor: pointer; transition: color .15s, border-color .15s;
 }
 .cancel-btn:hover { color: var(--tx-primary); border-color: var(--bdr-medium); }
 .confirm-btn {
   background: var(--accent);
   color: #fff; border: none;
-  border-radius: 7px; padding: 7px 18px; font-size: 13px; font-weight: 600;
+  border-radius: 7px; padding: 7px 18px; font-size: 15px; font-weight: 600;
   cursor: pointer; transition: opacity .15s;
 }
 .confirm-btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -983,7 +959,7 @@ function formatDate(iso) {
 /* ── Apply Template Modal ── */
 .modal-apply { width: 460px; }
 .apply-tpl-name {
-  font-size: 13px; color: var(--accent); font-weight: 600;
+  font-size: 15px; color: var(--accent); font-weight: 600;
   margin: -8px 0 4px; font-family: 'DM Mono', monospace;
 }
 .period-options { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -992,8 +968,8 @@ function formatDate(iso) {
   background: var(--bg-surface);
   border: 1px solid var(--bdr-faint);
   color: var(--tx-muted);
-  border-radius: 7px; padding: 8px 10px; font-size: 13px;
-  font-family: 'DM Sans', sans-serif;
+  border-radius: 7px; padding: 8px 10px; font-size: 15px;
+  font-family: 'Satoshi', sans-serif;
   cursor: pointer; text-align: center;
   transition: color .15s, border-color .15s, background .15s;
 }
@@ -1009,20 +985,20 @@ function formatDate(iso) {
   border: 1px solid var(--bdr-faint);
   border-radius: 7px; padding: 9px 12px;
   color: var(--tx-primary);
-  font-size: 13px; font-family: 'DM Sans', sans-serif;
+  font-size: 15px; font-family: 'Satoshi', sans-serif;
   outline: none; transition: border-color .15s;
   width: 100%;
 }
 .date-input:focus { border-color: var(--accent); }
 .form-row-dates { display: flex; align-items: flex-end; gap: 10px; }
 .form-row-dates .form-group { flex: 1; }
-.date-range-arrow { font-size: 16px; color: var(--tx-faint); padding-bottom: 10px; flex-shrink: 0; }
+.date-range-arrow { font-size: 18px; color: var(--tx-faint); padding-bottom: 10px; flex-shrink: 0; }
 .apply-range-preview {
   display: flex; align-items: center; gap: 8px;
   background: var(--bg-surface);
   border: 1px solid var(--bdr-subtle);
   border-radius: 7px; padding: 10px 14px;
-  font-size: 13px; font-family: 'DM Mono', monospace;
+  font-size: 15px; font-family: 'DM Mono', monospace;
   color: var(--tx-primary);
   margin-top: -4px;
 }
@@ -1037,8 +1013,8 @@ function formatDate(iso) {
   border-radius: 7px;
   padding: 9px 12px;
   color: var(--tx-primary);
-  font-size: 13px;
-  font-family: 'DM Sans', sans-serif;
+  font-size: 15px;
+  font-family: 'Satoshi', sans-serif;
   cursor: pointer;
   text-align: left;
   transition: border-color .15s, background .15s;
@@ -1064,7 +1040,7 @@ function formatDate(iso) {
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45),
               0 4px 12px rgba(0, 0, 0, 0.25);
   display: flex; flex-direction: column; gap: 10px;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Satoshi', sans-serif;
 }
 .dpc-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -1077,7 +1053,7 @@ function formatDate(iso) {
   color: var(--tx-secondary);
   border-radius: 6px;
   width: 26px; height: 26px;
-  font-size: 16px; line-height: 1;
+  font-size: 18px; line-height: 1;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   transition: color .15s, border-color .15s, background .15s;
@@ -1088,7 +1064,7 @@ function formatDate(iso) {
   background: var(--accent-bg);
 }
 .dpc-month-label {
-  font-size: 13px; font-weight: 600;
+  font-size: 15px; font-weight: 600;
   color: var(--tx-heading);
   letter-spacing: .2px;
 }
@@ -1099,7 +1075,7 @@ function formatDate(iso) {
 }
 .dpc-dow {
   text-align: center;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .5px;
@@ -1115,7 +1091,7 @@ function formatDate(iso) {
 .dpc-cell {
   aspect-ratio: 1;
   display: flex; align-items: center; justify-content: center;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--tx-primary);
   border-radius: 6px;
   cursor: pointer;

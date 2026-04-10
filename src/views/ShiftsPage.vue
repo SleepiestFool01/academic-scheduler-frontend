@@ -1,36 +1,6 @@
 <template>
   <div class="page-root">
 
-    <!-- ── Top Nav ── -->
-    <div class="topnav">
-      <div class="nav-left">
-        <button class="back-btn" @click="router.push('/dashboard')">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          Dashboard
-        </button>
-        <div class="nav-logo">
-          <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
-            <rect x="2" y="4" width="11" height="7" rx="2" fill="#FF1744"/>
-            <rect x="15" y="4" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-            <rect x="2" y="14" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-            <rect x="15" y="14" width="11" height="7" rx="2" fill="#F0E6D3"/>
-          </svg>
-        </div>
-        <div class="nav-divider"></div>
-        <DeptSwitcher />
-        <span class="page-title">Shifts</span>
-        <span class="week-label">{{ weekLabel }}</span>
-      </div>
-      <div class="nav-right">
-        <div v-if="currentUser" class="avatar" :title="`${currentUser.fName} ${currentUser.lName}`">
-          <img v-if="currentUser.picture" :src="currentUser.picture" class="avatar-img" referrerpolicy="no-referrer" />
-          <span v-else>{{ userInitials }}</span>
-        </div>
-      </div>
-    </div>
-
     <!-- ── Loading / Error ── -->
     <div v-if="loading" class="loading-overlay">
       <div class="loading-spinner"></div>
@@ -292,13 +262,14 @@ function shortDate(d) { const [,m,dd]  = d.split("-").map(Number); return `${m}/
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,600,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap');
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 .page-root {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Satoshi', sans-serif;
   display: flex; flex-direction: column;
-  height: 100vh; overflow: hidden;
+  flex: 1; overflow: hidden;
   background: var(--bg-page); color: var(--tx-primary);
 }
 
@@ -314,17 +285,17 @@ function shortDate(d) { const [,m,dd]  = d.split("-").map(Number); return `${m}/
 .back-btn {
   display: flex; align-items: center; gap: 6px;
   background: none; border: none; color: var(--tx-muted);
-  font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer; transition: color 0.15s;
+  font-family: 'Satoshi', sans-serif; font-size: 15px; cursor: pointer; transition: color 0.15s;
 }
 .back-btn:hover { color: var(--accent); }
 .nav-logo { display: flex; align-items: center; }
-.page-title { font-size: 15px; font-weight: 700; color: var(--tx-heading); }
-.week-label { font-size: 12px; color: var(--tx-faint); font-family: 'DM Mono', monospace; padding-left: 4px; }
+.page-title { font-size: 17px; font-weight: 700; color: var(--tx-heading); }
+.week-label { font-size: 14px; color: var(--tx-faint); font-family: 'DM Mono', monospace; padding-left: 4px; }
 .avatar {
   width: 32px; height: 32px; border-radius: 50%;
   background: var(--accent); color: #fff;
   display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 600; overflow: hidden; flex-shrink: 0;
+  font-size: 14px; font-weight: 600; overflow: hidden; flex-shrink: 0;
 }
 .avatar-img { width: 100%; height: 100%; object-fit: cover; }
 
@@ -338,15 +309,15 @@ function shortDate(d) { const [,m,dd]  = d.split("-").map(Number); return `${m}/
   border-radius: 50%; animation: spin 0.7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.loading-text { font-size: 13px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
+.loading-text { font-size: 15px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
 .error-banner {
   background: var(--err-bg); border-bottom: 1px solid var(--err-border);
-  color: var(--err-text); font-size: 12px; padding: 8px 24px;
+  color: var(--err-text); font-size: 14px; padding: 8px 24px;
   display: flex; align-items: center; gap: 12px;
 }
 .retry-btn {
   background: none; border: 1px solid var(--err-text); color: var(--err-text);
-  padding: 2px 10px; border-radius: 4px; cursor: pointer; font-size: 11px;
+  padding: 2px 10px; border-radius: 4px; cursor: pointer; font-size: 13px;
 }
 
 /* ── Content ── */
@@ -374,12 +345,12 @@ function shortDate(d) { const [,m,dd]  = d.split("-").map(Number); return `${m}/
 .section-dot--upcoming { background: var(--ok-text); }
 
 .section-title {
-  font-size: 16px; font-weight: 700; color: var(--tx-heading); margin: 0;
+  font-size: 18px; font-weight: 700; color: var(--tx-heading); margin: 0;
 }
 .section-title--today { color: var(--accent); }
 
 .section-badge {
-  font-size: 11px; font-weight: 600; color: var(--tx-faint);
+  font-size: 13px; font-weight: 600; color: var(--tx-faint);
   background: var(--bg-input); border: 1px solid var(--bdr-subtle);
   padding: 1px 8px; border-radius: 100px;
 }
@@ -388,14 +359,14 @@ function shortDate(d) { const [,m,dd]  = d.split("-").map(Number); return `${m}/
   color: var(--accent);
 }
 
-.section-sub { font-size: 11px; color: var(--tx-faint); font-family: 'DM Mono', monospace; }
+.section-sub { font-size: 13px; color: var(--tx-faint); font-family: 'DM Mono', monospace; }
 
 /* ── Empty ── */
 .empty-card {
   background: var(--bg-surface); border: 1px solid var(--bdr-subtle);
   border-radius: 10px; padding: 20px 24px;
 }
-.empty-text { font-size: 13px; color: var(--tx-faint); }
+.empty-text { font-size: 15px; color: var(--tx-faint); }
 
 /* ── Group cards ── */
 .groups-list { display: flex; flex-direction: column; gap: 10px; }
@@ -414,11 +385,11 @@ function shortDate(d) { const [,m,dd]  = d.split("-").map(Number); return `${m}/
 .emp-avatar {
   width: 28px; height: 28px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 10px; font-weight: 700; color: #fff; flex-shrink: 0;
+  font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0;
 }
-.group-name { font-size: 13px; font-weight: 600; color: var(--tx-primary); }
+.group-name { font-size: 15px; font-weight: 600; color: var(--tx-primary); }
 .group-pill {
-  margin-left: auto; font-size: 11px; color: var(--tx-faint);
+  margin-left: auto; font-size: 13px; color: var(--tx-faint);
   background: var(--bg-active); padding: 1px 8px; border-radius: 100px;
 }
 
@@ -444,11 +415,11 @@ function shortDate(d) { const [,m,dd]  = d.split("-").map(Number); return `${m}/
 
 .col-day {
   display: flex; align-items: center; gap: 6px;
-  font-size: 12px; font-weight: 600; color: var(--tx-secondary);
+  font-size: 14px; font-weight: 600; color: var(--tx-secondary);
 }
-.col-date { font-size: 11px; color: var(--tx-faint); font-family: 'DM Mono', monospace; font-weight: 400; }
-.col-time { font-size: 13px; color: var(--tx-primary); font-weight: 500; }
-.col-notes { font-size: 12px; color: var(--tx-faint); }
+.col-date { font-size: 13px; color: var(--tx-faint); font-family: 'DM Mono', monospace; font-weight: 400; }
+.col-time { font-size: 15px; color: var(--tx-primary); font-weight: 500; }
+.col-notes { font-size: 14px; color: var(--tx-faint); }
 
 .mono { font-family: 'DM Mono', monospace; }
 
@@ -456,13 +427,13 @@ function shortDate(d) { const [,m,dd]  = d.split("-").map(Number); return `${m}/
   display: inline-block; padding: 2px 9px;
   background: var(--bg-active); color: var(--tx-secondary);
   border: 1px solid var(--bdr-faint);
-  border-radius: 100px; font-size: 11px; font-weight: 500;
+  border-radius: 100px; font-size: 13px; font-weight: 500;
 }
 
 .live-chip {
   display: inline-block; padding: 1px 7px;
   background: var(--accent); color: #fff;
-  border-radius: 100px; font-size: 10px; font-weight: 700;
+  border-radius: 100px; font-size: 12px; font-weight: 700;
   animation: pulse 1.6s ease-in-out infinite;
 }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
