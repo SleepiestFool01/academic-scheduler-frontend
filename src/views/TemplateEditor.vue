@@ -308,7 +308,7 @@
         </div>
         <div class="form-group">
           <label>Position <span class="req-star">*</span></label>
-          <select v-model="quickCreate.id_position">
+          <select v-model="quickCreate.id_position" @change="onQuickCreatePositionChange">
             <option value="">— Select position —</option>
             <option v-for="pos in positions" :key="pos.id_position" :value="pos.id_position">
               {{ pos.name }}
@@ -317,12 +317,13 @@
         </div>
         <div class="form-group">
           <label>Employee <span class="optional">(optional)</span></label>
-          <select v-model="quickCreate.id_employee">
+          <select v-model="quickCreate.id_employee" :disabled="!quickCreate.id_position">
             <option value="">— No employee —</option>
-            <option v-for="emp in allEmployees" :key="emp.id_employee" :value="emp.id_employee">
+            <option v-for="emp in employeesForPosition(quickCreate.id_position)" :key="emp.id_employee" :value="emp.id_employee">
               {{ emp.fName }} {{ emp.lName }}
             </option>
           </select>
+          <p v-if="quickCreate.id_position && employeesForPosition(quickCreate.id_position).length === 0" class="optional">No employees assigned to this position.</p>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -372,7 +373,7 @@ import {
   removeTemplateShiftTaskList,
   getTemplateApplicationShifts,
 } from "../services/templateService.js";
-import { getPositions, getEmployees, getCalendarEntries, getSettingValues } from "../services/departmentService.js";
+import { getPositions, getEmployees, getCalendarEntries, getSettingValues, getPositionEmployees } from "../services/departmentService.js";
 import { fetchTaskLists, assignTaskListToShift, getShiftTaskLists, removeShiftTaskList } from "../services/taskService.js";
 import apiClient from "../services/services.js";
 
@@ -402,6 +403,18 @@ const templateShifts   = ref([]);
 const positions        = ref([]);
 const allEmployees     = ref([]);
 const allTaskLists     = ref([]);
+// Map of id_position → array of id_employee assigned to that position
+const positionEmployeeIds = ref({});
+
+// Returns the employees assigned to the given position. If no position is
+// selected, returns no employees (forces position-first).
+function employeesForPosition(id_position) {
+  if (id_position == null || id_position === "") return [];
+  const ids = positionEmployeeIds.value[id_position];
+  if (!ids) return [];
+  const idSet = new Set(ids);
+  return allEmployees.value.filter(e => idSet.has(e.id_employee));
+}
 
 // ── Hours of Operation (visual overlay only — does not modify real HOO) ───────
 const calendarHours      = ref([]); // raw rows from /calendar
@@ -572,7 +585,10 @@ const panelEdit = ref({
 // ── Computed ──────────────────────────────────────────────────────────────────
 const unassignedEmployees = computed(() => {
   const assigned = new Set(panel.value.employees.map(e => e.id_employee));
-  return allEmployees.value.filter(e => !assigned.has(e.id_employee));
+  // Restrict to employees assigned to the shift's position. If no position
+  // is set on the panel yet, no employees are eligible.
+  const eligible = employeesForPosition(panelEdit.value.id_position);
+  return eligible.filter(e => !assigned.has(e.id_employee));
 });
 
 const unassignedTaskLists = computed(() => {
@@ -646,6 +662,21 @@ async function loadAll() {
     if (id_department) {
       const posRes = await getPositions(id_department).catch(() => ({ data: [] }));
       positions.value = posRes.data || [];
+
+      // Load which employees are assigned to each position so the
+      // employee dropdowns can be filtered by the selected position.
+      try {
+        const peMap = {};
+        await Promise.all(positions.value.map(async (p) => {
+          try {
+            const res = await getPositionEmployees(p.id_position);
+            peMap[p.id_position] = (res.data || []).map(r => r.id_employee);
+          } catch {
+            peMap[p.id_position] = [];
+          }
+        }));
+        positionEmployeeIds.value = peMap;
+      } catch { /* non-critical */ }
 
       // Load hours of operation + active-season setting (visual overlay only)
       getCalendarEntries(id_department).then(r => {
@@ -729,6 +760,15 @@ async function selectShift(shift) {
   } finally {
     panel.value.loadingEmployees = false;
     panel.value.loadingTaskLists = false;
+  }
+}
+
+// Clear the quick-create employee selection if the new position no
+// longer includes them.
+function onQuickCreatePositionChange() {
+  const allowed = employeesForPosition(quickCreate.value.id_position);
+  if (!allowed.some(e => e.id_employee === quickCreate.value.id_employee)) {
+    quickCreate.value.id_employee = "";
   }
 }
 

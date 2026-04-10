@@ -405,17 +405,18 @@
         <div class="qc-date-label">{{ quickCreate.dateLabel }}</div>
         <div class="form-group">
           <label>Position</label>
-          <select v-model="quickCreate.id_position">
+          <select v-model="quickCreate.id_position" @change="onQuickCreatePositionChange">
             <option :value="null" disabled>— Select a position —</option>
             <option v-for="p in positions" :key="p.id_position" :value="p.id_position">{{ p.name }}</option>
           </select>
         </div>
         <div class="form-group">
           <label>Employee <span class="label-optional">(optional)</span></label>
-          <select v-model="quickCreate.employee">
+          <select v-model="quickCreate.employee" :disabled="!quickCreate.id_position">
             <option value="">— Unassigned —</option>
-            <option v-for="e in employees" :key="e.name" :value="e.name">{{ e.name }}</option>
+            <option v-for="e in employeesForPosition(quickCreate.id_position)" :key="e.name" :value="e.name">{{ e.name }}</option>
           </select>
+          <p v-if="quickCreate.id_position && employeesForPosition(quickCreate.id_position).length === 0" class="label-optional">No employees assigned to this position.</p>
         </div>
         <div class="form-row">
           <div class="form-group"><label>Start</label><input type="time" v-model="quickCreate.startTime" /></div>
@@ -439,17 +440,21 @@
           <h2 class="modal-title">{{ editingShiftId ? 'Edit Shift' : 'Add Shift' }}</h2>
           <div class="form-group">
             <label>Position</label>
-            <select v-model="newShift.id_position">
+            <select v-model="newShift.id_position" @change="onNewShiftPositionChange">
               <option :value="null" disabled>— Select a position —</option>
               <option v-for="p in positions" :key="p.id_position" :value="p.id_position">{{ p.name }}</option>
             </select>
           </div>
           <div class="form-group">
             <label>Employee <span class="label-optional">(optional)</span></label>
-            <select v-model="newShift.employee" @change="newShift.id_employee = employees.find(e => e.name === newShift.employee)?.id_employee ?? null">
+            <select
+              v-model="newShift.employee"
+              :disabled="!newShift.id_position"
+              @change="newShift.id_employee = employeesForPosition(newShift.id_position).find(e => e.name === newShift.employee)?.id_employee ?? null">
               <option value="">— Unassigned —</option>
-              <option v-for="e in employees" :key="e.name" :value="e.name">{{ e.name }}</option>
+              <option v-for="e in employeesForPosition(newShift.id_position)" :key="e.name" :value="e.name">{{ e.name }}</option>
             </select>
+            <p v-if="newShift.id_position && employeesForPosition(newShift.id_position).length === 0" class="label-optional">No employees assigned to this position.</p>
           </div>
           <div class="form-group">
             <label>Day</label>
@@ -675,7 +680,7 @@ import {
   deleteAssignment  as apiDeleteAssignment,
   fetchSwapRequests,
 } from "../services/schedulingService.js";
-import { getDepartment, getCalendarEntries, getEvents, getPositions, getSettingValues } from "../services/departmentService.js";
+import { getDepartment, getCalendarEntries, getEvents, getPositions, getSettingValues, getPositionEmployees } from "../services/departmentService.js";
 import {
   fetchTaskLists,
   fetchTasks,
@@ -772,6 +777,18 @@ const activeSeason    = ref(""); // currently active season name (empty = no fil
 const deptEvents      = ref([]); // department events
 const deptName        = ref('');
 const positions       = ref([]);
+// Map of id_position → array of id_employee assigned to that position
+const positionEmployeeIds = ref({});
+
+// Returns the employees that may be assigned to a shift of the given position.
+// If no position is selected, returns no employees (forces position-first).
+function employeesForPosition(id_position) {
+  if (id_position == null || id_position === "") return [];
+  const ids = positionEmployeeIds.value[id_position];
+  if (!ids) return [];
+  const idSet = new Set(ids);
+  return employees.value.filter(e => idSet.has(e.id_employee));
+}
 
 // ── Task state ─────────────────────────────────────────────────────────────────
 const taskLists = ref([]);
@@ -1495,6 +1512,23 @@ function onGlobalMouseUp(e) {
 }
 function cancelQuickCreate() { quickCreate.value.visible = false; }
 
+// Clear employee selection when the position changes if the currently
+// selected employee is not assigned to the newly selected position.
+function onQuickCreatePositionChange() {
+  const allowed = employeesForPosition(quickCreate.value.id_position);
+  if (!allowed.some(e => e.name === quickCreate.value.employee)) {
+    quickCreate.value.employee = "";
+  }
+}
+
+function onNewShiftPositionChange() {
+  const allowed = employeesForPosition(newShift.value.id_position);
+  if (!allowed.some(e => e.name === newShift.value.employee)) {
+    newShift.value.employee    = "";
+    newShift.value.id_employee = null;
+  }
+}
+
 // ── Data loading ───────────────────────────────────────────────────────────────
 async function loadAll() {
   loading.value  = true;
@@ -1523,6 +1557,20 @@ async function loadAll() {
     // Load positions first so positionMap is ready for the shift JOIN
     if (deptId) {
       try { positions.value = (await getPositions(deptId)).data || []; } catch { /* non-critical */ }
+      // Load which employees are assigned to each position so the
+      // employee dropdowns can be filtered by the selected position.
+      try {
+        const peMap = {};
+        await Promise.all(positions.value.map(async (p) => {
+          try {
+            const res = await getPositionEmployees(p.id_position);
+            peMap[p.id_position] = (res.data || []).map(r => r.id_employee);
+          } catch {
+            peMap[p.id_position] = [];
+          }
+        }));
+        positionEmployeeIds.value = peMap;
+      } catch { /* non-critical */ }
     }
     const positionMap = Object.fromEntries(positions.value.map(p => [p.id_position, p]));
     shifts.value = await fetchShiftsWithAssignments(map, positionMap, deptId);
