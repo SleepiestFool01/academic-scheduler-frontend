@@ -203,7 +203,6 @@
           </div>
 
           <div v-if="openTrades.length === 0" class="empty-card">
-            <p class="empty-icon">🔄</p>
             <p class="empty-title">Nothing on the board</p>
             <p class="empty-sub">No shifts available right now. Check back later.</p>
           </div>
