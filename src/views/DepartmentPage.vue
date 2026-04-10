@@ -1,15 +1,69 @@
 <template>
   <div class="dept-root">
 
-    <!-- ── Access denied ── -->
-    <div v-if="!isManager" class="full-center">
-      <div class="centered-box">
-        <span class="big-icon">🔒</span>
-        <h2>Access Restricted</h2>
-        <p>The Department page is only available to Managers and Admins.</p>
-        <button class="primary-btn" @click="router.push('/dashboard')">Back to Dashboard</button>
+    <!-- ════════════════════════════════════════
+         EMPLOYEE VIEW — read-only list of departments + request access
+    ════════════════════════════════════════ -->
+    <template v-if="!isManager">
+      <div class="topnav">
+        <div class="nav-left">
+          <button class="back-btn" @click="router.push('/dashboard')">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Dashboard
+          </button>
+          <div class="nav-logo">
+            <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
+              <rect x="2" y="4" width="11" height="7" rx="2" fill="#FF1744"/>
+              <rect x="15" y="4" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
+              <rect x="2" y="14" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
+              <rect x="15" y="14" width="11" height="7" rx="2" fill="#F0E6D3"/>
+            </svg>
+          </div>
+          <h1 class="emp-page-title">My Departments</h1>
+        </div>
+        <div class="nav-right">
+          <div v-if="currentUser" class="avatar" :title="`${currentUser.fName} ${currentUser.lName}`">
+            <img v-if="currentUser.picture" :src="currentUser.picture" class="avatar-img" referrerpolicy="no-referrer" />
+            <span v-else>{{ userInitials }}</span>
+          </div>
+        </div>
       </div>
-    </div>
+
+      <div class="emp-content">
+        <div class="emp-header-row">
+          <div>
+            <h2 class="emp-section-title">Departments You Belong To</h2>
+            <p class="emp-section-sub">{{ myDepts.length }} department{{ myDepts.length !== 1 ? 's' : '' }}</p>
+          </div>
+          <button class="primary-btn" @click="openRequestModal">+ Request Access</button>
+        </div>
+
+        <div v-if="myDepts.length === 0" class="emp-empty">
+          You aren't currently assigned to any departments. Use Request Access to ask an Admin for one.
+        </div>
+        <div v-else class="emp-dept-grid">
+          <div v-for="d in myDepts" :key="d.id_department" class="emp-dept-card">
+            <div class="emp-dept-color"></div>
+            <div class="emp-dept-body">
+              <div class="emp-dept-name">{{ d.name }}</div>
+              <div v-if="d.description" class="emp-dept-desc">{{ d.description }}</div>
+            </div>
+            <span v-if="d.id_department === currentUser.id_department" class="emp-dept-pill">Primary</span>
+          </div>
+        </div>
+
+        <div v-if="myPendingRequests.length > 0" class="emp-requests-section">
+          <h2 class="emp-section-title">Your Pending Requests</h2>
+          <div v-for="req in myPendingRequests" :key="req.id_departmentAccessRequest" class="emp-request-row">
+            <span class="emp-request-dept">{{ deptNameById(req.id_department) }}</span>
+            <span class="emp-request-status">Pending</span>
+            <button class="emp-cancel-btn" title="Cancel request" @click="cancelAccessRequest(req)">✕</button>
+          </div>
+        </div>
+      </div>
+    </template>
 
     <template v-else>
 
@@ -33,6 +87,12 @@
           <div v-if="!noDeptsYet" class="nav-dept-switcher">
             <div class="nav-divider"></div>
             <DeptSwitcher />
+            <button
+              class="new-dept-btn"
+              title="Create a new department"
+              @click="openCreateDeptModal">
+              + New Department
+            </button>
           </div>
         </div>
         <div v-if="!noDeptsYet" class="nav-tabs">
@@ -448,31 +508,30 @@
       </template>
 
       <!-- ══════════════════════════════════════
-           REQUEST ANOTHER DEPARTMENT MODAL
+           CREATE NEW DEPARTMENT MODAL
       ══════════════════════════════════════ -->
       <Transition name="modal">
-        <div v-if="requestModal.open" class="modal-overlay" @click.self="requestModal.open = false">
+        <div v-if="createDeptModal.open" class="modal-overlay" @click.self="createDeptModal.open = false">
           <div class="modal">
-            <h3 class="modal-title">Request Department Access</h3>
-            <p class="modal-desc">Select a department you'd like to manage. An Admin will review your request.</p>
+            <h3 class="modal-title">Create New Department</h3>
+            <p class="modal-desc">
+              Add a new department you'll manage.
+              <span v-if="!isAdmin">You'll be added as a manager automatically.</span>
+              <span v-else>As an Admin you'll automatically have access to it.</span>
+            </p>
             <div class="form-group">
-              <label>Department</label>
-              <select v-model="requestModal.id_department">
-                <option value="">— Select a department —</option>
-                <option v-for="d in availableDepts" :key="d.id_department" :value="d.id_department">
-                  {{ d.name }}
-                </option>
-              </select>
+              <label>Department Name <span class="req">*</span></label>
+              <input v-model="createDeptModal.name" type="text" placeholder="e.g. Fitness Center" />
             </div>
             <div class="form-group">
-              <label>Message <span class="optional">(optional)</span></label>
-              <input v-model="requestModal.message" type="text" placeholder="Why do you need access?" />
+              <label>Description <span class="optional">(optional)</span></label>
+              <input v-model="createDeptModal.description" type="text" placeholder="Brief description…" />
             </div>
-            <p v-if="requestModal.error" class="modal-error">{{ requestModal.error }}</p>
+            <p v-if="createDeptModal.error" class="modal-error">{{ createDeptModal.error }}</p>
             <div class="modal-actions">
-              <button class="cancel-btn" @click="requestModal.open = false">Cancel</button>
-              <button class="confirm-btn" :disabled="requestModal.saving" @click="submitRequest">
-                {{ requestModal.saving ? 'Sending…' : 'Send Request' }}
+              <button class="cancel-btn" @click="createDeptModal.open = false">Cancel</button>
+              <button class="confirm-btn" :disabled="createDeptModal.saving" @click="submitCreateNewDepartment">
+                {{ createDeptModal.saving ? 'Creating…' : 'Create Department' }}
               </button>
             </div>
           </div>
@@ -733,6 +792,41 @@
       </Transition>
 
     </template>
+
+    <!-- ══════════════════════════════════════
+         REQUEST ANOTHER DEPARTMENT MODAL
+         (shared between manager + employee views)
+    ══════════════════════════════════════ -->
+    <Transition name="modal">
+      <div v-if="requestModal.open" class="modal-overlay" @click.self="requestModal.open = false">
+        <div class="modal">
+          <h3 class="modal-title">Request Department Access</h3>
+          <p class="modal-desc">
+            Select a department you'd like {{ isManager ? 'to manage' : 'to work in' }}. An Admin will review your request.
+          </p>
+          <div class="form-group">
+            <label>Department</label>
+            <select v-model="requestModal.id_department">
+              <option value="">— Select a department —</option>
+              <option v-for="d in availableDepts" :key="d.id_department" :value="d.id_department">
+                {{ d.name }}
+              </option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Message <span class="optional">(optional)</span></label>
+            <input v-model="requestModal.message" type="text" placeholder="Why do you need access?" />
+          </div>
+          <p v-if="requestModal.error" class="modal-error">{{ requestModal.error }}</p>
+          <div class="modal-actions">
+            <button class="cancel-btn" @click="requestModal.open = false">Cancel</button>
+            <button class="confirm-btn" :disabled="requestModal.saving" @click="submitRequest">
+              {{ requestModal.saving ? 'Sending…' : 'Send Request' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -783,6 +877,7 @@ const currentUser = ref(Utils.getStore("user"));
 const isManager = computed(() =>
   currentUser.value?.role === "Manager" || currentUser.value?.role === "Admin"
 );
+const isAdmin = computed(() => currentUser.value?.role === "Admin");
 const userInitials = computed(() => {
   const u = currentUser.value;
   return `${u?.fName?.[0] ?? ""}${u?.lName?.[0] ?? ""}`.toUpperCase() || "??";
@@ -800,7 +895,7 @@ const apiError       = ref("");
 const noDeptsYet     = ref(false);
 
 // Department switcher — shared composable
-const { myDepts, selectedDeptId, loadDepts } = useDepartment();
+const { myDepts, selectedDeptId, loadDepts, setDept } = useDepartment();
 const allDepts = ref([]); // all departments in system (for request modal)
 
 const department      = ref({});
@@ -818,6 +913,61 @@ const myPendingRequests = ref([]);
 const createForm  = ref({ name: "", description: "" });
 const creating    = ref(false);
 const createError = ref("");
+
+// ── Create *additional* department modal (used when the user already has
+//    at least one department and wants to add another). Distinct from the
+//    blank-state "Create Your Department" form above so we don't wipe the
+//    existing myDepts list on save. ──────────────────────────────────────────
+const createDeptModal = ref({ open: false, name: "", description: "", saving: false, error: "" });
+
+function openCreateDeptModal() {
+  createDeptModal.value = { open: true, name: "", description: "", saving: false, error: "" };
+}
+
+async function submitCreateNewDepartment() {
+  const name = createDeptModal.value.name.trim();
+  if (!name) { createDeptModal.value.error = "Department name is required."; return; }
+  createDeptModal.value.saving = true;
+  createDeptModal.value.error  = "";
+  try {
+    // 1. Create the department record.
+    const deptRes = await createDepartment({
+      name,
+      description: createDeptModal.value.description.trim() || "Student Scheduling System",
+    });
+    const newDept = deptRes.data;
+
+    // 2. Managers get a junction row so the department shows in their list
+    //    on next load (and we don't touch their primary id_department).
+    //    Admins don't need a junction — loadDepts pulls getAllDepartments()
+    //    for admins, so new departments appear automatically everywhere.
+    if (!isAdmin.value && currentUser.value?.id_employee) {
+      try {
+        await createManagerDepartment({
+          id_employee:   currentUser.value.id_employee,
+          id_department: newDept.id_department,
+        });
+      } catch (_) { /* non-critical — e.g. duplicate */ }
+    }
+
+    // 3. Append to the in-session department list and switch to it.
+    if (!myDepts.value.some(d => d.id_department === newDept.id_department)) {
+      myDepts.value = [...myDepts.value, newDept];
+    }
+    // Also keep allDepts (used by the "Request access" modal) in sync.
+    if (!allDepts.value.some(d => d.id_department === newDept.id_department)) {
+      allDepts.value = [...allDepts.value, newDept];
+    }
+    setDept(newDept.id_department);
+
+    createDeptModal.value.open = false;
+    await loadDeptData(newDept.id_department);
+  } catch (err) {
+    createDeptModal.value.error = err.response?.data?.message || err.message || "Failed to create department.";
+  } finally {
+    createDeptModal.value.saving = false;
+  }
+}
 
 async function submitCreateDepartment() {
   if (!createForm.value.name.trim()) { createError.value = "Department name is required."; return; }
@@ -849,7 +999,7 @@ async function submitCreateDepartment() {
 
     // 4. Show the new department
     myDepts.value = [newDept];
-    selectedDeptId.value = newDept.id_department;
+    setDept(newDept.id_department);
     noDeptsYet.value = false;
     await loadDeptData(newDept.id_department);
   } catch (err) {
@@ -861,7 +1011,6 @@ async function submitCreateDepartment() {
 
 // ── Init: load all depts for this manager ────────────────────────────────────
 async function initLoad() {
-  if (!isManager.value) return;
   initLoading.value = true;
   try {
     const empId = currentUser.value?.id_employee;
@@ -873,14 +1022,17 @@ async function initLoad() {
     ]);
     allDepts.value = allDeptsRes.status === "fulfilled" ? (allDeptsRes.value.data || []) : [];
 
-    if (myDepts.value.length === 0) {
-      noDeptsYet.value = true;
-    } else {
-      noDeptsYet.value = false;
-      await loadDeptData(selectedDeptId.value);
+    if (isManager.value) {
+      if (myDepts.value.length === 0) {
+        noDeptsYet.value = true;
+      } else {
+        noDeptsYet.value = false;
+        await loadDeptData(selectedDeptId.value);
+      }
     }
 
-    // Load this manager's pending access requests
+    // Load this user's pending access requests (managers and employees both
+    // need this for the "Your Pending Requests" list).
     if (empId) {
       const reqRes = await getDepartmentAccessRequests({ id_employeeRequester: empId, status: "Pending" });
       myPendingRequests.value = reqRes.data || [];
@@ -929,6 +1081,7 @@ async function loadDeptData(id) {
 
 
 watch(selectedDeptId, (id) => {
+  if (!isManager.value) return;       // employees use a read-only view
   if (!id || noDeptsYet.value) return;
   activeTab.value = "Overview";
   loadDeptData(id);
@@ -1220,8 +1373,15 @@ async function saveEmployee() {
         ...data,
         id_department: selectedDeptId.value || null,
       });
-      employees.value.push(res.data);
-      if ((data.role === "Manager" || data.role === "Admin") && selectedDeptId.value) {
+      // The backend may return a pre-existing employee (matched by email) —
+      // in that case the junction row was already created server-side and
+      // we just need to add them to the local list if not already shown.
+      const alreadyShown = employees.value.some(e => e.id_employee === res.data.id_employee);
+      if (!alreadyShown) employees.value.push(res.data);
+      // Brand-new managers/admins still get the manager junction created
+      // explicitly for their primary department.
+      const isNewRecord = res.data.email === data.email && res.data.fName === data.fName;
+      if (isNewRecord && (data.role === "Manager" || data.role === "Admin") && selectedDeptId.value) {
         await createManagerDepartment({ id_employee: res.data.id_employee, id_department: selectedDeptId.value });
       }
     }
@@ -1606,6 +1766,13 @@ async function saveBufferTime() {
 .nav-left  { display: flex; align-items: center; gap: 16px; }
 .nav-dept-switcher { display: flex; align-items: center; gap: 12px; }
 .nav-divider { width: 1px; height: 20px; background: var(--bdr-subtle); flex-shrink: 0; }
+.new-dept-btn {
+  background: var(--accent-bg); border: 1px solid var(--accent-border);
+  color: var(--accent); padding: 5px 12px; border-radius: 6px;
+  font-size: 12px; font-weight: 600; font-family: 'DM Sans', sans-serif;
+  cursor: pointer; transition: background 0.15s, border-color 0.15s;
+}
+.new-dept-btn:hover { background: var(--accent-subtle); border-color: var(--accent); }
 .nav-right { margin-left: auto; }
 .back-btn {
   display: flex; align-items: center; gap: 6px;
@@ -1988,4 +2155,67 @@ async function saveBufferTime() {
 .confirm-btn.danger:hover { background: var(--danger-btn-h); }
 .modal-enter-active, .modal-leave-active { transition: opacity 0.2s, transform 0.2s; }
 .modal-enter-from, .modal-leave-to { opacity: 0; transform: scale(0.96); }
+
+/* ── Employee My Departments view ───────────────────────────────────────── */
+.emp-page-title {
+  font-size: 16px; font-weight: 700; color: var(--tx-heading);
+  margin-left: 4px;
+}
+.emp-content { padding: 32px 36px; max-width: 960px; margin: 0 auto; width: 100%; }
+.emp-header-row {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 24px; flex-wrap: wrap; gap: 16px;
+}
+.emp-section-title { font-size: 22px; font-weight: 700; color: var(--tx-heading); margin-bottom: 4px; }
+.emp-section-sub   { font-size: 12px; color: var(--tx-faint); }
+.emp-empty {
+  padding: 40px; text-align: center; color: var(--tx-faint); font-size: 13px;
+  background: var(--bg-surface); border: 1px dashed var(--bdr-medium); border-radius: 12px;
+}
+.emp-dept-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+.emp-dept-card {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--bg-surface); border: 1px solid var(--bdr-subtle);
+  border-radius: 12px; padding: 16px 18px;
+  transition: border-color 0.15s, transform 0.05s;
+}
+.emp-dept-card:hover { border-color: var(--accent); }
+.emp-dept-color {
+  width: 8px; align-self: stretch; background: var(--accent); border-radius: 4px; flex-shrink: 0;
+}
+.emp-dept-body { flex: 1; min-width: 0; }
+.emp-dept-name { font-size: 15px; font-weight: 600; color: var(--tx-primary); margin-bottom: 2px; }
+.emp-dept-desc {
+  font-size: 12px; color: var(--tx-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.emp-dept-pill {
+  font-size: 10px; font-weight: 700; color: var(--accent);
+  background: var(--accent-bg); border: 1px solid var(--accent-border);
+  padding: 3px 8px; border-radius: 100px; text-transform: uppercase; letter-spacing: 0.08em;
+  flex-shrink: 0;
+}
+.emp-requests-section {
+  margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--bdr-subtle);
+}
+.emp-request-row {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--bg-surface); border: 1px solid var(--bdr-subtle);
+  border-radius: 10px; padding: 12px 16px; margin-top: 10px;
+}
+.emp-request-dept { flex: 1; font-size: 14px; font-weight: 600; color: var(--tx-primary); }
+.emp-request-status {
+  font-size: 11px; font-weight: 600; color: var(--warn-text);
+  background: var(--warn-bg); padding: 3px 10px; border-radius: 100px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.emp-cancel-btn {
+  background: none; border: 1px solid var(--bdr-medium); color: var(--tx-faint);
+  width: 26px; height: 26px; border-radius: 6px; cursor: pointer;
+  font-size: 12px; transition: color 0.15s, border-color 0.15s;
+}
+.emp-cancel-btn:hover { color: var(--err-text); border-color: var(--err-text); }
 </style>

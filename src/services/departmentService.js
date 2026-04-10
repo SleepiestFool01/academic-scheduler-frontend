@@ -40,6 +40,11 @@ export const getDeptManagers        = (id_department)          => apiClient.get(
 export const createManagerDepartment = (data)                  => apiClient.post(`/manager-departments`, data);
 export const deleteManagerDepartment = (id_managerDepartment)  => apiClient.delete(`/manager-departments/${id_managerDepartment}`);
 
+// ── Employee ↔ Department (multi-dept junction for non-manager staff) ────────
+export const getEmployeeDepartments  = (id_employee)            => apiClient.get(`/employee-departments?id_employee=${id_employee}`);
+export const createEmployeeDepartment = (data)                  => apiClient.post(`/employee-departments`, data);
+export const deleteEmployeeDepartment = (id_employeeDepartment) => apiClient.delete(`/employee-departments/${id_employeeDepartment}`);
+
 // ── Position ↔ Employee assignments ──────────────────────────────────────────
 export const getPositionEmployees   = (id_position) => apiClient.get(`/position-employees/position/${id_position}`);
 export const getEmployeePositions   = (id_employee) => apiClient.get(`/position-employees/employee/${id_employee}`);

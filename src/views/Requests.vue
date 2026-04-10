@@ -144,11 +144,11 @@
 
             <div class="request-actions">
               <span class="status-badge" :class="req.status">{{ req.status }}</span>
-              <template v-if="req.status === 'Pending'">
+              <template v-if="canApproveDeptRequest(req) && req.status === 'Pending'">
                 <button class="approve-btn" @click="approveDeptRequest(req)">✓ Approve</button>
                 <button class="deny-btn"    @click="denyDeptRequest(req)">✕ Deny</button>
               </template>
-              <button class="icon-action danger" title="Delete" @click="confirmDeleteDeptReq(req)">✕</button>
+              <button v-if="canApproveDeptRequest(req)" class="icon-action danger" title="Delete" @click="confirmDeleteDeptReq(req)">✕</button>
             </div>
           </div>
         </div>
@@ -215,6 +215,7 @@ const currentUser       = ref(Utils.getStore("user"));
 const isAdminOrManager  = computed(() =>
   currentUser.value?.role === "Admin" || currentUser.value?.role === "Manager"
 );
+const isAdmin = computed(() => currentUser.value?.role === "Admin");
 
 const employees    = ref([]);
 const availability = ref([]);
@@ -253,9 +254,14 @@ async function loadAll() {
     loading.value = false;
   }
 }
-const { selectedDeptId } = useDepartment();
+const { selectedDeptId, myDepts, loadDepts } = useDepartment();
 watch(selectedDeptId, loadAll);
-onMounted(loadAll);
+onMounted(async () => {
+  // Ensure myDepts is populated so we can filter dept-access requests
+  // for managers who haven't visited a page that loads departments yet.
+  if (!myDepts.value.length) await loadDepts(currentUser.value);
+  loadAll();
+});
 
 const pendingRequests = computed(() => availability.value.filter(r => r.status === "pending"));
 
@@ -299,22 +305,54 @@ const deptLoading   = ref(false);
 const deptTab       = ref("pending");
 const deptSearch    = ref("");
 
+// Map of every employee in the system, used to look up the requester's
+// role when deciding whether a manager can approve a given request.
+const allEmpRoles = ref({}); // { [id_employee]: role }
+
 async function loadDeptRequests() {
   deptLoading.value = true;
   try {
-    const res = await getDepartmentAccessRequests({});
-    deptRequests.value = res.data || [];
+    const [reqRes, empRes] = await Promise.all([
+      getDepartmentAccessRequests({}),
+      apiClient.get("/employees"),
+    ]);
+    deptRequests.value = reqRes.data || [];
+    const map = {};
+    for (const e of empRes.data || []) map[e.id_employee] = e.role;
+    allEmpRoles.value = map;
   } catch { /* silent */ } finally {
     deptLoading.value = false;
   }
 }
 
+// Returns true if the current user is allowed to approve / deny the given
+// dept-access request. Mirrors the backend authorization rules so the UI
+// stays in sync.
+function canApproveDeptRequest(req) {
+  if (isAdmin.value) return true;
+  if (currentUser.value?.role !== "Manager") return false;
+  // Manager can only act on requests targeting their managed departments…
+  const myDeptIds = new Set(myDepts.value.map(d => Number(d.id_department)));
+  if (!myDeptIds.has(Number(req.id_department))) return false;
+  // …and only when the requester is a regular Employee, not a Manager/Admin.
+  const requesterRole = allEmpRoles.value[req.id_employeeRequester];
+  return requesterRole && requesterRole !== "Manager" && requesterRole !== "Admin";
+}
+
+// Managers only see requests targeting departments they manage. Admins see
+// all requests across the system.
+const visibleDeptRequests = computed(() => {
+  if (isAdmin.value) return deptRequests.value;
+  const myDeptIds = new Set(myDepts.value.map(d => Number(d.id_department)));
+  return deptRequests.value.filter(r => myDeptIds.has(Number(r.id_department)));
+});
+
 const pendingDeptRequests = computed(() =>
-  deptRequests.value.filter(r => r.status === "Pending")
+  visibleDeptRequests.value.filter(r => r.status === "Pending")
 );
 
 const displayedDeptRequests = computed(() => {
-  let list = deptTab.value === "pending" ? pendingDeptRequests.value : deptRequests.value;
+  let list = deptTab.value === "pending" ? pendingDeptRequests.value : visibleDeptRequests.value;
   const q = deptSearch.value.toLowerCase();
   if (q) list = list.filter(r => nameFor(r.id_employeeRequester).toLowerCase().includes(q));
   return list;

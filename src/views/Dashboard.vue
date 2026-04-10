@@ -23,7 +23,7 @@
           <rect x="15" y="14" width="11" height="7" rx="2" fill="#F0E6D3"/>
         </svg>
       </div>
-      <DeptSwitcher v-if="isManager" />
+      <DeptSwitcher />
       <div class="nav-divider" v-if="isManager && myDepts.length > 0"></div>
       <div class="nav-tabs">
         <button v-for="tab in tabs" :key="tab" class="nav-tab"
@@ -754,11 +754,11 @@ const loading = ref(true);
 const apiError = ref(null);
 
 const tabs = computed(() => {
-  const base = ["Dashboard", "Shifts", "Tradeboard", "Tasks", "Requests"];
-  if (currentUser.value?.role === "Manager" || currentUser.value?.role === "Admin") {
-    base.splice(1, 0, "Templates", "Department");
+  const role = currentUser.value?.role;
+  if (role === "Manager" || role === "Admin") {
+    return ["Dashboard", "Department", "Templates", "Tradeboard", "Tasks", "Shifts", "Requests"];
   }
-  return base;
+  return ["Dashboard", "Department", "Tradeboard", "Tasks", "Shifts", "Requests"];
 });
 const dayLetters  = ["S","M","T","W","R","F","S"];
 const hours = Array.from({ length: 24 }, (_, i) => i);
@@ -2062,7 +2062,9 @@ watch(myTodayShifts, () => { loadMyTasks(); }, { deep: false });
 
 let clockInterval = null;
 onMounted(async () => {
-  if (isManager.value) await loadDepts(currentUser.value);
+  // Load department list for everyone — employees may belong to multiple
+  // departments via the employeeDepartment junction and need the switcher.
+  await loadDepts(currentUser.value);
   await loadAll();
   if (calBody.value) calBody.value.scrollTop = 7 * cellHeight.value; // scroll to 7am
   window.addEventListener("keydown", onDashKeydown);
