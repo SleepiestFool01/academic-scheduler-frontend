@@ -134,6 +134,7 @@
             <div class="section-title-row">
               <span class="section-dot dot--faint"></span>
               <h2 class="section-title">History</h2>
+              <span class="section-sub">Past 7 days</span>
             </div>
           </div>
           <div class="table-wrap">
@@ -156,7 +157,7 @@
                   <td><span class="status-badge" :class="r.status.toLowerCase()">{{ r.status }}</span></td>
                 </tr>
                 <tr v-if="allRequests.length === 0">
-                  <td colspan="5" class="empty-row">No trade requests yet.</td>
+                  <td colspan="5" class="empty-row">No trade activity in the past 7 days.</td>
                 </tr>
               </tbody>
             </table>
@@ -268,7 +269,7 @@
               <span class="section-dot dot--faint"></span>
               <h2 class="section-title">My Posts</h2>
             </div>
-            <span class="section-sub">Shifts you've put on the board.</span>
+            <span class="section-sub">Shifts you've put on the board — past 7 days.</span>
           </div>
           <div class="table-wrap">
             <table class="data-table">
@@ -290,7 +291,7 @@
                   <td><span class="status-badge" :class="r.status.toLowerCase()">{{ r.status }}</span></td>
                 </tr>
                 <tr v-if="myPosts.length === 0">
-                  <td colspan="5" class="empty-row">You haven't posted any shifts yet.</td>
+                  <td colspan="5" class="empty-row">No posts in the past 7 days.</td>
                 </tr>
               </tbody>
             </table>
@@ -543,7 +544,13 @@ const needsApproval = computed(() =>
 const openBoard = computed(() =>
   swapRequests.value.filter(r => r.status === "Pending" && r.id_employeeRequested == null)
 );
-const allRequests = computed(() => swapRequests.value);
+const allRequests = computed(() => {
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  return swapRequests.value.filter(r => {
+    const ts = new Date(r.updatedAt || r.createdAt || 0).getTime();
+    return ts >= cutoff;
+  });
+});
 
 // Employee
 const openTrades = computed(() =>
@@ -563,9 +570,14 @@ const myClaims = computed(() =>
   // Shifts I've claimed, awaiting approval
   swapRequests.value.filter(r => r.status === "Pending" && r.id_employeeRequested === currentUser.value.id_employee)
 );
-const myPosts = computed(() =>
-  swapRequests.value.filter(r => r.id_employeeRequester === currentUser.value.id_employee)
-);
+const myPosts = computed(() => {
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  return swapRequests.value.filter(r => {
+    if (r.id_employeeRequester !== currentUser.value.id_employee) return false;
+    const ts = new Date(r.updatedAt || r.createdAt || 0).getTime();
+    return ts >= cutoff;
+  });
+});
 
 // Shifts I can post: assigned to me, not already on the board as pending,
 // and starting strictly in the future (past + in-progress shifts excluded).
