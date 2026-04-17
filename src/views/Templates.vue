@@ -20,7 +20,10 @@
             Build reusable schedule templates filled with shifts, then apply them to any week.
           </p>
         </div>
-        <input v-model="search" class="search-input" placeholder="Search templates…" />
+        <div class="panel-header-actions">
+          <input v-model="search" class="search-input" placeholder="Search templates…" />
+          <button class="primary-btn" @click="openCreate">+ New Template</button>
+        </div>
       </div>
 
       <!-- Empty state -->
@@ -800,6 +803,7 @@ function formatDate(iso) {
 }
 .panel-title { font-size: 22px; font-weight: 700; margin: 0 0 4px; color: var(--tx-heading); }
 .panel-sub   { font-size: 15px; color: var(--tx-faint); margin: 0; }
+.panel-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .search-input {
   background: var(--bg-modal);
   border: 1px solid var(--bdr-faint);
