@@ -19,7 +19,7 @@
         <h1 class="page-title">Profile</h1>
       </div>
       <div class="nav-right">
-        <button v-if="isEmployee" class="primary-btn" @click="openPostModal">
+        <button class="primary-btn" @click="openEditProfile">
           Edit Profile
         </button>
       </div>
@@ -48,9 +48,32 @@
       </div>
     </div>
 
-    <!-- ── Post shift modal ── -->
+    <!-- ── Profile edit modal ── -->
     <Transition name="modal">
-      
+      <div v-if="modal.open" class="modal-overlay" @click.self="closeModal">
+        <div class="modal">
+          <h3 class="modal-title">Update Profile</h3>
+          <div class="form-group">
+            <label>First Name</label>
+            <input v-model="modal.data.fName" type="string" placeholder="First Name" />
+          </div>
+          <div class="form-group">
+            <label>Last Name</label>
+            <input v-model="modal.data.lName" type="string" placeholder="Last Name" />
+          </div>
+          <div class="form-group">
+            <label>Bio</label>
+            <input v-model="modal.data.bio" type="text" placeholder="Write something about yourself" />
+          </div>
+          <p v-if="modal.error" class="modal-error">{{ modal.error }}</p>
+          <div class="modal-actions">
+            <button class="cancel-btn" @click="closeModal">Cancel</button>
+            <button class="confirm-btn" :disabled="modal.saving" @click="saveModal">
+              {{ modal.saving ? 'Saving…' : 'Save Changes' }}
+            </button>
+          </div>
+        </div>
+      </div>
     </Transition>
   </div>
 </template>
@@ -142,32 +165,42 @@ const myRequests      = computed(() => swapRequests.value.filter(r => r.id_emplo
 const otherEmployees  = computed(() => employees.value.filter(e => e.id_employee !== currentUser.id_employee));
 
 // ── Post shift modal ──
-const modal = ref({ open: false, id_shift: null, id_employeeRequested: "", saving: false, error: "" });
+const modal = ref({ open: false, data: {}, editId: null, saving: false, error: "" });
 
-function openPostModal() {
-  modal.value = { open: true, id_shift: myShifts.value[0]?.id_shift || null, id_employeeRequested: "", saving: false, error: "" };
+function openEditProfile() {
+  modal.value = { open: true, data: {}, editId: null, saving: false, error: "" };
 }
 
-async function postShift() {
-  if (!modal.value.id_shift) { modal.value.error = "Please select a shift."; return; }
+function closeModal() { modal.value.open = false; }
+
+async function saveModal() {
   modal.value.saving = true; modal.value.error = "";
+  const { data, editId } = modal.value;
   try {
-    const payload = {
-      id_shift:             modal.value.id_shift,
-      id_employeeRequester: currentUser.id_employee,
-      id_employeeRequested: modal.value.id_employeeRequested || currentUser.id_employee,
-      status: "Pending",
-    };
-    const { data } = await apiClient.post("/swap-requests", payload);
-    const shift = myShifts.value.find(s => s.id_shift === modal.value.id_shift);
-    swapRequests.value.push({
-      ...data,
-      shiftDate: shift?.date || "—",
-      shiftTime: shift ? `${shift.startLabel}–${shift.endLabel}` : "—",
-    });
-    modal.value.open = false;
+    if (type === "list") {
+      if (!data.name) throw new Error("Name is required.");
+      if (isEdit) {
+        await apiClient.put(`/task-lists/${editId}`, data);
+        const idx = taskLists.value.findIndex(l => l.id_taskList === editId);
+        if (idx !== -1) taskLists.value[idx] = { ...taskLists.value[idx], ...data };
+      } else {
+        const res = await apiClient.post("/task-lists", data);
+        taskLists.value.push(res.data);
+      }
+    } else {
+      if (!data.name || !data.description) throw new Error("Name and description are required.");
+      if (isEdit) {
+        await apiClient.put(`/tasks/${editId}`, data);
+        const idx = tasks.value.findIndex(t => t.id_task === editId);
+        if (idx !== -1) tasks.value[idx] = { ...tasks.value[idx], ...data };
+      } else {
+        const res = await apiClient.post("/tasks", data);
+        tasks.value.push(res.data);
+      }
+    }
+    closeModal();
   } catch (err) {
-    modal.value.error = err.message || "Failed to post shift.";
+    modal.value.error = err.message || "Save failed.";
   } finally {
     modal.value.saving = false;
   }
