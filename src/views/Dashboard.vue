@@ -70,11 +70,11 @@
               <span class="sb-req-type">Time Off</span>
             </div>
             <div class="sb-req-dates">{{ item.startDate }} → {{ item.endDate }}</div>
-            <div v-if="item.status === 'pending'" class="sb-req-actions">
-              <button class="sb-approve-btn" @click.stop="sidebarRequestAction(item, 'approved')">✓ Approve</button>
-              <button class="sb-deny-btn"    @click.stop="sidebarRequestAction(item, 'denied')">✕ Deny</button>
+            <div v-if="item.status === 'Pending'" class="sb-req-actions">
+              <button class="sb-approve-btn" @click.stop="sidebarRequestAction(item, 'Approved')">✓ Approve</button>
+              <button class="sb-deny-btn"    @click.stop="sidebarRequestAction(item, 'Denied')">✕ Deny</button>
             </div>
-            <span v-else class="sb-req-status" :class="item.status">{{ item.status }}</span>
+            <span v-else class="sb-req-status" :class="item.status.toLowerCase()">{{ item.status }}</span>
           </div>
         </div>
 
@@ -434,9 +434,28 @@
           <label>Employee <span class="label-optional">(optional)</span></label>
           <select v-model="quickCreate.employee" :disabled="!quickCreate.id_position">
             <option value="">— Unassigned —</option>
-            <option v-for="e in employeesForPosition(quickCreate.id_position)" :key="e.name" :value="e.name">{{ e.name }}</option>
+            <option
+              v-for="e in employeesForPosition(quickCreate.id_position, {
+                date: quickCreate.date ? dateToKey(quickCreate.date) : null,
+                startHour: fromTimeInput(quickCreate.startTime || '00:00'),
+                endHour: fromTimeInput(quickCreate.endTime || '23:59'),
+              })"
+              :key="e.name"
+              :value="e.name"
+            >
+              {{ e.name }}
+            </option>
           </select>
-          <p v-if="quickCreate.id_position && employeesForPosition(quickCreate.id_position).length === 0" class="label-optional">No employees assigned to this position.</p>
+          <p
+            v-if="quickCreate.id_position && employeesForPosition(quickCreate.id_position, {
+              date: quickCreate.date ? dateToKey(quickCreate.date) : null,
+              startHour: fromTimeInput(quickCreate.startTime || '00:00'),
+              endHour: fromTimeInput(quickCreate.endTime || '23:59'),
+            }).length === 0"
+            class="label-optional"
+          >
+            No available employees for this position and time.
+          </p>
         </div>
         <div class="form-row">
           <div class="form-group"><label>Start</label><input type="time" v-model="quickCreate.startTime" /></div>
@@ -470,11 +489,34 @@
             <select
               v-model="newShift.employee"
               :disabled="!newShift.id_position"
-              @change="newShift.id_employee = employeesForPosition(newShift.id_position).find(e => e.name === newShift.employee)?.id_employee ?? null">
+              @change="newShift.id_employee = employeesForPosition(newShift.id_position, {
+                date: dateKey(weekOffset, Number(newShift.dayIndex)),
+                startHour: fromTimeInput(newShift.startTime || '00:00'),
+                endHour: fromTimeInput(newShift.endTime || '23:59'),
+              }).find(e => e.name === newShift.employee)?.id_employee ?? null">
               <option value="">— Unassigned —</option>
-              <option v-for="e in employeesForPosition(newShift.id_position)" :key="e.name" :value="e.name">{{ e.name }}</option>
+              <option
+                v-for="e in employeesForPosition(newShift.id_position, {
+                  date: dateKey(weekOffset, Number(newShift.dayIndex)),
+                  startHour: fromTimeInput(newShift.startTime || '00:00'),
+                  endHour: fromTimeInput(newShift.endTime || '23:59'),
+                })"
+                :key="e.name"
+                :value="e.name"
+              >
+                {{ e.name }}
+              </option>
             </select>
-            <p v-if="newShift.id_position && employeesForPosition(newShift.id_position).length === 0" class="label-optional">No employees assigned to this position.</p>
+            <p
+              v-if="newShift.id_position && employeesForPosition(newShift.id_position, {
+                date: dateKey(weekOffset, Number(newShift.dayIndex)),
+                startHour: fromTimeInput(newShift.startTime || '00:00'),
+                endHour: fromTimeInput(newShift.endTime || '23:59'),
+              }).length === 0"
+              class="label-optional"
+            >
+              No available employees for this position and time.
+            </p>
           </div>
           <div class="form-group">
             <label>Day</label>
@@ -922,6 +964,7 @@ const employeeMap  = ref({});
 const shifts             = ref([]);
 const pendingRequests    = ref([]);
 const sidebarAvailability = ref([]);
+const approvedAvailability = ref([]);
 const calendarHours   = ref([]); // hours of operation from department calendar
 const activeSeason    = ref(""); // currently active season name (empty = no filter)
 const deptEvents      = ref([]); // department events
@@ -930,14 +973,36 @@ const positions       = ref([]);
 // Map of id_position → array of id_employee assigned to that position
 const positionEmployeeIds = ref({});
 
+function normalizeAvailabilityStatus(status) {
+  const value = String(status || "").toLowerCase();
+  if (value === "approved") return "Approved";
+  if (value === "denied") return "Denied";
+  return "Pending";
+}
+
 // Returns the employees that may be assigned to a shift of the given position.
 // If no position is selected, returns no employees (forces position-first).
-function employeesForPosition(id_position) {
+function employeesForPosition(id_position, options = {}) {
   if (id_position == null || id_position === "") return [];
   const ids = positionEmployeeIds.value[id_position];
   if (!ids) return [];
   const idSet = new Set(ids);
-  return employees.value.filter(e => idSet.has(e.id_employee));
+  const eligible = employees.value.filter(e => idSet.has(e.id_employee));
+  const { date, startHour, endHour } = options;
+  if (!date || startHour == null || endHour == null) return eligible;
+  return eligible.filter((employee) =>
+    !employeeHasApprovedTimeOff(employee.id_employee, date, startHour, endHour)
+  );
+}
+
+function employeeHasApprovedTimeOff(id_employee, date, startHour, endHour) {
+  return approvedAvailability.value.some((request) => {
+    if (request.id_employee !== id_employee) return false;
+    if (date < request.startDate || date > request.endDate) return false;
+    const reqStart = timeStrToHour(request.startTime);
+    const reqEnd = timeStrToHour(request.endTime);
+    return startHour < reqEnd && reqStart < endHour;
+  });
 }
 
 // Can the current (employee) user claim this unassigned shift?
@@ -1233,6 +1298,7 @@ const managerRequestItems = computed(() => {
     const emp = employeeMap.value[a.id_employee];
     return {
       id_personalAvailability: a.id_personalAvailability,
+      id_employee: a.id_employee,
       empName:   emp ? `${emp.fName} ${emp.lName}` : `Employee #${a.id_employee}`,
       startDate: a.startDate || '—',
       endDate:   a.endDate   || '—',
@@ -1242,10 +1308,14 @@ const managerRequestItems = computed(() => {
 });
 
 function sidebarRequestAction(item, status) {
-  const idx = sidebarAvailability.value.findIndex(
-    a => a.id_personalAvailability === item.id_personalAvailability
-  );
-  if (idx !== -1) sidebarAvailability.value[idx] = { ...sidebarAvailability.value[idx], status };
+  apiClient.put(
+    `/personal-availability/employees/${item.id_employee}/${item.id_personalAvailability}`,
+    { status }
+  ).then(() => {
+    sidebarAvailability.value = sidebarAvailability.value.filter(
+      a => a.id_personalAvailability !== item.id_personalAvailability
+    );
+  }).catch(() => {});
 }
 
 const currentTimePx = computed(() => {
@@ -1763,10 +1833,14 @@ async function loadAll() {
     // Load time-off requests for manager sidebar (non-blocking)
     if (isManager.value) {
       apiClient.get("/personal-availability").then(res => {
+        const normalized = (res.data || []).map(a => ({
+          ...a,
+          status: normalizeAvailabilityStatus(a.status),
+        }));
+        approvedAvailability.value = normalized.filter(a => a.status === "Approved");
         const deptEmpIds = new Set(empList.map(e => e.id_employee));
-        sidebarAvailability.value = (res.data || [])
-          .filter(a => deptEmpIds.has(a.id_employee) && a.status === "pending")
-          .map(a => ({ ...a }));
+        sidebarAvailability.value = normalized
+          .filter(a => deptEmpIds.has(a.id_employee) && a.status === "Pending");
       }).catch(() => {});
     }
     // Load hours of operation + events for this user's department (non-blocking)
