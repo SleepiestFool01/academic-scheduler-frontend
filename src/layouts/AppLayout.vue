@@ -1,8 +1,10 @@
 <template>
   <div class="app-layout">
     <nav class="topnav">
-      <img v-if="isDark" src="../assets/cowork_logo_dark.png" alt="CoWork" class="nav-logo-img" />
-      <img v-else src="../assets/cowork_logo_light.png" alt="CoWork" class="nav-logo-img" />
+      <router-link to="/dashboard" class="nav-logo-link" aria-label="Go to dashboard">
+        <img v-if="isDark" src="../assets/cowork_logo_dark.png" alt="CoWork" class="nav-logo-img" />
+        <img v-else src="../assets/cowork_logo_light.png" alt="CoWork" class="nav-logo-img" />
+      </router-link>
       <DeptSwitcher />
       <div class="nav-tabs">
         <router-link
@@ -162,7 +164,26 @@ onMounted(async () => {
   z-index: 100;
 }
 
-.nav-logo-img { height: 44px; width: auto; object-fit: contain; }
+.nav-logo-link {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  border-radius: 8px;
+  padding: 4px;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.nav-logo-link:hover {
+  background: var(--accent-bg);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.nav-logo-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.nav-logo-img { height: 44px; width: auto; object-fit: contain; display: block; }
 
 .nav-tabs { display: flex; gap: 4px; flex: 1; }
 .nav-tab {
