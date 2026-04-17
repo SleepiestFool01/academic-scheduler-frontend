@@ -169,6 +169,13 @@ onMounted(async () => {
   align-items: center;
   flex-shrink: 0;
   border-radius: 8px;
+  padding: 4px;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.nav-logo-link:hover {
+  background: var(--accent-bg);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
 }
 
 .nav-logo-link:focus-visible {
