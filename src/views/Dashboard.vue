@@ -34,29 +34,6 @@
 
         <!-- ══ MANAGER SIDEBAR ══ -->
         <div v-if="isManager" class="sidebar-section">
-          <div class="sidebar-sec-header">
-            <span class="sidebar-sec-title">Today's Employees</span>
-            <span v-if="todaysEmployees.length" class="sidebar-sec-count">{{ todaysEmployees.length }}</span>
-          </div>
-          <div v-for="emp in todaysEmployees" :key="emp.name" class="employee-chip" :style="{ background: emp.color }">{{ emp.name }}</div>
-          <div v-if="todaysEmployees.length === 0" class="sidebar-empty">No shifts today</div>
-        </div>
-        <div v-if="isManager" class="sidebar-section">
-          <div class="sidebar-sec-header">
-            <span class="sidebar-sec-title">Open Shifts</span>
-            <span class="sidebar-sec-sub">this week</span>
-          </div>
-          <div v-if="computedOpenShifts.length === 0" class="sidebar-empty">No open shifts this week</div>
-          <div v-for="s in computedOpenShifts" :key="s.key" class="open-shift-item">
-            <span class="open-shift-day">{{ s.dayLabel }}</span>
-            <div class="open-shift-gaps">
-              <div v-for="(gap, gi) in s.gaps" :key="gi" class="open-shift-gap-row">
-                <span class="open-shift-gap">{{ gap.label }}<span v-if="gap.positionName" class="open-shift-pos">{{ gap.positionName }}</span></span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div v-if="isManager" class="sidebar-section">
           <div class="sidebar-sec-header clickable" @click="router.push('/tradeboard')">
             <span class="sidebar-sec-title">Tradeboard</span>
             <span v-if="managerTradeboardItems.length" class="sidebar-sec-count">{{ managerTradeboardItems.length }}</span>
@@ -99,6 +76,31 @@
             </div>
             <span v-else class="sb-req-status" :class="item.status.toLowerCase()">{{ item.status }}</span>
           </div>
+        </div>
+
+        <div v-if="isManager" class="sidebar-section">
+          <div class="sidebar-sec-header">
+            <span class="sidebar-sec-title">Open Shifts</span>
+            <span class="sidebar-sec-sub">this week</span>
+          </div>
+          <div v-if="computedOpenShifts.length === 0" class="sidebar-empty">No open shifts this week</div>
+          <div v-for="s in computedOpenShifts" :key="s.key" class="open-shift-item">
+            <span class="open-shift-day">{{ s.dayLabel }}</span>
+            <div class="open-shift-gaps">
+              <div v-for="(gap, gi) in s.gaps" :key="gi" class="open-shift-gap-row">
+                <span class="open-shift-gap">{{ gap.label }}<span v-if="gap.positionName" class="open-shift-pos">{{ gap.positionName }}</span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="isManager" class="sidebar-section">
+          <div class="sidebar-sec-header">
+            <span class="sidebar-sec-title">Today's Employees</span>
+            <span v-if="todaysEmployees.length" class="sidebar-sec-count">{{ todaysEmployees.length }}</span>
+          </div>
+          <div v-for="emp in todaysEmployees" :key="emp.name" class="employee-chip" :style="{ background: emp.color }">{{ emp.name }}</div>
+          <div v-if="todaysEmployees.length === 0" class="sidebar-empty">No shifts today</div>
         </div>
 
         <!-- ══ EMPLOYEE SIDEBAR ══ -->
@@ -177,7 +179,6 @@
 
       <!-- ── Main Calendar ── -->
       <main class="cal-main" :class="{ 'cmd-create-mode': cmdHeld && isManager }">
-        <div v-if="deptName" class="dept-name-bar">{{ deptName }}</div>
         <div class="cal-toolbar">
           <div class="cal-nav-group">
             <button class="toolbar-btn" @click="navigate(-1)">‹</button>
@@ -185,7 +186,35 @@
             <button class="toolbar-btn" @click="navigate(1)">›</button>
             <button class="today-btn" @click="goToday">Today</button>
           </div>
-          <div class="cal-view-group">
+          <div v-if="isManager" class="tpl-dropdown-wrap" @click.stop>
+            <button class="tpl-dropdown-btn" @click="toggleTemplateDropdown"
+              :class="{ active: templateDropdownOpen }" title="Apply a template">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="flex-shrink:0">
+                <rect x="1" y="3" width="14" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M5 1v4M11 1v4M1 7h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <span>Apply Template</span>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
+                :style="{ transform: templateDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform .15s' }">
+                <path d="M2 3.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <Transition name="tpl-dd-pop">
+              <div v-if="templateDropdownOpen" class="tpl-dd-menu" @click.stop>
+                <div v-if="templatesLoading" class="tpl-dd-empty">Loading…</div>
+                <div v-else-if="templates.length === 0" class="tpl-dd-empty">
+                  No templates yet.
+                  <button class="tpl-dd-link" @click="router.push('/templates')">Create one →</button>
+                </div>
+                <button v-for="tpl in templates" :key="tpl.id_template" class="tpl-dd-item"
+                  @click="openApplyFromDashboard(tpl)">
+                  <span class="tpl-dd-name">{{ tpl.name }}</span>
+                  <span v-if="tpl.description" class="tpl-dd-desc">{{ tpl.description }}</span>
+                </button>
+              </div>
+            </Transition>
+          </div>
+          <div class="cal-view-group" :class="{ 'push-right': !isManager }">
             <button v-for="v in ['Day','Week','Month']" :key="v" class="view-btn"
               :class="{ active: calView === v }" @click="setView(v)">{{ v }}</button>
           </div>
@@ -247,7 +276,21 @@
                   @mousedown="onShiftBlockMouseDown($event, 0)" @click.stop="onShiftBlockClick(shift, $event)">
                   <div class="shift-employee">{{ shift.employee || 'Unassigned' }}</div>
                   <div class="shift-time">{{ shift.startLabel }} – {{ shift.endLabel }}</div>
-                  <div v-if="shift.positionName" class="shift-pos-badge">{{ shift.positionName }}</div>
+                  <div v-if="shift.positionName || (isManager && shiftTaskBadge(shift))" class="shift-meta-row">
+                    <span v-if="shift.positionName" class="shift-pos-badge">{{ shift.positionName }}</span>
+                    <span v-if="isManager && shiftTaskBadge(shift)"
+                      class="shift-task-status"
+                      :class="{ 'shift-task-status--done': shiftTaskBadge(shift).allDone }">
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <path d="M2 5.2L4 7.2L8 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                      <span>{{ shiftTaskBadge(shift).allDone ? 'Done' : shiftTaskBadge(shift).label }}</span>
+                    </span>
+                  </div>
+                  <button v-if="canTakeShift(shift)" class="take-shift-btn"
+                    @click.stop="takeShift(shift, $event)"
+                    @mousedown.stop
+                    title="Take this shift">Take</button>
                 </div>
                 <div v-if="isTodayDate(dayViewDate)" class="current-time-line" :style="{ top: currentTimePx + 'px' }"></div>
               </div>
@@ -304,7 +347,21 @@
                   @mousedown="onShiftBlockMouseDown($event, colIdx)" @click.stop="onShiftBlockClick(shift, $event)">
                   <div class="shift-employee">{{ shift.employee || 'Unassigned' }}</div>
                   <div class="shift-time">{{ shift.startLabel }} – {{ shift.endLabel }}</div>
-                  <div v-if="shift.positionName" class="shift-pos-badge">{{ shift.positionName }}</div>
+                  <div v-if="shift.positionName || (isManager && shiftTaskBadge(shift))" class="shift-meta-row">
+                    <span v-if="shift.positionName" class="shift-pos-badge">{{ shift.positionName }}</span>
+                    <span v-if="isManager && shiftTaskBadge(shift)"
+                      class="shift-task-status"
+                      :class="{ 'shift-task-status--done': shiftTaskBadge(shift).allDone }">
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <path d="M2 5.2L4 7.2L8 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                      <span>{{ shiftTaskBadge(shift).allDone ? 'Done' : shiftTaskBadge(shift).label }}</span>
+                    </span>
+                  </div>
+                  <button v-if="canTakeShift(shift)" class="take-shift-btn"
+                    @click.stop="takeShift(shift, $event)"
+                    @mousedown.stop
+                    title="Take this shift">Take</button>
                 </div>
                 <div v-if="isTodayDate(date)" class="current-time-line" :style="{ top: currentTimePx + 'px' }"></div>
               </div>
@@ -637,6 +694,154 @@
     </div>
   </Transition>
 
+  <!-- ── Apply Template Modal (Dashboard quick-apply) ── -->
+  <Transition name="modal">
+    <div v-if="applyModal.open" class="modal-overlay" @click.self="applyModal.open = false">
+      <div class="modal tpl-apply-modal">
+        <h3 class="modal-title">Apply Template</h3>
+        <p class="tpl-apply-name">{{ applyModal.template?.name }}</p>
+
+        <div class="tpl-form-group">
+          <label>Period Length</label>
+          <div class="tpl-period-options">
+            <button
+              v-for="opt in PERIOD_OPTIONS"
+              :key="opt.value"
+              class="tpl-period-opt"
+              :class="{ active: applyModal.period === opt.value }"
+              @click="applyModal.period = opt.value"
+            >{{ opt.label }}</button>
+          </div>
+        </div>
+
+        <div v-if="!isCustomPeriod" class="tpl-form-group">
+          <label>Period Start</label>
+          <div class="tpl-date-picker-wrap">
+            <button class="tpl-date-trigger" @click.stop="openPicker('start', applyModal.startDate)">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" class="tpl-date-trigger-icon">
+                <rect x="1" y="3" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                <line x1="1" y1="7" x2="15" y2="7" stroke="currentColor" stroke-width="1.5"/>
+                <line x1="5" y1="1" x2="5" y2="5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="11" y1="1" x2="11" y2="5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <span>{{ formatDateDisplay(applyModal.startDate) || 'Select date' }}</span>
+            </button>
+            <Transition name="tpl-dpc-pop">
+              <div v-if="datePicker.open && datePicker.field === 'start'" class="tpl-dpc-dropdown" @click.stop>
+                <div class="tpl-dpc-header">
+                  <button class="tpl-dpc-nav" @click="prevPickerMonth">‹</button>
+                  <span class="tpl-dpc-month-label">{{ pickerMonthLabel }}</span>
+                  <button class="tpl-dpc-nav" @click="nextPickerMonth">›</button>
+                </div>
+                <div class="tpl-dpc-dow-row">
+                  <span v-for="d in ['Su','Mo','Tu','We','Th','Fr','Sa']" :key="d" class="tpl-dpc-dow">{{ d }}</span>
+                </div>
+                <div class="tpl-dpc-days">
+                  <span v-for="p in pickerStartPad" :key="'p'+p" class="tpl-dpc-cell tpl-dpc-empty"></span>
+                  <span v-for="day in pickerDaysInMonth" :key="day" class="tpl-dpc-cell"
+                    :class="{ 'tpl-dpc-selected': isPickerDaySelected(day), 'tpl-dpc-today': isPickerDayToday(day) }"
+                    @click="selectPickerDay(day)">{{ day }}</span>
+                </div>
+              </div>
+            </Transition>
+          </div>
+        </div>
+
+        <div v-if="isCustomPeriod" class="tpl-form-row-dates">
+          <div class="tpl-form-group">
+            <label>Start Date</label>
+            <div class="tpl-date-picker-wrap">
+              <button class="tpl-date-trigger" @click.stop="openPicker('start', applyModal.startDate)">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" class="tpl-date-trigger-icon">
+                  <rect x="1" y="3" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                  <line x1="1" y1="7" x2="15" y2="7" stroke="currentColor" stroke-width="1.5"/>
+                  <line x1="5" y1="1" x2="5" y2="5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  <line x1="11" y1="1" x2="11" y2="5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                <span>{{ formatDateDisplay(applyModal.startDate) || 'Select date' }}</span>
+              </button>
+              <Transition name="tpl-dpc-pop">
+                <div v-if="datePicker.open && datePicker.field === 'start'" class="tpl-dpc-dropdown" @click.stop>
+                  <div class="tpl-dpc-header">
+                    <button class="tpl-dpc-nav" @click="prevPickerMonth">‹</button>
+                    <span class="tpl-dpc-month-label">{{ pickerMonthLabel }}</span>
+                    <button class="tpl-dpc-nav" @click="nextPickerMonth">›</button>
+                  </div>
+                  <div class="tpl-dpc-dow-row">
+                    <span v-for="d in ['Su','Mo','Tu','We','Th','Fr','Sa']" :key="d" class="tpl-dpc-dow">{{ d }}</span>
+                  </div>
+                  <div class="tpl-dpc-days">
+                    <span v-for="p in pickerStartPad" :key="'p'+p" class="tpl-dpc-cell tpl-dpc-empty"></span>
+                    <span v-for="day in pickerDaysInMonth" :key="day" class="tpl-dpc-cell"
+                      :class="{ 'tpl-dpc-selected': isPickerDaySelected(day), 'tpl-dpc-today': isPickerDayToday(day) }"
+                      @click="selectPickerDay(day)">{{ day }}</span>
+                  </div>
+                </div>
+              </Transition>
+            </div>
+          </div>
+          <div class="tpl-date-range-arrow">→</div>
+          <div class="tpl-form-group">
+            <label>End Date</label>
+            <div class="tpl-date-picker-wrap">
+              <button class="tpl-date-trigger" @click.stop="openPicker('end', applyModal.endDate)">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" class="tpl-date-trigger-icon">
+                  <rect x="1" y="3" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                  <line x1="1" y1="7" x2="15" y2="7" stroke="currentColor" stroke-width="1.5"/>
+                  <line x1="5" y1="1" x2="5" y2="5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  <line x1="11" y1="1" x2="11" y2="5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                <span>{{ formatDateDisplay(applyModal.endDate) || 'Select date' }}</span>
+              </button>
+              <Transition name="tpl-dpc-pop">
+                <div v-if="datePicker.open && datePicker.field === 'end'" class="tpl-dpc-dropdown" @click.stop>
+                  <div class="tpl-dpc-header">
+                    <button class="tpl-dpc-nav" @click="prevPickerMonth">‹</button>
+                    <span class="tpl-dpc-month-label">{{ pickerMonthLabel }}</span>
+                    <button class="tpl-dpc-nav" @click="nextPickerMonth">›</button>
+                  </div>
+                  <div class="tpl-dpc-dow-row">
+                    <span v-for="d in ['Su','Mo','Tu','We','Th','Fr','Sa']" :key="d" class="tpl-dpc-dow">{{ d }}</span>
+                  </div>
+                  <div class="tpl-dpc-days">
+                    <span v-for="p in pickerStartPad" :key="'p'+p" class="tpl-dpc-cell tpl-dpc-empty"></span>
+                    <span v-for="day in pickerDaysInMonth" :key="day" class="tpl-dpc-cell"
+                      :class="{
+                        'tpl-dpc-selected': isPickerDaySelected(day),
+                        'tpl-dpc-today':    isPickerDayToday(day),
+                        'tpl-dpc-disabled': isPickerDayBeforeStart(day)
+                      }"
+                      @click="!isPickerDayBeforeStart(day) && selectPickerDay(day)">{{ day }}</span>
+                  </div>
+                </div>
+              </Transition>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="applyRangeLabel" class="tpl-apply-range-preview">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="opacity:.5;flex-shrink:0">
+            <rect x="1" y="3" width="14" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M5 1v4M11 1v4M1 7h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <span>{{ applyRangeLabel }}</span>
+        </div>
+
+        <p v-if="applyModal.error" class="tpl-modal-error">{{ applyModal.error }}</p>
+        <div class="modal-actions">
+          <button class="modal-cancel" @click="applyModal.open = false">Cancel</button>
+          <button
+            class="modal-confirm"
+            :disabled="applyModal.applying || !applyModal.startDate || (isCustomPeriod && !applyModal.endDate)"
+            @click="applyTemplate"
+          >
+            {{ applyModal.applying ? 'Creating shifts…' : 'Apply Template' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Transition>
+
 </template>
 
 <script setup>
@@ -669,6 +874,14 @@ import {
   getTaskListStatuses,
   updateTaskComplete,
 } from "../services/taskService.js";
+import {
+  fetchTemplates,
+  fetchTemplateShifts,
+  fetchTemplateShiftEmployees,
+  fetchTemplateShiftTaskLists,
+  createTemplateApplication,
+  createTemplateApplicationShift,
+} from "../services/templateService.js";
 import apiClient from "../services/services.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -792,6 +1005,38 @@ function employeeHasApprovedTimeOff(id_employee, date, startHour, endHour) {
   });
 }
 
+// Can the current (employee) user claim this unassigned shift?
+function canTakeShift(shift) {
+  if (isManager.value) return false;
+  if (!shift || shift.id_employee) return false;
+  if (!shift.id_shift || !currentUser.value?.id_employee) return false;
+  if (shift.id_position == null) return true;
+  const ids = positionEmployeeIds.value[shift.id_position];
+  return !!ids && ids.includes(currentUser.value.id_employee);
+}
+
+async function takeShift(shift, e) {
+  e?.stopPropagation?.();
+  const empId = currentUser.value?.id_employee;
+  if (!empId || !shift?.id_shift) return;
+  try {
+    const assignment = await apiCreateAssignment(shift.id_shift, empId, shift.date);
+    const emp = employeeMap.value[empId];
+    const idx = shifts.value.findIndex(s => s.id === shift.id);
+    if (idx !== -1) {
+      shifts.value[idx] = {
+        ...shifts.value[idx],
+        id:                 assignment.id_shiftAssignment,
+        id_shiftAssignment: assignment.id_shiftAssignment,
+        id_employee:        empId,
+        employee:           emp ? `${emp.fName} ${emp.lName}` : "",
+      };
+    }
+  } catch (err) {
+    alert("Failed to take shift: " + (err.message || "Network error"));
+  }
+}
+
 // ── Task state ─────────────────────────────────────────────────────────────────
 const taskLists = ref([]);
 const allTasks  = ref([]);
@@ -812,6 +1057,9 @@ const shiftTasksModal = ref({
 
 // Employee sidebar: task lists for all of today's shifts
 const myShiftTasks = ref([]); // [{ shiftTaskListId, id_shift, shiftLabel, taskList, statuses, completedCount, totalCount }]
+
+// Manager: { [id_shift]: { completed, total } } for shifts that have any task lists
+const shiftTaskSummary = ref({});
 
 // Tracks the current local time in fractional hours; refreshes every minute for the time-line indicator
 const currentTimeHour = ref(new Date().getHours() + new Date().getMinutes() / 60);
@@ -1606,6 +1854,7 @@ async function loadAll() {
       }).catch(() => {});
     }
     loadMyTasks(); // async, non-blocking — populates employee sidebar
+    loadShiftTaskSummaries(); // async, non-blocking — populates manager shift-block badges
   } catch (err) {
     apiError.value = err.message;
     console.error("Dashboard load error:", err);
@@ -1794,6 +2043,7 @@ async function assignTaskListToCurrentShift() {
     shiftTasksModal.value.shiftTaskLists.push({ ...newStl, taskList, statuses });
     // Refresh sidebar tasks if employee
     if (!isManager.value) loadMyTasks();
+    else refreshShiftTaskSummary(shiftTasksModal.value.shift?.id_shift);
   } catch (err) {
     shiftTasksModal.value.error = err.message || "Assignment failed.";
   } finally {
@@ -1807,6 +2057,7 @@ async function removeShiftTaskListItem(stl) {
     shiftTasksModal.value.shiftTaskLists = shiftTasksModal.value.shiftTaskLists.filter(
       s => s.id_shiftTaskList !== stl.id_shiftTaskList
     );
+    if (isManager.value) refreshShiftTaskSummary(shiftTasksModal.value.shift?.id_shift);
   } catch (err) {
     shiftTasksModal.value.error = err.message || "Could not remove task list.";
   }
@@ -1820,6 +2071,10 @@ async function toggleTaskStatus(status) {
     // Refresh sidebar counts
     const stl = myShiftTasks.value.find(s => s.shiftTaskListId === status.id_shiftTaskList);
     if (stl) stl.completedCount = stl.statuses.filter(s => s.isCompleted).length;
+    // Update manager shift-block badge
+    if (isManager.value && shiftTasksModal.value.shift?.id_shift) {
+      refreshShiftTaskSummary(shiftTasksModal.value.shift.id_shift);
+    }
   } catch (err) {
     shiftTasksModal.value.error = "Could not update task: " + (err.message || "Error");
   }
@@ -1859,6 +2114,63 @@ async function loadMyTasks() {
     }
   } catch { /* silent — sidebar is non-critical */ }
   myShiftTasks.value = results;
+}
+
+// Manager-only: task completion summary per shift, shown on shift blocks
+async function refreshShiftTaskSummary(id_shift) {
+  if (!isManager.value || !id_shift) return;
+  try {
+    const stls = await getShiftTaskLists(id_shift);
+    if (!stls.length) {
+      const next = { ...shiftTaskSummary.value };
+      delete next[id_shift];
+      shiftTaskSummary.value = next;
+      return;
+    }
+    let completed = 0, total = 0;
+    await Promise.all(stls.map(async (stl) => {
+      const statuses = await getTaskListStatuses(stl.id_shiftTaskList);
+      total     += statuses.length;
+      completed += statuses.filter(s => s.isCompleted).length;
+    }));
+    if (total === 0) {
+      const next = { ...shiftTaskSummary.value };
+      delete next[id_shift];
+      shiftTaskSummary.value = next;
+    } else {
+      shiftTaskSummary.value = { ...shiftTaskSummary.value, [id_shift]: { completed, total } };
+    }
+  } catch { /* silent */ }
+}
+
+async function loadShiftTaskSummaries() {
+  if (!isManager.value) return;
+  const summary = {};
+  await Promise.all(shifts.value.map(async (shift) => {
+    try {
+      const stls = await getShiftTaskLists(shift.id_shift);
+      if (!stls.length) return;
+      let completed = 0, total = 0;
+      await Promise.all(stls.map(async (stl) => {
+        const statuses = await getTaskListStatuses(stl.id_shiftTaskList);
+        total     += statuses.length;
+        completed += statuses.filter(s => s.isCompleted).length;
+      }));
+      if (total > 0) summary[shift.id_shift] = { completed, total };
+    } catch { /* silent */ }
+  }));
+  shiftTaskSummary.value = summary;
+}
+
+function shiftTaskBadge(shift) {
+  const sum = shiftTaskSummary.value[shift.id_shift];
+  if (!sum || sum.total === 0) return null;
+  const allDone = sum.completed >= sum.total;
+  return {
+    ...sum,
+    allDone,
+    label: allDone ? "Complete" : `${sum.completed}/${sum.total}`,
+  };
 }
 
 // ── Multi-select helpers ───────────────────────────────────────────────────────
@@ -2065,8 +2377,292 @@ function onDashKeydown(e) {
   }
 }
 
+// ── Template quick-apply (dropdown above calendar) ─────────────────────────────
+const PERIOD_OPTIONS = [
+  { label: "1 Week",  value: "1w",  days: 7  },
+  { label: "2 Weeks", value: "2w",  days: 14 },
+  { label: "3 Weeks", value: "3w",  days: 21 },
+  { label: "1 Month", value: "1m",  days: 28 },
+  { label: "Custom",  value: "custom", days: null },
+];
+const DAY_ENUM = ["Sun", "Mon", "Tue", "Wed", "Thur", "Fri", "Sat"];
+
+const templates = ref([]);
+const templatesLoading = ref(false);
+const templateDropdownOpen = ref(false);
+
+async function loadTemplatesForDropdown() {
+  if (!isManager.value) return;
+  templatesLoading.value = true;
+  try {
+    templates.value = await fetchTemplates(selectedDeptId.value);
+  } catch {
+    templates.value = [];
+  } finally {
+    templatesLoading.value = false;
+  }
+}
+
+function toggleTemplateDropdown() {
+  templateDropdownOpen.value = !templateDropdownOpen.value;
+  if (templateDropdownOpen.value) loadTemplatesForDropdown();
+}
+
+function hourToTimeStr(h) {
+  const totalMin = Math.round(h * 60);
+  const hh = String(Math.floor(totalMin / 60)).padStart(2, "0");
+  const mm = String(totalMin % 60).padStart(2, "0");
+  return `${hh}:${mm}:00`;
+}
+
+function localDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function defaultApplyStartDate() {
+  const today = new Date();
+  const day = today.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + diff);
+  return localDateStr(monday);
+}
+
+const applyModal = ref({
+  open: false,
+  template: null,
+  period: "2w",
+  startDate: "",
+  endDate: "",
+  applying: false,
+  error: "",
+});
+
+const isCustomPeriod = computed(() => applyModal.value.period === "custom");
+
+const applyRangeLabel = computed(() => {
+  const fmt = d => d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  if (isCustomPeriod.value) {
+    if (!applyModal.value.startDate || !applyModal.value.endDate) return "";
+    const start = new Date(applyModal.value.startDate + "T00:00:00");
+    const end   = new Date(applyModal.value.endDate   + "T00:00:00");
+    if (end < start) return "";
+    return `${fmt(start)} – ${fmt(end)}`;
+  }
+  if (!applyModal.value.startDate) return "";
+  const opt = PERIOD_OPTIONS.find(o => o.value === applyModal.value.period);
+  const days = opt?.days ?? 14;
+  const start = new Date(applyModal.value.startDate + "T00:00:00");
+  const end = new Date(start);
+  end.setDate(start.getDate() + days - 1);
+  return `${fmt(start)} – ${fmt(end)}`;
+});
+
+function openApplyFromDashboard(tpl) {
+  templateDropdownOpen.value = false;
+  applyModal.value = {
+    open: true,
+    template: tpl,
+    period: "2w",
+    startDate: defaultApplyStartDate(),
+    endDate: "",
+    applying: false,
+    error: "",
+  };
+}
+
+async function applyTemplate() {
+  if (!applyModal.value.startDate) {
+    applyModal.value.error = "Please select a start date.";
+    return;
+  }
+  if (isCustomPeriod.value && !applyModal.value.endDate) {
+    applyModal.value.error = "Please select an end date.";
+    return;
+  }
+  applyModal.value.applying = true;
+  applyModal.value.error = "";
+  try {
+    const start = new Date(applyModal.value.startDate + "T00:00:00");
+    let end;
+    if (isCustomPeriod.value) {
+      end = new Date(applyModal.value.endDate + "T00:00:00");
+      if (end < start) {
+        applyModal.value.error = "End date must be after start date.";
+        applyModal.value.applying = false;
+        return;
+      }
+    } else {
+      const opt = PERIOD_OPTIONS.find(o => o.value === applyModal.value.period);
+      end = new Date(start);
+      end.setDate(start.getDate() + (opt?.days ?? 14) - 1);
+    }
+
+    const tShifts = await fetchTemplateShifts(applyModal.value.template.id_template);
+    await Promise.all(tShifts.map(async ts => {
+      const [emps, tls] = await Promise.all([
+        fetchTemplateShiftEmployees(ts.id_templateShift).catch(() => []),
+        fetchTemplateShiftTaskLists(ts.id_templateShift).catch(() => []),
+      ]);
+      ts._employees = emps;
+      ts._taskLists = tls;
+    }));
+
+    let application = null;
+    try {
+      application = await createTemplateApplication({
+        id_template: applyModal.value.template.id_template,
+        startDate:   localDateStr(start),
+        endDate:     localDateStr(end),
+      });
+    } catch { /* backend endpoint may be missing */ }
+
+    const current = new Date(start);
+    while (current <= end) {
+      const dowInt  = current.getDay();
+      const dateStr = localDateStr(current);
+      for (const ts of tShifts) {
+        if (ts.dayOfWeek !== dowInt) continue;
+        const { data: newShift } = await apiClient.post("/shifts", {
+          name:          ts.label || "Shift",
+          description:   ts.notes || "",
+          day:           DAY_ENUM[dowInt],
+          date:          dateStr,
+          startTime:     hourToTimeStr(ts.startHour),
+          endTime:       hourToTimeStr(ts.endHour),
+          id_position:   ts.id_position || null,
+          id_department: selectedDeptId.value || null,
+        });
+        for (const emp of ts._employees) {
+          await apiClient.post("/shift-assignments", {
+            id_shift:    newShift.id_shift,
+            id_employee: emp.id_employee,
+            date:        dateStr,
+          }).catch(() => {});
+        }
+        for (const tl of ts._taskLists) {
+          await apiClient.post("/shift-task-lists", {
+            id_shift:   newShift.id_shift,
+            id_taskList: tl.id_taskList,
+          }).catch(() => {});
+        }
+        if (application) {
+          await createTemplateApplicationShift({
+            id_templateApplication: application.id_templateApplication,
+            id_templateShift:       ts.id_templateShift,
+            id_shift:               newShift.id_shift,
+            date:                   dateStr,
+          }).catch(() => {});
+        }
+      }
+      current.setDate(current.getDate() + 1);
+    }
+
+    applyModal.value.open = false;
+    await loadAll();
+  } catch (err) {
+    applyModal.value.error = err.response?.data?.message || err.message || "Apply failed.";
+  } finally {
+    applyModal.value.applying = false;
+  }
+}
+
+// ── Date picker for apply modal ────────────────────────────────────────────────
+const datePicker = ref({
+  open: false,
+  field: null,
+  viewYear: new Date().getFullYear(),
+  viewMonth: new Date().getMonth(),
+});
+
+function openPicker(field, currentValue) {
+  if (datePicker.value.open && datePicker.value.field === field) {
+    datePicker.value.open = false;
+    return;
+  }
+  const base = currentValue ? new Date(currentValue + "T00:00:00") : new Date();
+  datePicker.value = {
+    open: true,
+    field,
+    viewYear: base.getFullYear(),
+    viewMonth: base.getMonth(),
+  };
+}
+
+function closePicker() {
+  datePicker.value.open = false;
+  datePicker.value.field = null;
+}
+
+const pickerMonthLabel = computed(() => {
+  const d = new Date(datePicker.value.viewYear, datePicker.value.viewMonth, 1);
+  return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+});
+const pickerDaysInMonth = computed(() =>
+  new Date(datePicker.value.viewYear, datePicker.value.viewMonth + 1, 0).getDate()
+);
+const pickerStartPad = computed(() =>
+  new Date(datePicker.value.viewYear, datePicker.value.viewMonth, 1).getDay()
+);
+
+function prevPickerMonth() {
+  let m = datePicker.value.viewMonth - 1;
+  let y = datePicker.value.viewYear;
+  if (m < 0) { m = 11; y -= 1; }
+  datePicker.value.viewMonth = m;
+  datePicker.value.viewYear = y;
+}
+function nextPickerMonth() {
+  let m = datePicker.value.viewMonth + 1;
+  let y = datePicker.value.viewYear;
+  if (m > 11) { m = 0; y += 1; }
+  datePicker.value.viewMonth = m;
+  datePicker.value.viewYear = y;
+}
+function pad2(n) { return String(n).padStart(2, "0"); }
+function isPickerDaySelected(day) {
+  const field = datePicker.value.field;
+  const value = field === "end" ? applyModal.value.endDate : applyModal.value.startDate;
+  if (!value) return false;
+  const iso = `${datePicker.value.viewYear}-${pad2(datePicker.value.viewMonth + 1)}-${pad2(day)}`;
+  return value === iso;
+}
+function isPickerDayToday(day) {
+  const today = new Date();
+  return day === today.getDate()
+    && datePicker.value.viewMonth === today.getMonth()
+    && datePicker.value.viewYear === today.getFullYear();
+}
+function isPickerDayBeforeStart(day) {
+  if (datePicker.value.field !== "end" || !applyModal.value.startDate) return false;
+  const iso = `${datePicker.value.viewYear}-${pad2(datePicker.value.viewMonth + 1)}-${pad2(day)}`;
+  return iso < applyModal.value.startDate;
+}
+function selectPickerDay(day) {
+  const iso = `${datePicker.value.viewYear}-${pad2(datePicker.value.viewMonth + 1)}-${pad2(day)}`;
+  if (datePicker.value.field === "end") applyModal.value.endDate = iso;
+  else applyModal.value.startDate = iso;
+  closePicker();
+}
+function formatDateDisplay(iso) {
+  if (!iso) return "";
+  return new Date(iso + "T00:00:00").toLocaleDateString(undefined, {
+    month: "short", day: "numeric", year: "numeric",
+  });
+}
+
+// Close dropdown / picker on outside click
+function onDocClickForTemplate() {
+  if (templateDropdownOpen.value) templateDropdownOpen.value = false;
+  if (datePicker.value.open) closePicker();
+}
+watch(() => applyModal.value.open, v => { if (!v) closePicker(); });
+
 // ── Lifecycle ──────────────────────────────────────────────────────────────────
-watch(selectedDeptId, () => loadAll());
+watch(selectedDeptId, () => { loadAll(); loadTemplatesForDropdown(); });
 
 // Reload sidebar tasks whenever today's shifts change (e.g. after loadAll)
 watch(myTodayShifts, () => { loadMyTasks(); }, { deep: false });
@@ -2077,6 +2673,8 @@ onMounted(async () => {
   // departments via the employeeDepartment junction and need the switcher.
   await loadDepts(currentUser.value);
   await loadAll();
+  loadTemplatesForDropdown();
+  window.addEventListener("click", onDocClickForTemplate);
   if (calBody.value) calBody.value.scrollTop = 7 * cellHeight.value; // scroll to 7am
   window.addEventListener("keydown", onDashKeydown);
   window.addEventListener("keyup", onDashKeyup);
@@ -2094,6 +2692,7 @@ onUnmounted(() => {
   window.removeEventListener("keydown", onDashKeydown);
   window.removeEventListener("keyup",   onDashKeyup);
   window.removeEventListener("blur",    onDashBlur);
+  window.removeEventListener("click",   onDocClickForTemplate);
   clearInterval(clockInterval);
 });
 watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrollTop = 7 * cellHeight.value; }, 50); });
@@ -2320,13 +2919,14 @@ function fitToView() {
 .cal-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .dept-name-bar { padding: 10px 20px 0; font-size: 21px; font-weight: 700; letter-spacing: 0.02em; color: var(--tx-heading); font-family: 'Satoshi', sans-serif; flex-shrink: 0; }
 .cal-toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0; }
-.cal-nav-group { display: flex; align-items: center; gap: 8px; flex: 1; }
+.cal-nav-group { display: flex; align-items: center; gap: 8px; }
 .toolbar-btn { background: var(--bdr-subtle); border: none; color: var(--tx-secondary); width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 19px; display: flex; align-items: center; justify-content: center; transition: background 0.15s; }
 .toolbar-btn:hover { background: var(--bg-active); color: var(--accent); }
 .cal-range-label { font-size: 17px; font-weight: 600; color: var(--tx-primary); font-family: 'DM Mono', monospace; white-space: nowrap; }
 .today-btn { background: none; border: 1px solid var(--bdr-accent); color: var(--tx-muted); padding: 4px 12px; border-radius: 6px; font-size: 15px; cursor: pointer; font-family: 'Satoshi', sans-serif; transition: border-color 0.15s, color 0.15s; }
 .today-btn:hover { border-color: var(--accent); color: var(--accent); }
 .cal-view-group { display: flex; gap: 2px; background: var(--bdr-subtle); border-radius: 8px; padding: 3px; }
+.cal-view-group.push-right { margin-left: auto; }
 .view-btn { background: none; border: none; color: var(--tx-muted); padding: 4px 14px; border-radius: 6px; font-size: 15px; cursor: pointer; font-family: 'Satoshi', sans-serif; transition: background 0.15s, color 0.15s; }
 .view-btn.active { background: var(--bg-active); color: var(--accent); font-weight: 600; }
 .add-shift-btn { background: var(--accent); border: none; color: #fff; padding: 7px 16px; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px; font-family: 'Satoshi', sans-serif; transition: background 0.15s, transform 0.12s; white-space: nowrap; }
@@ -2391,10 +2991,35 @@ function fitToView() {
 
 .shift-block { position: absolute; border-radius: 6px; padding: 5px 8px; cursor: pointer; overflow: hidden; z-index: 2; transition: filter 0.15s; }
 .shift-block:hover { filter: brightness(1.12); }
+.take-shift-btn {
+  position: absolute; bottom: 4px; right: 4px;
+  background: #fff; color: #111; border: none;
+  font-size: 11px; font-weight: 700; font-family: 'Satoshi', sans-serif;
+  padding: 3px 10px; border-radius: 6px; cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  transition: background 0.12s, transform 0.08s;
+}
+.take-shift-btn:hover { background: #f0f0f0; transform: translateY(-1px); }
+.take-shift-btn:active { transform: translateY(0); }
 .cmd-create-mode .shift-block { cursor: crosshair !important; }
 .shift-employee { font-size: 15px; font-weight: 700; color: rgba(0,0,0,0.85); line-height: 1.2; }
 .shift-time { font-size: 13px; color: rgba(0,0,0,0.6); font-family: 'DM Mono', monospace; }
-.shift-pos-badge { font-size: 12px; color: rgba(0,0,0,0.5); margin-top: 2px; background: rgba(0,0,0,0.1); border-radius: 3px; padding: 1px 4px; display: inline-block; }
+.shift-pos-badge { font-size: 12px; color: rgba(0,0,0,0.5); background: rgba(0,0,0,0.1); border-radius: 3px; padding: 1px 4px; display: inline-block; }
+.shift-meta-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; flex-wrap: wrap; }
+.shift-task-status {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px; font-weight: 700; line-height: 1;
+  padding: 2px 6px 2px 5px; border-radius: 100px;
+  background: rgba(220, 38, 38, 0.28);
+  color: #5a0f0f;
+  font-family: 'DM Mono', monospace;
+  letter-spacing: 0.02em;
+}
+.shift-task-status svg { flex-shrink: 0; }
+.shift-task-status--done {
+  background: rgba(22, 130, 70, 0.28);
+  color: #0f3d23;
+}
 
 .event-block { position: absolute; left: 3px; right: 3px; border-radius: 6px; overflow: hidden; z-index: 1; }
 .event-block-title { font-size: 14px; font-weight: 700; color: #4A90A4; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2782,4 +3407,233 @@ function fitToView() {
 .popover-anim-leave-to { opacity: 0; }
 .view-fade-enter-active, .view-fade-leave-active { transition: opacity 0.15s; }
 .view-fade-enter-from, .view-fade-leave-to { opacity: 0; }
+
+/* ── Template Quick-Apply Dropdown (toolbar) ── */
+.tpl-dropdown-wrap { position: relative; display: flex; align-items: center; margin: 0 auto; }
+.tpl-dropdown-btn {
+  display: flex; align-items: center; gap: 7px;
+  background: var(--accent-bg, rgba(255, 23, 68, 0.08));
+  border: 1px solid var(--accent-border, rgba(255, 23, 68, 0.35));
+  color: var(--accent);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 14px; font-weight: 600;
+  font-family: 'Satoshi', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.tpl-dropdown-btn:hover,
+.tpl-dropdown-btn.active {
+  background: var(--accent-subtle, rgba(255, 23, 68, 0.15));
+  border-color: var(--accent);
+}
+.tpl-dd-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  min-width: 260px;
+  max-width: 320px;
+  max-height: 340px;
+  overflow-y: auto;
+  background: var(--bg-modal);
+  border: 1px solid var(--bdr-faint, var(--bdr-accent));
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.25);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.tpl-dd-empty {
+  padding: 14px 12px;
+  font-size: 14px;
+  color: var(--tx-faint, var(--tx-dim));
+  text-align: center;
+  font-family: 'Satoshi', sans-serif;
+}
+.tpl-dd-link {
+  display: block;
+  margin-top: 6px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 14px;
+  cursor: pointer;
+  font-family: 'Satoshi', sans-serif;
+}
+.tpl-dd-link:hover { text-decoration: underline; }
+.tpl-dd-item {
+  background: none;
+  border: none;
+  color: var(--tx-primary);
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  display: flex; flex-direction: column; gap: 2px;
+  font-family: 'Satoshi', sans-serif;
+  transition: background 0.12s;
+}
+.tpl-dd-item:hover { background: var(--bg-hover, var(--bg-active)); }
+.tpl-dd-name { font-size: 14px; font-weight: 600; color: var(--tx-primary); }
+.tpl-dd-desc {
+  font-size: 12px;
+  color: var(--tx-faint, var(--tx-dim));
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tpl-dd-pop-enter-active, .tpl-dd-pop-leave-active { transition: opacity 0.12s, transform 0.12s; }
+.tpl-dd-pop-enter-from, .tpl-dd-pop-leave-to { opacity: 0; transform: translateX(-50%) translateY(-4px) scale(0.97); }
+
+/* ── Apply Template Modal ── */
+.tpl-apply-modal { width: 460px; max-width: calc(100vw - 32px); display: flex; flex-direction: column; gap: 16px; }
+.tpl-apply-name {
+  font-size: 15px; color: var(--accent); font-weight: 600;
+  margin: -8px 0 4px; font-family: 'DM Mono', monospace;
+}
+.tpl-form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 0; }
+.tpl-form-group label {
+  font-size: 13px; font-weight: 600;
+  color: var(--tx-muted);
+  text-transform: uppercase; letter-spacing: .1em;
+}
+.tpl-period-options { display: flex; gap: 8px; flex-wrap: wrap; }
+.tpl-period-opt {
+  flex: 1; min-width: 70px;
+  background: var(--bg-surface, var(--bg-input));
+  border: 1px solid var(--bdr-faint, var(--bdr-accent));
+  color: var(--tx-muted);
+  border-radius: 7px; padding: 8px 10px; font-size: 14px;
+  font-family: 'Satoshi', sans-serif;
+  cursor: pointer; text-align: center;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.tpl-period-opt:hover { color: var(--tx-primary); border-color: var(--accent); background: var(--bg-hover, var(--bg-active)); }
+.tpl-period-opt.active {
+  background: var(--accent-bg, rgba(255, 23, 68, 0.08));
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.tpl-form-row-dates { display: flex; align-items: flex-end; gap: 10px; }
+.tpl-form-row-dates .tpl-form-group { flex: 1; }
+.tpl-date-range-arrow { font-size: 18px; color: var(--tx-faint, var(--tx-dim)); padding-bottom: 10px; flex-shrink: 0; }
+.tpl-apply-range-preview {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg-surface, var(--bg-input));
+  border: 1px solid var(--bdr-subtle, var(--bdr-accent));
+  border-radius: 7px; padding: 10px 14px;
+  font-size: 14px; font-family: 'DM Mono', monospace;
+  color: var(--tx-primary);
+}
+.tpl-modal-error { color: var(--accent); font-size: 14px; margin: 0; }
+
+/* ── Date picker (apply modal) ── */
+.tpl-date-picker-wrap { position: relative; width: 100%; }
+.tpl-date-trigger {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  background: var(--bg-surface, var(--bg-input));
+  border: 1px solid var(--bdr-faint, var(--bdr-accent));
+  border-radius: 7px;
+  padding: 9px 12px;
+  color: var(--tx-primary);
+  font-size: 14px;
+  font-family: 'Satoshi', sans-serif;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .15s, background .15s;
+}
+.tpl-date-trigger:hover { border-color: var(--accent); background: var(--bg-hover, var(--bg-active)); }
+.tpl-date-trigger-icon { color: var(--tx-secondary); flex-shrink: 0; }
+.tpl-date-trigger:hover .tpl-date-trigger-icon { color: var(--accent); }
+
+.tpl-dpc-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  width: 280px;
+  background: var(--bg-modal);
+  border: 1px solid var(--bdr-faint, var(--bdr-accent));
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45), 0 4px 12px rgba(0, 0, 0, 0.25);
+  display: flex; flex-direction: column; gap: 10px;
+  font-family: 'Satoshi', sans-serif;
+}
+.tpl-dpc-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 0 2px 4px;
+}
+.tpl-dpc-nav {
+  background: var(--bg-surface, var(--bg-input));
+  border: 1px solid var(--bdr-subtle, var(--bdr-accent));
+  color: var(--tx-secondary);
+  border-radius: 6px;
+  width: 26px; height: 26px;
+  font-size: 18px; line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.tpl-dpc-nav:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-bg, rgba(255, 23, 68, 0.08));
+}
+.tpl-dpc-month-label {
+  font-size: 15px; font-weight: 600;
+  color: var(--tx-primary);
+  letter-spacing: .2px;
+}
+.tpl-dpc-dow-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.tpl-dpc-dow {
+  text-align: center;
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .5px;
+  color: var(--tx-faint, var(--tx-dim));
+  padding: 4px 0;
+  font-family: 'DM Mono', monospace;
+}
+.tpl-dpc-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.tpl-dpc-cell {
+  aspect-ratio: 1;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px;
+  color: var(--tx-primary);
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background .12s, color .12s, border-color .12s;
+  user-select: none;
+}
+.tpl-dpc-cell:hover:not(.tpl-dpc-empty):not(.tpl-dpc-disabled) {
+  background: var(--bg-hover, var(--bg-active));
+}
+.tpl-dpc-empty { cursor: default; }
+.tpl-dpc-today {
+  border-color: var(--bdr-accent);
+  font-weight: 600;
+}
+.tpl-dpc-selected,
+.tpl-dpc-selected:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.tpl-dpc-disabled {
+  color: var(--tx-dim);
+  cursor: not-allowed;
+  opacity: .5;
+}
+.tpl-dpc-pop-enter-active, .tpl-dpc-pop-leave-active {
+  transition: opacity .12s ease, transform .12s ease;
+  transform-origin: top left;
+}
+.tpl-dpc-pop-enter-from, .tpl-dpc-pop-leave-to {
+  opacity: 0;
+  transform: scale(.96) translateY(-4px);
+}
 </style>

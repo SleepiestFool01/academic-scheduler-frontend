@@ -16,8 +16,8 @@
           <button class="sub-tab" :class="{ active: activeTab === 'lists' }" @click="activeTab = 'lists'">Task Lists</button>
           <button class="sub-tab" :class="{ active: activeTab === 'tasks' }" @click="activeTab = 'tasks'">All Tasks</button>
         </div>
-        <button v-if="activeTab === 'lists'" class="primary-btn" @click="openNewTaskList">+ New Task List</button>
-        <button v-else class="primary-btn" @click="openNewTask">+ New Task</button>
+        <button v-if="activeTab === 'lists'" class="primary-btn" @click="openCreateModal">+ New Task List</button>
+        <button v-else class="primary-btn" @click="openCreateModal">+ New Task</button>
       </div>
 
       <!-- Task Lists Tab -->

@@ -14,6 +14,7 @@
           class="nav-tab"
           :class="{ active: isActive(tab) }">
           {{ tab.label }}
+          <span v-if="isManager && (countsByRoute[tab.route] || 0) > 0" class="nav-dot"></span>
         </router-link>
       </div>
       <div class="nav-right">
@@ -28,6 +29,7 @@
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
           </svg>
         </button>
+        <NotificationBell v-if="isManager" />
         <div class="avatar" @click="profileOpen = true" title="My Profile">
           <img v-if="currentUser?.picture" :src="currentUser.picture" class="avatar-img" referrerpolicy="no-referrer" />
           <span v-else>{{ userInitials }}</span>
@@ -71,18 +73,21 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import Utils from "../config/utils.js";
 import AuthServices from "../services/authServices.js";
 import { useTheme } from "../composables/useTheme.js";
 import { useDepartment } from "../composables/useDepartment.js";
+import { useNotifications } from "../composables/useNotifications.js";
 import DeptSwitcher from "../components/DeptSwitcher.vue";
+import NotificationBell from "../components/NotificationBell.vue";
 
 const router = useRouter();
 const route  = useRoute();
 const { isDark, toggleTheme } = useTheme();
 const { myDepts, loadDepts } = useDepartment();
+const { countsByRoute, startPolling, stopPolling } = useNotifications();
 
 const currentUser = ref(Utils.getStore("user") || { fName: "?", lName: "?" });
 const profileOpen = ref(false);
@@ -131,11 +136,19 @@ async function logout() {
     }
   } catch (e) { /* proceed */ }
   Utils.removeItem("user");
+  // Drop the previous user's department selection so the next sign-in
+  // doesn't inherit it and end up with a dept ID they don't belong to.
+  Utils.removeItem("selectedDeptId");
   router.push("/start");
 }
 
 onMounted(async () => {
   await loadDepts(currentUser.value);
+  if (isManager.value) startPolling();
+});
+
+onBeforeUnmount(() => {
+  stopPolling();
 });
 </script>
 
@@ -155,15 +168,16 @@ onMounted(async () => {
 .topnav {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 0 24px;
-  height: 56px;
+  gap: 18px;
+  padding: 0 28px;
+  height: 68px;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--bdr-subtle);
   flex-shrink: 0;
   z-index: 100;
 }
 
+.nav-logo-img { height: 52px; width: auto; object-fit: contain; }
 .nav-logo-link {
   display: inline-flex;
   align-items: center;
@@ -185,15 +199,15 @@ onMounted(async () => {
 
 .nav-logo-img { height: 44px; width: auto; object-fit: contain; display: block; }
 
-.nav-tabs { display: flex; gap: 4px; flex: 1; }
+.nav-tabs { display: flex; gap: 6px; flex: 1; }
 .nav-tab {
-  position: relative; padding: 8px 16px; background: none; border: none;
-  color: var(--tx-muted); font-family: 'Satoshi', sans-serif; font-size: 16px;
+  position: relative; padding: 10px 18px; background: none; border: none;
+  color: var(--tx-muted); font-family: 'Satoshi', sans-serif; font-size: 17px;
   cursor: pointer; border-radius: 0; transition: color 0.15s;
   text-decoration: none;
 }
 .nav-tab::after {
-  content: ''; position: absolute; bottom: -1px; left: 8px; right: 8px;
+  content: ''; position: absolute; bottom: -1px; left: 10px; right: 10px;
   height: 2px; background: transparent; border-radius: 2px; transition: background 0.15s;
 }
 .nav-tab:hover { color: var(--tx-secondary); }
@@ -201,21 +215,29 @@ onMounted(async () => {
 .nav-tab.active { color: var(--accent); font-weight: 600; }
 .nav-tab.active::after { background: var(--accent); }
 
-.nav-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.nav-dot {
+  position: absolute; top: 6px; right: 6px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #FF1744;
+  box-shadow: 0 0 0 2px var(--bg-surface);
+}
+
+.nav-right { display: flex; align-items: center; gap: 14px; margin-left: auto; }
 
 .theme-toggle {
   background: none; border: 1px solid var(--bdr-subtle); color: var(--tx-muted);
-  width: 32px; height: 32px; border-radius: 8px;
+  width: 38px; height: 38px; border-radius: 9px;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s; flex-shrink: 0;
 }
+.theme-toggle svg { width: 17px; height: 17px; }
 .theme-toggle:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
 
 .avatar {
-  width: 34px; height: 34px; border-radius: 50%;
+  width: 40px; height: 40px; border-radius: 50%;
   background: var(--accent); color: #fff;
   display: flex; align-items: center; justify-content: center;
-  font-size: 14px; font-weight: 600; cursor: pointer; overflow: hidden; flex-shrink: 0;
+  font-size: 15px; font-weight: 600; cursor: pointer; overflow: hidden; flex-shrink: 0;
 }
 .avatar-img { width: 100%; height: 100%; object-fit: cover; }
 
