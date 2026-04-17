@@ -136,6 +136,23 @@ function denyTimeOff(item) {
   timeOff.value = timeOff.value.filter(t => t.id_personalAvailability !== item.id_personalAvailability);
 }
 
+// Remove a pending item from the shared notification state. Called by the
+// source pages (Requests.vue, Tradeboard.vue) after they approve/deny/delete
+// a request so the bell badge and nav-tab dots stay in sync with the page.
+// For time-off (no backend status field) we also persist the dismissal so
+// the next poll doesn't resurrect the item.
+function dismiss(type, id) {
+  if (id == null) return;
+  if (type === "timeoff") {
+    addDismissed(id);
+    timeOff.value = timeOff.value.filter(t => t.id_personalAvailability !== id);
+  } else if (type === "swap") {
+    swaps.value = swaps.value.filter(s => s.id_swapRequest !== id);
+  } else if (type === "deptaccess") {
+    deptAccess.value = deptAccess.value.filter(d => d.id_departmentAccessRequest !== id);
+  }
+}
+
 let pollHandle = null;
 function startPolling(intervalMs = 60000) {
   stopPolling();
@@ -155,5 +172,6 @@ export function useNotifications() {
     approveSwap, denySwap,
     approveDeptAccess, denyDeptAccess,
     approveTimeOff, denyTimeOff,
+    dismiss,
   };
 }

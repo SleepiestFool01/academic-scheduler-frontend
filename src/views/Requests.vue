@@ -270,6 +270,7 @@
 import { ref, computed, onMounted, watch } from "vue";
 import Utils from "../config/utils.js";
 import { useDepartment } from "../composables/useDepartment.js";
+import { useNotifications } from "../composables/useNotifications.js";
 import apiClient from "../services/services.js";
 import { timeStrToHour, fmtHour } from "../services/employeeManagementService.js";
 import {
@@ -278,6 +279,8 @@ import {
   deleteDepartmentAccessRequest,
   getAllDepartments,
 } from "../services/departmentService.js";
+
+const { dismiss: dismissNotification } = useNotifications();
 
 const loading     = ref(false);
 const apiError    = ref("");
@@ -454,6 +457,8 @@ async function updateRequest(req, status) {
     const nextStatus = displayStatus(data?.data?.status || status);
     const idx = availability.value.findIndex(r => r.id_personalAvailability === req.id_personalAvailability);
     if (idx !== -1) availability.value[idx] = { ...availability.value[idx], status: nextStatus };
+    // Keep the bell badge + nav-tab dot in sync with this action.
+    dismissNotification("timeoff", req.id_personalAvailability);
   } catch (err) {
     apiError.value = "Update failed: " + (err.response?.data?.message || err.message || "Unknown error");
   }
@@ -468,10 +473,12 @@ function confirmDelete(req) {
 async function executeDelete() {
   deleteConfirm.value.saving = true;
   try {
-    await apiClient.delete(`/personal-availability/${deleteConfirm.value.item.id_personalAvailability}`);
+    const removedId = deleteConfirm.value.item.id_personalAvailability;
+    await apiClient.delete(`/personal-availability/${removedId}`);
     availability.value = availability.value.filter(
-      r => r.id_personalAvailability !== deleteConfirm.value.item.id_personalAvailability
+      r => r.id_personalAvailability !== removedId
     );
+    dismissNotification("timeoff", removedId);
     deleteConfirm.value.open = false;
   } catch (err) {
     apiError.value = "Delete failed: " + err.message;
@@ -545,6 +552,7 @@ async function approveDeptRequest(req) {
     await updateDepartmentAccessRequest(req.id_departmentAccessRequest, { status: "Approved" });
     const idx = deptRequests.value.findIndex(r => r.id_departmentAccessRequest === req.id_departmentAccessRequest);
     if (idx !== -1) deptRequests.value[idx] = { ...deptRequests.value[idx], status: "Approved" };
+    dismissNotification("deptaccess", req.id_departmentAccessRequest);
   } catch (err) {
     apiError.value = "Approve failed: " + (err.message || "Unknown error");
   }
@@ -555,6 +563,7 @@ async function denyDeptRequest(req) {
     await updateDepartmentAccessRequest(req.id_departmentAccessRequest, { status: "Denied" });
     const idx = deptRequests.value.findIndex(r => r.id_departmentAccessRequest === req.id_departmentAccessRequest);
     if (idx !== -1) deptRequests.value[idx] = { ...deptRequests.value[idx], status: "Denied" };
+    dismissNotification("deptaccess", req.id_departmentAccessRequest);
   } catch (err) {
     apiError.value = "Deny failed: " + (err.message || "Unknown error");
   }
@@ -569,10 +578,12 @@ function confirmDeleteDeptReq(req) {
 async function executeDeptDelete() {
   deleteDeptConfirm.value.saving = true;
   try {
-    await deleteDepartmentAccessRequest(deleteDeptConfirm.value.item.id_departmentAccessRequest);
+    const removedId = deleteDeptConfirm.value.item.id_departmentAccessRequest;
+    await deleteDepartmentAccessRequest(removedId);
     deptRequests.value = deptRequests.value.filter(
-      r => r.id_departmentAccessRequest !== deleteDeptConfirm.value.item.id_departmentAccessRequest
+      r => r.id_departmentAccessRequest !== removedId
     );
+    dismissNotification("deptaccess", removedId);
     deleteDeptConfirm.value.open = false;
   } catch (err) {
     apiError.value = "Delete failed: " + err.message;
