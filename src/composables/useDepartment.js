@@ -1,5 +1,5 @@
 import { ref, watch } from "vue";
-import { getManagerDepartments, getEmployeeDepartments, getAllDepartments, createManagerDepartment } from "../services/departmentService.js";
+import { getManagerDepartments, getEmployeeDepartments, getAllDepartments, createManagerDepartment, createEmployeeDepartment, getDepartment } from "../services/departmentService.js";
 import Utils from "../config/utils.js";
 
 const STORAGE_KEY = "selectedDeptId";
@@ -57,16 +57,43 @@ async function loadDepts(user) {
       const deptIdSet = new Set(junctionDeptIds);
       if (primaryId) deptIdSet.add(Number(primaryId));
 
-      // Managers get a junction backfill for their primary department so
-      // editor flows that look up junction rows can find them. Employees
-      // skip this — their primary department is already implicit.
-      if (isManager && empId && primaryId && !junctionDeptIds.has(Number(primaryId))) {
+      // Backfill the junction row for the primary department so membership
+      // is canonical regardless of which field callers read from. Managers
+      // go to managerDepartment; everyone else to employeeDepartment. This
+      // also makes "remove from department" work for the primary dept —
+      // without the junction row there'd be nothing to delete.
+      if (empId && primaryId && !junctionDeptIds.has(Number(primaryId))) {
         try {
-          await createManagerDepartment({ id_employee: empId, id_department: primaryId });
+          if (isManager) {
+            await createManagerDepartment({ id_employee: empId, id_department: primaryId });
+          } else if (isEmployee) {
+            await createEmployeeDepartment({ id_employee: empId, id_department: primaryId });
+          }
         } catch (_) { /* ignore duplicate / error */ }
       }
 
-      myDepts.value = allDepts.filter(d => deptIdSet.has(d.id_department));
+      // Filter the full dept list to the ones this user belongs to. We
+      // coerce both sides to Number because Sequelize can return int
+      // foreign keys as strings in some configurations, which would
+      // otherwise make the Set lookup silently miss.
+      myDepts.value = allDepts.filter(d => deptIdSet.has(Number(d.id_department)));
+
+      // Safety net: if allDepts didn't contain any of the user's dept IDs
+      // (possible after an incomplete initial fetch or if the user's
+      // primary dept was just created), hydrate the missing entries by
+      // fetching each dept individually. This prevents the pathological
+      // state where the user has a valid id_department but myDepts is
+      // empty, which makes /department show "not assigned to any".
+      const haveIds = new Set(myDepts.value.map(d => Number(d.id_department)));
+      const missingIds = [...deptIdSet].filter(id => !haveIds.has(Number(id)));
+      if (missingIds.length > 0) {
+        const fetched = await Promise.all(
+          missingIds.map(id => getDepartment(id).then(r => r.data).catch(() => null))
+        );
+        for (const d of fetched) {
+          if (d && d.id_department != null) myDepts.value = [...myDepts.value, d];
+        }
+      }
     }
 
     // If stored selection is no longer valid, fall back to first.

@@ -28,26 +28,27 @@ function onChange(e) {
 .dept-switcher {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   position: relative;
-  background: var(--bg-surface);
-  border: 1px solid var(--bdr-subtle);
-  border-radius: 8px;
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border, rgba(255, 23, 68, 0.25));
+  border-radius: 10px;
   padding: 8px 16px;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .dept-switcher:hover {
-  border-color: var(--bdr-medium);
+  border-color: var(--accent);
 }
 
 .dept-switcher-select {
   appearance: none;
   background: transparent;
   border: none;
-  color: var(--tx-primary);
-  font-size: 18px;
-  font-weight: 600;
+  color: var(--tx-heading);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
   font-family: inherit;
   cursor: pointer;
   outline: none;
@@ -59,7 +60,7 @@ function onChange(e) {
 }
 
 .dept-switcher-chevron {
-  color: var(--tx-faint);
+  color: var(--tx-muted);
   pointer-events: none;
   flex-shrink: 0;
 }
@@ -69,8 +70,9 @@ function onChange(e) {
 }
 
 .dept-switcher-name {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--tx-primary);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--tx-heading);
 }
 </style>

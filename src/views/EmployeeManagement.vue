@@ -56,7 +56,11 @@
                         <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                       </svg>
                     </button>
-                    <button class="icon-action danger" title="Delete" @click="confirmDelete('employee', emp)">✕</button>
+                    <button class="icon-action danger" title="Remove from department" @click="confirmRemoveFromDept(emp)">
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                        <path d="M3 8h10M13 5l-3 3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -285,6 +289,26 @@
         </div>
       </div>
     </Transition>
+
+    <!-- ── Remove from department confirmation ── -->
+    <Transition name="modal">
+      <div v-if="removeFromDeptConfirm.open" class="modal-overlay" @click.self="removeFromDeptConfirm.open = false">
+        <div class="modal modal-sm">
+          <h3 class="modal-title">Remove from department?</h3>
+          <p class="modal-body-text">
+            <strong>{{ removeFromDeptConfirm.label }}</strong> will lose access to
+            <strong>{{ removeFromDeptConfirm.deptName }}</strong>. Their account and
+            history in other departments will be preserved.
+          </p>
+          <div class="modal-actions">
+            <button class="cancel-btn" @click="removeFromDeptConfirm.open = false">Cancel</button>
+            <button class="confirm-btn danger" :disabled="removeFromDeptConfirm.saving" @click="executeRemoveFromDept">
+              {{ removeFromDeptConfirm.saving ? 'Removing…' : 'Remove' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -305,6 +329,7 @@ import {
   getEmployeePositions,
   assignPositionEmployee,
   removePositionEmployee,
+  removeEmployeeFromDepartment,
 } from "../services/departmentService.js";
 
 const router      = useRouter();
@@ -673,6 +698,40 @@ async function executeDelete() {
     deleteConfirm.value.open = false;
   } finally {
     deleteConfirm.value.saving = false;
+  }
+}
+
+// ── Remove from department (preserves the employee record) ───────────────────
+const removeFromDeptConfirm = ref({ open: false, item: null, label: "", deptName: "", saving: false });
+
+function confirmRemoveFromDept(emp) {
+  const dept = myDepts.value.find(d => Number(d.id_department) === Number(selectedDeptId.value));
+  removeFromDeptConfirm.value = {
+    open: true,
+    item: emp,
+    label: `${emp.fName} ${emp.lName}`,
+    deptName: dept?.name || "this department",
+    saving: false,
+  };
+}
+
+async function executeRemoveFromDept() {
+  const { item } = removeFromDeptConfirm.value;
+  const deptId = selectedDeptId.value;
+  if (!item || !deptId) {
+    removeFromDeptConfirm.value.open = false;
+    return;
+  }
+  removeFromDeptConfirm.value.saving = true;
+  try {
+    await removeEmployeeFromDepartment(item.id_employee, deptId);
+    employees.value = employees.value.filter(e => e.id_employee !== item.id_employee);
+    removeFromDeptConfirm.value.open = false;
+  } catch (err) {
+    apiError.value = "Remove failed: " + (err.message || "Unknown error");
+    removeFromDeptConfirm.value.open = false;
+  } finally {
+    removeFromDeptConfirm.value.saving = false;
   }
 }
 </script>

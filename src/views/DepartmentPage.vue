@@ -11,11 +11,12 @@
             <h2 class="emp-section-title">Departments You Belong To</h2>
             <p class="emp-section-sub">{{ myDepts.length }} department{{ myDepts.length !== 1 ? 's' : '' }}</p>
           </div>
-          <button class="primary-btn" @click="openRequestModal">+ Request Access</button>
+          <button v-if="myDepts.length > 0" class="primary-btn" @click="openRequestModal">+ Request Access</button>
         </div>
 
         <div v-if="myDepts.length === 0" class="emp-empty">
-          You aren't currently assigned to any departments. Use Request Access to ask an Admin for one.
+          You haven't been added to a department yet. Wait for a manager to add you —
+          once you're in a department, you can request access to additional ones from this page.
         </div>
         <div v-else class="emp-dept-grid">
           <div v-for="d in myDepts" :key="d.id_department" class="emp-dept-card">

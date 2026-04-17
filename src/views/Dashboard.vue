@@ -179,7 +179,6 @@
 
       <!-- ── Main Calendar ── -->
       <main class="cal-main" :class="{ 'cmd-create-mode': cmdHeld && isManager }">
-        <div v-if="deptName" class="dept-name-bar">{{ deptName }}</div>
         <div class="cal-toolbar">
           <div class="cal-nav-group">
             <button class="toolbar-btn" @click="navigate(-1)">‹</button>
@@ -215,7 +214,7 @@
               </div>
             </Transition>
           </div>
-          <div class="cal-view-group">
+          <div class="cal-view-group" :class="{ 'push-right': !isManager }">
             <button v-for="v in ['Day','Week','Month']" :key="v" class="view-btn"
               :class="{ active: calView === v }" @click="setView(v)">{{ v }}</button>
           </div>
@@ -277,12 +276,21 @@
                   @mousedown="onShiftBlockMouseDown($event, 0)" @click.stop="onShiftBlockClick(shift, $event)">
                   <div class="shift-employee">{{ shift.employee || 'Unassigned' }}</div>
                   <div class="shift-time">{{ shift.startLabel }} – {{ shift.endLabel }}</div>
-                  <div v-if="shift.positionName" class="shift-pos-badge">{{ shift.positionName }}</div>
-                  <div v-if="isManager && shiftTaskBadge(shift)"
-                    class="shift-task-status"
-                    :class="{ 'shift-task-status--done': shiftTaskBadge(shift).allDone }">
-                    Tasks: {{ shiftTaskBadge(shift).label }}
+                  <div v-if="shift.positionName || (isManager && shiftTaskBadge(shift))" class="shift-meta-row">
+                    <span v-if="shift.positionName" class="shift-pos-badge">{{ shift.positionName }}</span>
+                    <span v-if="isManager && shiftTaskBadge(shift)"
+                      class="shift-task-status"
+                      :class="{ 'shift-task-status--done': shiftTaskBadge(shift).allDone }">
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <path d="M2 5.2L4 7.2L8 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                      <span>{{ shiftTaskBadge(shift).allDone ? 'Done' : shiftTaskBadge(shift).label }}</span>
+                    </span>
                   </div>
+                  <button v-if="canTakeShift(shift)" class="take-shift-btn"
+                    @click.stop="takeShift(shift, $event)"
+                    @mousedown.stop
+                    title="Take this shift">Take</button>
                 </div>
                 <div v-if="isTodayDate(dayViewDate)" class="current-time-line" :style="{ top: currentTimePx + 'px' }"></div>
               </div>
@@ -339,12 +347,21 @@
                   @mousedown="onShiftBlockMouseDown($event, colIdx)" @click.stop="onShiftBlockClick(shift, $event)">
                   <div class="shift-employee">{{ shift.employee || 'Unassigned' }}</div>
                   <div class="shift-time">{{ shift.startLabel }} – {{ shift.endLabel }}</div>
-                  <div v-if="shift.positionName" class="shift-pos-badge">{{ shift.positionName }}</div>
-                  <div v-if="isManager && shiftTaskBadge(shift)"
-                    class="shift-task-status"
-                    :class="{ 'shift-task-status--done': shiftTaskBadge(shift).allDone }">
-                    Tasks: {{ shiftTaskBadge(shift).label }}
+                  <div v-if="shift.positionName || (isManager && shiftTaskBadge(shift))" class="shift-meta-row">
+                    <span v-if="shift.positionName" class="shift-pos-badge">{{ shift.positionName }}</span>
+                    <span v-if="isManager && shiftTaskBadge(shift)"
+                      class="shift-task-status"
+                      :class="{ 'shift-task-status--done': shiftTaskBadge(shift).allDone }">
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <path d="M2 5.2L4 7.2L8 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                      <span>{{ shiftTaskBadge(shift).allDone ? 'Done' : shiftTaskBadge(shift).label }}</span>
+                    </span>
                   </div>
+                  <button v-if="canTakeShift(shift)" class="take-shift-btn"
+                    @click.stop="takeShift(shift, $event)"
+                    @mousedown.stop
+                    title="Take this shift">Take</button>
                 </div>
                 <div v-if="isTodayDate(date)" class="current-time-line" :style="{ top: currentTimePx + 'px' }"></div>
               </div>
@@ -921,6 +938,38 @@ function employeesForPosition(id_position) {
   if (!ids) return [];
   const idSet = new Set(ids);
   return employees.value.filter(e => idSet.has(e.id_employee));
+}
+
+// Can the current (employee) user claim this unassigned shift?
+function canTakeShift(shift) {
+  if (isManager.value) return false;
+  if (!shift || shift.id_employee) return false;
+  if (!shift.id_shift || !currentUser.value?.id_employee) return false;
+  if (shift.id_position == null) return true;
+  const ids = positionEmployeeIds.value[shift.id_position];
+  return !!ids && ids.includes(currentUser.value.id_employee);
+}
+
+async function takeShift(shift, e) {
+  e?.stopPropagation?.();
+  const empId = currentUser.value?.id_employee;
+  if (!empId || !shift?.id_shift) return;
+  try {
+    const assignment = await apiCreateAssignment(shift.id_shift, empId, shift.date);
+    const emp = employeeMap.value[empId];
+    const idx = shifts.value.findIndex(s => s.id === shift.id);
+    if (idx !== -1) {
+      shifts.value[idx] = {
+        ...shifts.value[idx],
+        id:                 assignment.id_shiftAssignment,
+        id_shiftAssignment: assignment.id_shiftAssignment,
+        id_employee:        empId,
+        employee:           emp ? `${emp.fName} ${emp.lName}` : "",
+      };
+    }
+  } catch (err) {
+    alert("Failed to take shift: " + (err.message || "Network error"));
+  }
 }
 
 // ── Task state ─────────────────────────────────────────────────────────────────
@@ -2803,6 +2852,7 @@ function fitToView() {
 .today-btn { background: none; border: 1px solid var(--bdr-accent); color: var(--tx-muted); padding: 4px 12px; border-radius: 6px; font-size: 15px; cursor: pointer; font-family: 'Satoshi', sans-serif; transition: border-color 0.15s, color 0.15s; }
 .today-btn:hover { border-color: var(--accent); color: var(--accent); }
 .cal-view-group { display: flex; gap: 2px; background: var(--bdr-subtle); border-radius: 8px; padding: 3px; }
+.cal-view-group.push-right { margin-left: auto; }
 .view-btn { background: none; border: none; color: var(--tx-muted); padding: 4px 14px; border-radius: 6px; font-size: 15px; cursor: pointer; font-family: 'Satoshi', sans-serif; transition: background 0.15s, color 0.15s; }
 .view-btn.active { background: var(--bg-active); color: var(--accent); font-weight: 600; }
 .add-shift-btn { background: var(--accent); border: none; color: #fff; padding: 7px 16px; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px; font-family: 'Satoshi', sans-serif; transition: background 0.15s, transform 0.12s; white-space: nowrap; }
@@ -2867,27 +2917,34 @@ function fitToView() {
 
 .shift-block { position: absolute; border-radius: 6px; padding: 5px 8px; cursor: pointer; overflow: hidden; z-index: 2; transition: filter 0.15s; }
 .shift-block:hover { filter: brightness(1.12); }
+.take-shift-btn {
+  position: absolute; bottom: 4px; right: 4px;
+  background: #fff; color: #111; border: none;
+  font-size: 11px; font-weight: 700; font-family: 'Satoshi', sans-serif;
+  padding: 3px 10px; border-radius: 6px; cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  transition: background 0.12s, transform 0.08s;
+}
+.take-shift-btn:hover { background: #f0f0f0; transform: translateY(-1px); }
+.take-shift-btn:active { transform: translateY(0); }
 .cmd-create-mode .shift-block { cursor: crosshair !important; }
 .shift-employee { font-size: 15px; font-weight: 700; color: rgba(0,0,0,0.85); line-height: 1.2; }
 .shift-time { font-size: 13px; color: rgba(0,0,0,0.6); font-family: 'DM Mono', monospace; }
-.shift-pos-badge { font-size: 12px; color: rgba(0,0,0,0.5); margin-top: 2px; background: rgba(0,0,0,0.1); border-radius: 3px; padding: 1px 4px; display: inline-block; }
+.shift-pos-badge { font-size: 12px; color: rgba(0,0,0,0.5); background: rgba(0,0,0,0.1); border-radius: 3px; padding: 1px 4px; display: inline-block; }
+.shift-meta-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; flex-wrap: wrap; }
 .shift-task-status {
-  font-size: 11px;
-  font-weight: 600;
-  margin-top: 3px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  display: inline-block;
-  background: rgba(224, 108, 0, 0.22);
-  color: #6a3b00;
-  border: 1px solid rgba(224, 108, 0, 0.4);
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px; font-weight: 700; line-height: 1;
+  padding: 2px 6px 2px 5px; border-radius: 100px;
+  background: rgba(220, 38, 38, 0.28);
+  color: #5a0f0f;
   font-family: 'DM Mono', monospace;
   letter-spacing: 0.02em;
 }
+.shift-task-status svg { flex-shrink: 0; }
 .shift-task-status--done {
-  background: rgba(22, 130, 70, 0.22);
+  background: rgba(22, 130, 70, 0.28);
   color: #0f3d23;
-  border-color: rgba(22, 130, 70, 0.45);
 }
 
 .event-block { position: absolute; left: 3px; right: 3px; border-radius: 6px; overflow: hidden; z-index: 1; }
