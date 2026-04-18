@@ -166,13 +166,19 @@
         <!-- 4. Requests -->
         <div v-if="!isManager" class="sidebar-section">
           <div class="sidebar-sec-header clickable" @click="router.push('/requests')">
-            <span class="sidebar-sec-title">Requests</span>
-            <span v-if="myRequests.length" class="sidebar-sec-count">{{ myRequests.length }}</span>
+            <span class="sidebar-sec-title">My Requests</span>
+            <span v-if="myRequestsUnified.length" class="sidebar-sec-count">{{ myRequestsUnified.length }}</span>
           </div>
-          <div v-if="myRequests.length === 0" class="sidebar-empty">No pending requests</div>
-          <div v-for="r in myRequests" :key="r.id" class="request-item">
-            <span class="request-name">{{ r.name }}</span>
-            <span class="request-type">{{ r.type }}</span>
+          <div v-if="myRequestsUnified.length === 0" class="sidebar-empty">
+            No active requests — submit time off or post a shift from the Tradeboard.
+          </div>
+          <div v-for="r in myRequestsVisible" :key="r.id" class="request-item">
+            <span class="request-type-tag">{{ r.type }}</span>
+            <span class="request-label">{{ r.label }}</span>
+            <span class="request-status-pill" :class="'status--' + r.status.toLowerCase()">{{ r.status }}</span>
+          </div>
+          <div v-if="myRequestsOverflow > 0" class="sidebar-view-all" @click="router.push('/requests')">
+            View all ({{ myRequestsOverflow }} more)
           </div>
         </div>
       </aside>
@@ -864,7 +870,7 @@ import {
   deleteAssignment  as apiDeleteAssignment,
   fetchSwapRequests,
 } from "../services/schedulingService.js";
-import { getDepartment, getCalendarEntries, getEvents, getPositions, getSettingValues, getPositionEmployees } from "../services/departmentService.js";
+import { getDepartment, getCalendarEntries, getEvents, getPositions, getSettingValues, getPositionEmployees, getDepartmentAccessRequests } from "../services/departmentService.js";
 import {
   fetchTaskLists,
   fetchTasks,
@@ -965,6 +971,10 @@ const shifts             = ref([]);
 const pendingRequests    = ref([]);
 const sidebarAvailability = ref([]);
 const approvedAvailability = ref([]);
+// Employee's own request history (all three types, all statuses) — drives
+// the Requests sidebar on the employee dashboard.
+const myTimeOffRequests    = ref([]);
+const myDeptAccessRequests = ref([]);
 const calendarHours   = ref([]); // hours of operation from department calendar
 const activeSeason    = ref(""); // currently active season name (empty = no filter)
 const deptEvents      = ref([]); // department events
@@ -1258,12 +1268,97 @@ const tradeboardOpenShifts = computed(() => {
 const myShiftTasksTotal = computed(() => myShiftTasks.value.reduce((acc, stl) => acc + stl.totalCount, 0));
 const myShiftTasksDone  = computed(() => myShiftTasks.value.reduce((acc, stl) => acc + stl.completedCount, 0));
 
-// Employee's own pending requests (swap requests they initiated)
-const myRequests = computed(() => {
+// Lookup: id_department → name for the sidebar Requests list. Populated
+// from the user's myDepts list (already loaded by useDepartment) so we
+// don't need an extra /departments fetch. Unknown dept IDs gracefully
+// fall back to "Dept #N" in the template.
+function deptNameById(id) {
+  const d = myDepts.value.find(d => Number(d.id_department) === Number(id));
+  return d?.name || `Dept #${id}`;
+}
+
+// Employee's request history for the sidebar — unified across time-off,
+// swap posts, and department-access. Hides resolved items (approved/denied)
+// that are older than 3 days so the box stays actionable.
+const myRequestsUnified = computed(() => {
   if (isManager.value) return [];
   const myId = currentUser.value?.id_employee;
-  return pendingRequests.value.filter(r => r.raw.id_employeeRequester === myId);
+  if (!myId) return [];
+
+  const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const isStale = (status, ts) => {
+    if (!status) return false;
+    const s = String(status).toLowerCase();
+    if (s === "pending" || s === "open" || s === "claimed") return false;
+    const t = ts ? new Date(ts).getTime() : 0;
+    return t && now - t > THREE_DAYS_MS;
+  };
+  const fmtShort = (iso) => {
+    if (!iso) return "";
+    const d = typeof iso === "string" ? new Date(iso.replace(" ", "T")) : new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
+
+  const items = [];
+
+  // Time-off — one row per request with date range
+  for (const a of myTimeOffRequests.value) {
+    if (isStale(a.status, a.updatedAt || a.createdAt)) continue;
+    const range = a.startDate === a.endDate
+      ? fmtShort(a.startDate)
+      : `${fmtShort(a.startDate)} → ${fmtShort(a.endDate)}`;
+    items.push({
+      id:     `to-${a.id_personalAvailability}`,
+      type:   "Time Off",
+      label:  range,
+      status: a.status || "Pending",
+      ts:     a.updatedAt || a.createdAt,
+    });
+  }
+
+  // Swap requests this employee posted. `pendingRequests` only holds
+  // still-pending items, so approved/denied rollups don't linger here —
+  // that's fine, the Tradeboard page owns the long history view.
+  for (const r of pendingRequests.value) {
+    const raw = r.raw;
+    if (raw.id_employeeRequester !== myId) continue;
+    const shift = shifts.value.find(s => s.id_shift === raw.id_shift);
+    const shiftDate = shift?.date ? fmtShort(shift.date) : "—";
+    // Status shown reflects where the swap is in the workflow.
+    const swapStatus = raw.id_employeeRequested ? "Claimed" : "Open";
+    items.push({
+      id:     `sw-${raw.id_swapRequest}`,
+      type:   "Swap",
+      label:  shiftDate,
+      status: swapStatus,
+      ts:     raw.updatedAt || raw.createdAt,
+    });
+  }
+
+  // Department access
+  for (const r of myDeptAccessRequests.value) {
+    if (isStale(r.status, r.updatedAt || r.createdAt)) continue;
+    items.push({
+      id:     `da-${r.id_departmentAccessRequest}`,
+      type:   "Dept Access",
+      label:  deptNameById(r.id_department),
+      status: r.status || "Pending",
+      ts:     r.updatedAt || r.createdAt,
+    });
+  }
+
+  // Newest first; cap to 5 rows in the sidebar, overflow surfaces via the
+  // "View all" header click → /requests.
+  items.sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0));
+  return items;
 });
+
+const myRequestsVisible = computed(() => myRequestsUnified.value.slice(0, 5));
+const myRequestsOverflow = computed(() =>
+  Math.max(0, myRequestsUnified.value.length - myRequestsVisible.value.length)
+);
 
 // Manager tradeboard sidebar — all pending swap requests enriched with shift + employee info
 const managerTradeboardItems = computed(() => {
@@ -1842,6 +1937,22 @@ async function loadAll() {
         sidebarAvailability.value = normalized
           .filter(a => deptEmpIds.has(a.id_employee) && a.status === "Pending");
       }).catch(() => {});
+    }
+
+    // Load this employee's own request history (time-off + dept-access)
+    // for the Requests sidebar preview. Swap requests are already in
+    // pendingRequests and filtered per-user in myRequestsUnified below.
+    if (!isManager.value && currentUser.value?.id_employee) {
+      const myId = currentUser.value.id_employee;
+      apiClient.get("/personal-availability").then(res => {
+        myTimeOffRequests.value = (res.data || [])
+          .filter(a => a.id_employee === myId)
+          .map(a => ({ ...a, status: normalizeAvailabilityStatus(a.status) }));
+      }).catch(() => { myTimeOffRequests.value = []; });
+
+      getDepartmentAccessRequests({ id_employeeRequester: myId }).then(res => {
+        myDeptAccessRequests.value = res.data || [];
+      }).catch(() => { myDeptAccessRequests.value = []; });
     }
     // Load hours of operation + events for this user's department (non-blocking)
     if (deptId) {
@@ -2862,9 +2973,40 @@ function fitToView() {
   color: var(--tx-faintest);
 }
 
-.request-item { display: flex; justify-content: space-between; font-size: 15px; padding: 5px 0; border-bottom: 1px solid var(--bdr-subtle); color: var(--tx-muted); }
-.request-name { color: var(--tx-secondary); font-weight: 500; }
-.request-type { font-size: 14px; color: var(--accent); }
+.request-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; padding: 8px 0;
+  border-bottom: 1px solid var(--bdr-subtle);
+  color: var(--tx-muted);
+}
+.request-type-tag {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--tx-faint);
+  background: var(--bdr-subtle); border-radius: 4px;
+  padding: 2px 6px; flex-shrink: 0; font-family: 'DM Mono', monospace;
+}
+.request-label {
+  flex: 1; color: var(--tx-secondary); font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-family: 'DM Mono', monospace; font-size: 12px;
+}
+.request-status-pill {
+  font-size: 10px; font-weight: 700; padding: 2px 8px;
+  border-radius: 100px; flex-shrink: 0; text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.request-status-pill.status--pending  { background: var(--warn-bg); color: var(--warn-text); }
+.request-status-pill.status--approved { background: var(--ok-bg); color: var(--ok-text); }
+.request-status-pill.status--denied   { background: var(--deny-bg); color: var(--err-text); }
+.request-status-pill.status--open     { background: var(--bdr-subtle); color: var(--tx-muted); }
+.request-status-pill.status--claimed  { background: var(--accent-bg); color: var(--accent); }
+
+.sidebar-view-all {
+  font-size: 12px; color: var(--accent); cursor: pointer;
+  padding: 8px 0 2px; text-align: center; font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.sidebar-view-all:hover { text-decoration: underline; }
 
 /* Sidebar tradeboard items (manager) */
 .sb-trade-item {
