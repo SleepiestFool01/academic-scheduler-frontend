@@ -146,7 +146,44 @@ async function logout() {
 onMounted(async () => {
   await loadDepts(currentUser.value);
   if (isManager.value) startPolling();
+  // Silent class-schedule sync for employees — runs once per semester.
+  // `lastScheduleSync:<id>:<semester>` in localStorage prevents re-runs.
+  // We can't compute the semester code client-side cheaply (it lives on
+  // the dept's settings), so we just fire the request and let the backend
+  // pick the right semester; the response tells us which one was used and
+  // we remember it so we don't re-hit stingray on every page load.
+  maybeAutoSync();
 });
+
+async function maybeAutoSync() {
+  const user = currentUser.value;
+  if (!user || !user.id_employee) return;
+  if (user.role !== "Employee") return;
+  // Heuristic pre-check: we don't know the semester yet, but we can skip
+  // the network call if we've synced ANYTHING recently (last 6 hours).
+  // The backend is the real source of truth and will rate-limit if we're
+  // over-eager.
+  const recentKey = `lastScheduleSyncAny:${user.id_employee}`;
+  const recent = Number(localStorage.getItem(recentKey) || 0);
+  if (recent && Date.now() - recent < 6 * 60 * 60 * 1000) return;
+
+  try {
+    const { importUnavailabilityForEmployee } = await import("../services/unavailabilityService.js");
+    const { bumpUnavailabilityRefresh } = await import("../composables/useUnavailabilityRefresh.js");
+    const res = await importUnavailabilityForEmployee(user.id_employee);
+    const semester = res.data?.semester;
+    if (semester) {
+      localStorage.setItem(`lastScheduleSync:${user.id_employee}:${semester}`, String(Date.now()));
+    }
+    localStorage.setItem(recentKey, String(Date.now()));
+    // Any view already mounted (Availability, Dashboard, etc.) re-fetches
+    // unavailability when this signal bumps — no manual refresh needed.
+    bumpUnavailabilityRefresh();
+  } catch (_) {
+    // Silent — the sync button on /availability will surface errors.
+    // Auto-sync shouldn't pop UI on failure.
+  }
+}
 
 onBeforeUnmount(() => {
   stopPolling();

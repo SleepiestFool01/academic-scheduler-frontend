@@ -49,6 +49,7 @@
 <script setup>
 import { ref, computed, watch } from "vue";
 import { getUnavailability } from "../services/unavailabilityService.js";
+import { useUnavailabilityRefresh } from "../composables/useUnavailabilityRefresh.js";
 
 const props = defineProps({
   open:     { type: Boolean, default: false },
@@ -117,6 +118,11 @@ async function load() {
 watch(() => [props.open, props.employee?.id_employee], ([nowOpen]) => {
   if (nowOpen) load();
 }, { immediate: true });
+
+// Also re-fetch while the modal is already open if a sync completes
+// somewhere else (e.g. the manager clicks Bulk Sync with the modal open).
+const { lastSyncTimestamp } = useUnavailabilityRefresh();
+watch(lastSyncTimestamp, () => { if (props.open) load(); });
 </script>
 
 <style scoped>

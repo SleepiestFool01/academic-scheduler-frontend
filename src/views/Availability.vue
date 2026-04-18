@@ -19,8 +19,21 @@
             turn on <strong>Hide reason</strong> on any block you'd rather keep private.
           </p>
         </div>
-        <button class="primary-btn" @click="openAddModal">+ Add Unavailability</button>
+        <div class="header-actions">
+          <button class="secondary-btn" :disabled="syncing" @click="syncClassSchedule">
+            <svg v-if="!syncing" width="14" height="14" viewBox="0 0 16 16" fill="none" style="margin-right:6px">
+              <path d="M3 8a5 5 0 0 1 8.5-3.5M13 8a5 5 0 0 1-8.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              <path d="M11 2v3h-3M5 14v-3h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span v-else class="sync-spinner"></span>
+            {{ syncing ? 'Syncing…' : 'Sync class schedule' }}
+          </button>
+          <button class="primary-btn" @click="openAddModal">+ Add Unavailability</button>
+        </div>
       </div>
+      <p v-if="syncMessage" class="sync-status" :class="{ 'sync-status--error': syncMessage.startsWith('Sync') && syncMessage.includes('fail') || syncMessage.startsWith('Sync unavailable') }">
+        {{ syncMessage }}
+      </p>
 
       <!-- ── Weekly grid ── -->
       <div class="grid-wrap">
@@ -168,7 +181,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import Utils from "../config/utils.js";
 import { useDepartment } from "../composables/useDepartment.js";
 import apiClient from "../services/services.js";
@@ -178,7 +191,9 @@ import {
   createUnavailability,
   updateUnavailability,
   deleteUnavailability,
+  importUnavailabilityForEmployee,
 } from "../services/unavailabilityService.js";
+import { bumpUnavailabilityRefresh, useUnavailabilityRefresh } from "../composables/useUnavailabilityRefresh.js";
 
 const DAY_NAMES      = ["S","M","T","W","T","F","S"];
 const DAY_NAMES_FULL = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -195,6 +210,8 @@ const activeSeason = ref("");
 
 const modal = ref({ open: false, isEdit: false, saving: false, error: "", data: {}, editId: null });
 const deleteConfirm = ref({ open: false, saving: false, item: null });
+const syncing     = ref(false);
+const syncMessage = ref("");
 
 // ── Helpers ──
 function fmtHour(h) {
@@ -276,6 +293,11 @@ onMounted(async () => {
   await loadDepts(currentUser.value);
   await loadAll();
 });
+
+// Re-load whenever ANY sync (auto, manual, or manager bulk) completes
+// anywhere in the app — the composable's bump signal is shared.
+const { lastSyncTimestamp } = useUnavailabilityRefresh();
+watch(lastSyncTimestamp, () => { if (currentUser.value) loadAll(); });
 
 // ── Modal ──
 function defaultModalData() {
@@ -378,6 +400,32 @@ async function executeDelete() {
     deleteConfirm.value.saving = false;
   }
 }
+
+// ── Sync class schedule from stingray ────────────────────────────────────────
+async function syncClassSchedule() {
+  const empId = currentUser.value?.id_employee;
+  if (!empId || syncing.value) return;
+  syncing.value = true;
+  syncMessage.value = "";
+  try {
+    const res = await importUnavailabilityForEmployee(empId);
+    // Backend returns { inserted, semester } — refresh the grid so the
+    // new rows show immediately, then flash a success note.
+    await loadAll();
+    // Remember when we last synced so the auto-on-login trigger can
+    // suppress a re-run within the same semester.
+    const semester = res.data?.semester || "";
+    if (semester) localStorage.setItem(`lastScheduleSync:${empId}:${semester}`, String(Date.now()));
+    syncMessage.value = `Synced ${res.data?.inserted ?? 0} class time${res.data?.inserted === 1 ? '' : 's'} for ${semester || 'the current semester'}.`;
+    // Signal other views (Dashboard calendar, TemplateEditor dropdowns,
+    // the manager's viewer modal) that they should re-fetch too.
+    bumpUnavailabilityRefresh();
+  } catch (err) {
+    syncMessage.value = err.response?.data?.message || err.message || "Sync failed.";
+  } finally {
+    syncing.value = false;
+  }
+}
 </script>
 
 <style scoped>
@@ -402,6 +450,30 @@ async function executeDelete() {
   border-radius: 8px; cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 600;
 }
 .primary-btn:hover { opacity: 0.9; }
+
+.header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.secondary-btn {
+  background: var(--bg-surface); border: 1px solid var(--bdr-medium);
+  color: var(--tx-secondary); padding: 9px 16px; border-radius: 8px;
+  cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 600;
+  display: inline-flex; align-items: center;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.secondary-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.secondary-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.sync-spinner {
+  width: 12px; height: 12px; margin-right: 8px;
+  border: 2px solid var(--bdr-subtle); border-top-color: currentColor;
+  border-radius: 50%; animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+
+.sync-status {
+  margin: -10px 0 18px; font-size: 13px;
+  color: var(--tx-secondary); font-family: 'DM Mono', monospace;
+}
+.sync-status--error { color: var(--err-text); }
 
 /* ── Weekly grid ── */
 .grid-wrap {

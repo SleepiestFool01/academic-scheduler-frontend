@@ -281,7 +281,7 @@
                   :key="'unavail-' + u.id_employeeUnavailability"
                   class="unavailability-overlay"
                   :style="unavailabilityBlockStyle(u)"
-                  :title="(u.label || 'Unavailable') + ' — ' + u.startTime.slice(0,5) + '–' + u.endTime.slice(0,5)">
+                  :title="overlayTitle(u)">
                   <span class="unavailability-overlay-label">{{ u.label || 'Unavailable' }}</span>
                 </div>
                 <div v-for="shift in dayViewShifts" :key="shift.id"
@@ -362,7 +362,7 @@
                   :key="'unavail-' + u.id_employeeUnavailability"
                   class="unavailability-overlay"
                   :style="unavailabilityBlockStyle(u)"
-                  :title="(u.label || 'Unavailable') + ' — ' + u.startTime.slice(0,5) + '–' + u.endTime.slice(0,5)">
+                  :title="overlayTitle(u)">
                   <span class="unavailability-overlay-label">{{ u.label || 'Unavailable' }}</span>
                 </div>
                 <div v-for="shift in shiftsForWeekDay(colIdx)" :key="shift.id"
@@ -458,30 +458,16 @@
         </div>
         <div class="form-group">
           <label>Employee <span class="label-optional">(optional)</span></label>
-          <select v-model="quickCreate.employee" :disabled="!quickCreate.id_position">
-            <option value="">— Unassigned —</option>
-            <option
-              v-for="e in employeesForPosition(quickCreate.id_position, {
-                date: quickCreate.date ? dateToKey(quickCreate.date) : null,
-                startHour: fromTimeInput(quickCreate.startTime || '00:00'),
-                endHour: fromTimeInput(quickCreate.endTime || '23:59'),
-              })"
-              :key="e.name"
-              :value="e.name"
-            >
-              {{ e.name }}{{ e.conflict ? ' ⚠ ' + (e.conflict.label || 'Unavailable') : '' }}
-            </option>
-          </select>
-          <p
-            v-if="quickCreate.id_position && employeesForPosition(quickCreate.id_position, {
+          <EmployeePicker
+            v-model="quickCreate.employee"
+            value-field="name"
+            :options="employeesForPosition(quickCreate.id_position, {
               date: quickCreate.date ? dateToKey(quickCreate.date) : null,
               startHour: fromTimeInput(quickCreate.startTime || '00:00'),
               endHour: fromTimeInput(quickCreate.endTime || '23:59'),
-            }).length === 0"
-            class="label-optional"
-          >
-            No available employees for this position and time.
-          </p>
+            })"
+            :disabled="!quickCreate.id_position"
+            empty-text="No available employees for this position and time." />
         </div>
         <div class="form-row">
           <div class="form-group"><label>Start</label><input type="time" v-model="quickCreate.startTime" /></div>
@@ -512,37 +498,17 @@
           </div>
           <div class="form-group">
             <label>Employee <span class="label-optional">(optional)</span></label>
-            <select
+            <EmployeePicker
               v-model="newShift.employee"
+              value-field="name"
+              :options="employeesForPosition(newShift.id_position, {
+                date: dateKey(weekOffset, Number(newShift.dayIndex)),
+                startHour: fromTimeInput(newShift.startTime || '00:00'),
+                endHour: fromTimeInput(newShift.endTime || '23:59'),
+              })"
               :disabled="!newShift.id_position"
-              @change="newShift.id_employee = employeesForPosition(newShift.id_position, {
-                date: dateKey(weekOffset, Number(newShift.dayIndex)),
-                startHour: fromTimeInput(newShift.startTime || '00:00'),
-                endHour: fromTimeInput(newShift.endTime || '23:59'),
-              }).find(e => e.name === newShift.employee)?.id_employee ?? null">
-              <option value="">— Unassigned —</option>
-              <option
-                v-for="e in employeesForPosition(newShift.id_position, {
-                  date: dateKey(weekOffset, Number(newShift.dayIndex)),
-                  startHour: fromTimeInput(newShift.startTime || '00:00'),
-                  endHour: fromTimeInput(newShift.endTime || '23:59'),
-                })"
-                :key="e.name"
-                :value="e.name"
-              >
-                {{ e.name }}{{ e.conflict ? ' ⚠ ' + (e.conflict.label || 'Unavailable') : '' }}
-              </option>
-            </select>
-            <p
-              v-if="newShift.id_position && employeesForPosition(newShift.id_position, {
-                date: dateKey(weekOffset, Number(newShift.dayIndex)),
-                startHour: fromTimeInput(newShift.startTime || '00:00'),
-                endHour: fromTimeInput(newShift.endTime || '23:59'),
-              }).length === 0"
-              class="label-optional"
-            >
-              No available employees for this position and time.
-            </p>
+              empty-text="No available employees for this position and time."
+              @select="opt => newShift.id_employee = opt?.id_employee ?? null" />
           </div>
           <div class="form-group">
             <label>Day</label>
@@ -868,6 +834,16 @@
     </div>
   </Transition>
 
+  <!-- Unavailability conflict confirmation — used by Take, quick-create,
+       and the shift edit modal. Soft block; user can choose to proceed. -->
+  <UnavailabilityConflictModal
+    :open="conflictPrompt.open"
+    :subject="conflictPrompt.subject"
+    :verb="conflictPrompt.verb"
+    :label="conflictPrompt.label"
+    @confirm="onConflictConfirm"
+    @cancel="onConflictCancel" />
+
 </template>
 
 <script setup>
@@ -878,6 +854,8 @@ import AuthServices from "../services/authServices.js";
 import { useTheme } from "../composables/useTheme.js";
 import { useDepartment } from "../composables/useDepartment.js";
 import DeptSwitcher from "../components/DeptSwitcher.vue";
+import EmployeePicker from "../components/EmployeePicker.vue";
+import UnavailabilityConflictModal from "../components/UnavailabilityConflictModal.vue";
 
 const { isDark, toggleTheme } = useTheme();
 import {
@@ -891,6 +869,8 @@ import {
   fetchSwapRequests,
 } from "../services/schedulingService.js";
 import { getUnavailability } from "../services/unavailabilityService.js";
+import { timeStrToHour } from "../services/employeeManagementService.js";
+import { useUnavailabilityRefresh } from "../composables/useUnavailabilityRefresh.js";
 import { getDepartment, getCalendarEntries, getEvents, getPositions, getSettingValues, getPositionEmployees, getDepartmentAccessRequests } from "../services/departmentService.js";
 import {
   fetchTaskLists,
@@ -992,6 +972,15 @@ const shifts             = ref([]);
 const pendingRequests    = ref([]);
 const sidebarAvailability = ref([]);
 const approvedAvailability = ref([]);
+// Dept-wide EmployeeUnavailability rows — fuels dropdown conflict
+// annotations in the shift modals and the hatched overlay on the calendar.
+// Loaded in loadAll alongside other dept data.
+const deptUnavailability = ref([]);
+// Employee's own request history — drives the Requests sidebar preview on
+// the employee dashboard. Swap requests come from `pendingRequests`
+// filtered per-user in the `myRequestsUnified` computed below.
+const myTimeOffRequests    = ref([]);
+const myDeptAccessRequests = ref([]);
 const calendarHours   = ref([]); // hours of operation from department calendar
 const activeSeason    = ref(""); // currently active season name (empty = no filter)
 const deptEvents      = ref([]); // department events
@@ -1051,11 +1040,19 @@ function employeeUnavailabilityConflict(id_employee, date, startHour, endHour) {
   // Derive day name from the YYYY-MM-DD key without timezone skew.
   const [y, m, d] = date.split("-").map(Number);
   const dayName = DAY_NAMES_FULL_UNAVAIL[new Date(y, m - 1, d).getDay()];
+  const targetId = Number(id_employee);
   for (const row of deptUnavailability.value) {
-    if (row.id_employee !== id_employee) continue;
+    // Coerce both sides — Sequelize occasionally returns integer FKs as
+    // strings depending on driver config, which would silently miss every
+    // match here with strict `!==`.
+    if (Number(row.id_employee) !== targetId) continue;
     if (row.dayOfWeek !== dayName) continue;
     if (row.scopeType === "season") {
-      if (!activeSeason.value || row.season !== activeSeason.value) continue;
+      // If the dept has an activeSeason configured, require a match.
+      // If it's unset (admin hasn't chosen one yet), accept the row so
+      // freshly-imported class schedules still count as conflicts rather
+      // than silently disappearing from the picker.
+      if (activeSeason.value && row.season !== activeSeason.value) continue;
     } else if (row.scopeType === "dateRange") {
       if (!row.startDate || !row.endDate) continue;
       if (date < row.startDate || date > row.endDate) continue;
@@ -1069,22 +1066,36 @@ function employeeUnavailabilityConflict(id_employee, date, startHour, endHour) {
 
 // All unavailability rows that apply to the given employee on the given
 // YYYY-MM-DD date — used by the calendar overlay to paint hatched blocks
-// behind the shift grid when a shift is selected.
+// behind the shift grid when a shift is selected. Skips rows missing
+// startTime/endTime so a bad DB row can't crash the render.
 function unavailabilityForEmployeeOnDate(id_employee, date) {
   if (!id_employee || !date) return [];
   const [y, m, d] = date.split("-").map(Number);
   const dayName = DAY_NAMES_FULL_UNAVAIL[new Date(y, m - 1, d).getDay()];
+  const targetId = Number(id_employee);
   return deptUnavailability.value.filter(row => {
-    if (row.id_employee !== id_employee) return false;
+    if (Number(row.id_employee) !== targetId) return false;
     if (row.dayOfWeek !== dayName) return false;
+    if (!row.startTime || !row.endTime) return false;
     if (row.scopeType === "season") {
-      return activeSeason.value && row.season === activeSeason.value;
+      // Same lenient rule as employeeUnavailabilityConflict: if the dept
+      // hasn't chosen an activeSeason, show imported rows anyway.
+      return !activeSeason.value || row.season === activeSeason.value;
     }
     if (row.scopeType === "dateRange") {
       return row.startDate && row.endDate && date >= row.startDate && date <= row.endDate;
     }
     return false;
   });
+}
+// Safe title string for the overlay tooltip. A null startTime/endTime
+// slipping through would throw during template render and blank the
+// dashboard — better to degrade to just the label.
+function overlayTitle(u) {
+  const label = u.label || "Unavailable";
+  const s = typeof u.startTime === "string" ? u.startTime.slice(0, 5) : "";
+  const e = typeof u.endTime   === "string" ? u.endTime.slice(0, 5)   : "";
+  return s && e ? `${label} — ${s}–${e}` : label;
 }
 
 // Absolute-position style for an unavailability block on the calendar,
@@ -1107,12 +1118,55 @@ function canTakeShift(shift) {
   return !!ids && ids.includes(currentUser.value.id_employee);
 }
 
+// ── Unavailability conflict confirmation (shared modal state) ─────────────────
+// Promise-based — any caller can `await confirmConflict(subject, label, verb)`
+// and get back true (user confirmed) or false (cancelled). The modal is
+// rendered once in the template and driven by `conflictPrompt.open`.
+const conflictPrompt = ref({ open: false, subject: "", verb: "is marked", label: "", _resolve: null });
+
+function confirmConflict(subject, label, verb = "is marked") {
+  return new Promise((resolve) => {
+    conflictPrompt.value = { open: true, subject, label, verb, _resolve: resolve };
+  });
+}
+function onConflictConfirm() {
+  const resolve = conflictPrompt.value._resolve;
+  conflictPrompt.value.open = false;
+  resolve?.(true);
+}
+function onConflictCancel() {
+  const resolve = conflictPrompt.value._resolve;
+  conflictPrompt.value.open = false;
+  resolve?.(false);
+}
+
 async function takeShift(shift, e) {
   e?.stopPropagation?.();
   const empId = currentUser.value?.id_employee;
   if (!empId || !shift?.id_shift) return;
+  await tryTakeShift(shift, empId, false);
+}
+
+// Shared retry-with-confirm helper for any assignment POST. Returns the
+// created assignment, or null if the user cancelled, or throws the error
+// for anything non-overridable.
+async function createAssignmentWithConfirm(id_shift, id_employee, date, subject) {
   try {
-    const assignment = await apiCreateAssignment(shift.id_shift, empId, shift.date);
+    return await apiCreateAssignment(id_shift, id_employee, date);
+  } catch (err) {
+    const body = err.response?.data;
+    if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY") {
+      const ok = await confirmConflict(subject, body.unavailabilityLabel || "Unavailable");
+      if (!ok) return null;
+      return await apiCreateAssignment(id_shift, id_employee, date, true);
+    }
+    throw err;
+  }
+}
+
+async function tryTakeShift(shift, empId, force) {
+  try {
+    const assignment = await apiCreateAssignment(shift.id_shift, empId, shift.date, force);
     const emp = employeeMap.value[empId];
     const idx = shifts.value.findIndex(s => s.id === shift.id);
     if (idx !== -1) {
@@ -1125,7 +1179,17 @@ async function takeShift(shift, e) {
       };
     }
   } catch (err) {
-    alert("Failed to take shift: " + (err.message || "Network error"));
+    const body = err.response?.data;
+    // Soft conflict (class schedule / manual unavailability) — confirm
+    // with the user and retry with force=true.
+    if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY") {
+      const ok = await confirmConflict("You", body.unavailabilityLabel || "Unavailable", "are marked");
+      if (ok) return tryTakeShift(shift, empId, true);
+      return;
+    }
+    // Hard conflict (approved time off) or unknown — show the reason.
+    const reason = body?.message || err.message || "Network error";
+    alert("Couldn't take this shift: " + reason);
   }
 }
 
@@ -2069,22 +2133,71 @@ async function confirmQuickCreate() {
   const endHour    = fromTimeInput(qc.endTime);
   const emp        = employees.value.find(e => e.name === qc.employee);
   const posName    = positions.value.find(p => p.id_position === qc.id_position)?.name || "";
+  const args = {
+    id_employee:   emp?.id_employee ?? null,
+    date:          dateToKey(qc.date),
+    startHour, endHour,
+    notes:         qc.notes,
+    positionName:  posName,
+    id_position:   qc.id_position,
+    id_department: selectedDeptId.value || currentUser.value?.id_department || null,
+  };
   try {
-    const block = await apiCreateShift({
-      id_employee:  emp?.id_employee ?? null,
-      date:         dateToKey(qc.date),
-      startHour, endHour,
-      notes:        qc.notes,
-      positionName: posName,
-      id_position:  qc.id_position,
-      id_department: selectedDeptId.value || currentUser.value?.id_department || null,
-    });
+    const block = await apiCreateShift(args);
     block.employee     = emp?.name || "";
     block.positionName = posName;
     shifts.value.push(block);
     pushUndo({ type: 'create', shifts: [block] });
     quickCreate.value.visible = false;
-  } catch (err) { alert("Error saving shift: " + err.message); }
+  } catch (err) {
+    const body = err.response?.data;
+    // Soft conflict — the shift was created; only the assignment failed.
+    // Confirm with the user and retry just the assignment with force=true.
+    if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY" && err.pendingAssignment) {
+      const ok = await confirmConflict(emp?.name || "This employee", body.unavailabilityLabel || "Unavailable");
+      if (ok) {
+        try {
+          const assignment = await apiCreateAssignment(
+            err.pendingAssignment.id_shift,
+            err.pendingAssignment.id_employee,
+            err.pendingAssignment.date,
+            true,
+          );
+          // Rebuild the block from the orphan shift + the new assignment so
+          // it renders just like the happy-path return of apiCreateShift.
+          const block = {
+            id:                 assignment.id_shiftAssignment,
+            id_shift:           err.orphanShift.id_shift,
+            id_shiftAssignment: assignment.id_shiftAssignment,
+            id_employee:        emp.id_employee,
+            employee:           emp.name,
+            date:               args.date,
+            dayIndex:           err.shiftBuildArgs?.dowInt,
+            startHour, endHour,
+            startLabel:         fmtHour(startHour),
+            endLabel:           fmtHour(endHour),
+            notes:              qc.notes || "",
+            id_position:        qc.id_position,
+            positionName:       posName,
+          };
+          shifts.value.push(block);
+          pushUndo({ type: 'create', shifts: [block] });
+          quickCreate.value.visible = false;
+          return;
+        } catch (retryErr) {
+          alert("Couldn't assign the shift: " + (retryErr.response?.data?.message || retryErr.message));
+          return;
+        }
+      }
+      // User cancelled — clean up the orphan shift so we don't leave an
+      // unassigned row the manager didn't want.
+      if (err.orphanShift?.id_shift) {
+        try { await apiClient.delete(`/shifts/${err.orphanShift.id_shift}`); } catch (_) {}
+      }
+      return;
+    }
+    alert("Error saving shift: " + (body?.message || err.message));
+  }
 }
 
 function selectShift(shift, e) {
@@ -2150,34 +2263,90 @@ async function addShift() {
       } else if (!prevEmpId && nextEmpId) {
         // Assign for the first time
         const emp = employees.value.find(e => e.id_employee === nextEmpId);
-        const assignment = await apiCreateAssignment(existing.id_shift, nextEmpId, existing.date);
+        const assignment = await createAssignmentWithConfirm(existing.id_shift, nextEmpId, existing.date, emp?.name || "This employee");
+        if (!assignment) { undoStack.value.pop(); return; }
         updated = { ...updated, id: assignment.id_shiftAssignment, id_shiftAssignment: assignment.id_shiftAssignment, id_employee: nextEmpId, employee: emp?.name || "" };
       } else if (prevEmpId && nextEmpId && prevEmpId !== nextEmpId) {
-        // Switch employee: delete old assignment, create new one
-        await apiDeleteAssignment(existing.id_shiftAssignment);
+        // Switch employee: try the new assignment first so we don't orphan
+        // the old one if the user cancels the conflict prompt.
         const emp = employees.value.find(e => e.id_employee === nextEmpId);
-        const assignment = await apiCreateAssignment(existing.id_shift, nextEmpId, existing.date);
+        // The old assignment still references the shift, so we need to
+        // free it before creating the new one. If the new one fails we
+        // re-create the old to preserve state.
+        await apiDeleteAssignment(existing.id_shiftAssignment);
+        const assignment = await createAssignmentWithConfirm(existing.id_shift, nextEmpId, existing.date, emp?.name || "This employee");
+        if (!assignment) {
+          // User cancelled — restore the prior assignment so the shift
+          // isn't left hanging unassigned.
+          try {
+            await apiCreateAssignment(existing.id_shift, prevEmpId, existing.date, true);
+          } catch (_) {}
+          undoStack.value.pop();
+          return;
+        }
         updated = { ...updated, id: assignment.id_shiftAssignment, id_shiftAssignment: assignment.id_shiftAssignment, id_employee: nextEmpId, employee: emp?.name || "" };
       }
       shifts.value[idx] = updated;
-    } catch (err) { undoStack.value.pop(); alert("Error updating shift: " + err.message); return; }
+    } catch (err) { undoStack.value.pop(); alert("Error updating shift: " + (err.response?.data?.message || err.message)); return; }
     editingShiftId.value = null;
   } else {
     const emp = employees.value.find(e => e.name === newShift.value.employee);
+    const date = dateKey(weekOffset.value, Number(newShift.value.dayIndex));
     try {
       const block = await apiCreateShift({
-        id_employee:  emp?.id_employee ?? null,
-        date:         dateKey(weekOffset.value, Number(newShift.value.dayIndex)),
+        id_employee:   emp?.id_employee ?? null,
+        date,
         startHour, endHour,
-        notes:        newShift.value.notes,
-        positionName: posName,
-        id_position:  newShift.value.id_position,
+        notes:         newShift.value.notes,
+        positionName:  posName,
+        id_position:   newShift.value.id_position,
       });
       block.employee     = emp?.name || "";
       block.positionName = posName;
       shifts.value.push(block);
       pushUndo({ type: 'create', shifts: [block] });
-    } catch (err) { alert("Error creating shift: " + err.message); return; }
+    } catch (err) {
+      // Same dance as confirmQuickCreate: shift already persisted; retry
+      // just the assignment with force after user confirms.
+      const body = err.response?.data;
+      if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY" && err.pendingAssignment) {
+        const ok = await confirmConflict(emp?.name || "This employee", body.unavailabilityLabel || "Unavailable");
+        if (ok) {
+          try {
+            const assignment = await apiCreateAssignment(err.pendingAssignment.id_shift, err.pendingAssignment.id_employee, err.pendingAssignment.date, true);
+            const block = {
+              id:                 assignment.id_shiftAssignment,
+              id_shift:           err.orphanShift.id_shift,
+              id_shiftAssignment: assignment.id_shiftAssignment,
+              id_employee:        emp.id_employee,
+              employee:           emp.name,
+              date,
+              dayIndex:           err.shiftBuildArgs?.dowInt,
+              startHour, endHour,
+              startLabel:         fmtHour(startHour),
+              endLabel:           fmtHour(endHour),
+              notes:              newShift.value.notes || "",
+              id_position:        newShift.value.id_position,
+              positionName:       posName,
+            };
+            shifts.value.push(block);
+            pushUndo({ type: 'create', shifts: [block] });
+            showAddModal.value = false;
+            return;
+          } catch (retryErr) {
+            alert("Couldn't assign the shift: " + (retryErr.response?.data?.message || retryErr.message));
+            return;
+          }
+        }
+        // Cancelled — clean up the orphan shift.
+        if (err.orphanShift?.id_shift) {
+          try { await apiClient.delete(`/shifts/${err.orphanShift.id_shift}`); } catch (_) {}
+        }
+        return;
+      }
+      alert("Error creating shift: " + (body?.message || err.message));
+      return;
+    }
   }
   showAddModal.value = false;
 }
@@ -2865,6 +3034,18 @@ watch(selectedDeptId, () => { loadAll(); loadTemplatesForDropdown(); });
 // Reload sidebar tasks whenever today's shifts change (e.g. after loadAll)
 watch(myTodayShifts, () => { loadMyTasks(); }, { deep: false });
 
+// When any sync (auto, manual, or bulk) completes, pull fresh dept
+// unavailability so the dropdown warnings + hatched overlay update
+// without requiring a browser refresh.
+const { lastSyncTimestamp: __unavailSyncTs } = useUnavailabilityRefresh();
+watch(__unavailSyncTs, () => {
+  const deptId = selectedDeptId.value || currentUser.value?.id_department;
+  if (!deptId) return;
+  getUnavailability({ id_department: deptId })
+    .then(r => { deptUnavailability.value = r.data || []; })
+    .catch(() => {});
+});
+
 let clockInterval = null;
 onMounted(async () => {
   // Load department list for everyone — employees may belong to multiple
@@ -3232,7 +3413,11 @@ function fitToView() {
   );
   border: 1px dashed rgba(255, 23, 68, 0.45);
   border-radius: 5px;
-  z-index: 1; pointer-events: none;
+  /* z-index 1 sits below shift-block (z-index 2). `!important` on
+     pointer-events is deliberate — any future rule must not accidentally
+     make this block mousedown, or drag-to-create / shift clicks break. */
+  z-index: 1;
+  pointer-events: none !important;
   display: flex; align-items: flex-start;
 }
 .unavailability-overlay-label {
@@ -3244,6 +3429,7 @@ function fitToView() {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   max-width: calc(100% - 8px);
   font-family: 'DM Mono', monospace;
+  pointer-events: none !important;
 }
 .shift-block:hover { filter: brightness(1.12); }
 .take-shift-btn {

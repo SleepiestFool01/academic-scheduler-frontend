@@ -75,7 +75,7 @@ export const shiftService = {
    * Create a shift definition, optionally assigning it to an employee.
    * @param {{ id_employee?, date, startHour, endHour, notes, positionName, id_position? }} p
    */
-  async createAndAssign({ id_employee = null, date, startHour, endHour, notes, positionName = "", id_position = null, id_department = null }) {
+  async createAndAssign({ id_employee = null, date, startHour, endHour, notes, positionName = "", id_position = null, id_department = null, force = false }) {
     const [y, mo, d] = date.split("-").map(Number);
     const dow = new Date(y, mo - 1, d).getDay();
     const label = positionName || "Shift";
@@ -92,20 +92,29 @@ export const shiftService = {
     });
 
     if (id_employee) {
-      const { data: assignment } = await apiClient.post("/shift-assignments", {
-        id_employee,
-        id_shift: shift.id_shift,
-        date,
-      });
-      return { shift, assignment };
+      try {
+        const body = { id_employee, id_shift: shift.id_shift, date };
+        if (force) body.force = true;
+        const { data: assignment } = await apiClient.post("/shift-assignments", body);
+        return { shift, assignment };
+      } catch (err) {
+        // The shift already persisted; surface details so the caller can
+        // confirm the unavailability conflict and retry just the assignment.
+        err.orphanShift = shift;
+        err.pendingAssignment = { id_employee, id_shift: shift.id_shift, date };
+        throw err;
+      }
     }
 
     return { shift, assignment: null };
   },
 
-  /** Create a ShiftAssignment for an existing shift */
-  async createAssignment(id_shift, id_employee, date) {
-    const { data } = await apiClient.post("/shift-assignments", { id_shift, id_employee, date });
+  /** Create a ShiftAssignment for an existing shift. `force` bypasses a
+   *  soft unavailability conflict on the backend (time-off still blocks). */
+  async createAssignment(id_shift, id_employee, date, force = false) {
+    const body = { id_shift, id_employee, date };
+    if (force) body.force = true;
+    const { data } = await apiClient.post("/shift-assignments", body);
     return data;
   },
 

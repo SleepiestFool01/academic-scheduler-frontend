@@ -20,7 +20,12 @@
             <h2 class="panel-title">Employees</h2>
             <p class="panel-sub">{{ employees.length }} total members</p>
           </div>
-          <input v-model="empSearch" class="search-input" placeholder="Search by name or email…" />
+          <div class="panel-header-actions">
+            <input v-model="empSearch" class="search-input" placeholder="Search by name or email…" />
+            <button class="secondary-btn" :disabled="bulkSync.running" @click="openBulkSyncConfirm">
+              {{ bulkSync.running ? 'Syncing…' : 'Sync class schedules' }}
+            </button>
+          </div>
         </div>
 
         <div class="table-wrap">
@@ -321,6 +326,55 @@
       :open="availabilityViewer.open"
       :employee="availabilityViewer.employee"
       @close="closeAvailabilityViewer" />
+
+    <!-- ── Soft-conflict confirmation for class-schedule overlaps ── -->
+    <UnavailabilityConflictModal
+      :open="conflictPrompt.open"
+      :subject="conflictPrompt.subject"
+      :label="conflictPrompt.label"
+      @confirm="onConflictConfirm"
+      @cancel="onConflictCancel" />
+
+    <!-- ── Bulk class-schedule sync: confirm ── -->
+    <Transition name="modal">
+      <div v-if="bulkSync.confirmOpen" class="modal-overlay" @click.self="bulkSync.confirmOpen = false">
+        <div class="modal modal-sm">
+          <h3 class="modal-title">Sync everyone's class schedules?</h3>
+          <p class="modal-body-text">
+            This will pull each employee's schedule from stingray for the current semester
+            and replace any previously imported class times. Manual unavailability entries won't be touched.
+          </p>
+          <div class="modal-actions">
+            <button class="cancel-btn" @click="bulkSync.confirmOpen = false">Cancel</button>
+            <button class="confirm-btn" @click="runBulkSync">Sync</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- ── Bulk sync: results ── -->
+    <Transition name="modal">
+      <div v-if="bulkSync.resultsOpen" class="modal-overlay" @click.self="bulkSync.resultsOpen = false">
+        <div class="modal">
+          <h3 class="modal-title">Class schedules synced</h3>
+          <p class="modal-body-text">
+            Semester: <strong>{{ bulkSync.result?.semester || '—' }}</strong>.
+            {{ bulkSync.result?.succeeded?.length || 0 }} succeeded,
+            {{ bulkSync.result?.failed?.length || 0 }} failed.
+          </p>
+          <div v-if="bulkSync.result?.failed?.length" class="bulk-sync-failed">
+            <div class="bulk-sync-failed-title">Failed</div>
+            <div v-for="f in bulkSync.result.failed" :key="f.id_employee" class="bulk-sync-failed-row">
+              <span class="bulk-sync-failed-name">{{ f.name }}</span>
+              <span class="bulk-sync-failed-error">{{ f.error }}</span>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button class="confirm-btn" @click="bulkSync.resultsOpen = false">Done</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -331,6 +385,10 @@ import Utils from "../config/utils.js";
 import { useDepartment } from "../composables/useDepartment.js";
 import DeptSwitcher from "../components/DeptSwitcher.vue";
 import AvailabilityViewerModal from "../components/AvailabilityViewerModal.vue";
+import UnavailabilityConflictModal from "../components/UnavailabilityConflictModal.vue";
+import apiClient from "../services/services.js";
+import { importUnavailabilityForDepartment } from "../services/unavailabilityService.js";
+import { bumpUnavailabilityRefresh } from "../composables/useUnavailabilityRefresh.js";
 import {
   employeeService,
   shiftService,
@@ -536,6 +594,42 @@ function openEditShift(s) {
 
 function closeModal() { modal.value.open = false; }
 
+// ── Unavailability conflict confirmation (soft block, overridable) ──────────
+const conflictPrompt = ref({ open: false, subject: "", label: "", _resolve: null });
+function confirmConflict(subject, label) {
+  return new Promise((resolve) => {
+    conflictPrompt.value = { open: true, subject, label, _resolve: resolve };
+  });
+}
+function onConflictConfirm() {
+  const r = conflictPrompt.value._resolve;
+  conflictPrompt.value.open = false;
+  r?.(true);
+}
+function onConflictCancel() {
+  const r = conflictPrompt.value._resolve;
+  conflictPrompt.value.open = false;
+  r?.(false);
+}
+
+// Retry wrapper: try the assignment, and if the backend 409s with an
+// overridable unavailability conflict, confirm with the user and retry
+// with force=true. Returns the assignment, or null if cancelled, or
+// throws for anything non-overridable.
+async function assignWithConfirm(id_shift, id_employee, date, subject) {
+  try {
+    return await shiftService.createAssignment(id_shift, id_employee, date);
+  } catch (err) {
+    const body = err.response?.data;
+    if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY") {
+      const ok = await confirmConflict(subject, body.unavailabilityLabel || "Unavailable");
+      if (!ok) return null;
+      return await shiftService.createAssignment(id_shift, id_employee, date, true);
+    }
+    throw err;
+  }
+}
+
 async function saveModal() {
   modal.value.saving = true;
   modal.value.error  = "";
@@ -589,29 +683,62 @@ async function saveModal() {
             await shiftService.deleteAssignment(editId.id_shiftAssignment);
             updated = { ...updated, id_shiftAssignment: null, id_employee: null, employee: "" };
           } else if (!prevEmpId && nextEmpId) {
-            const assignment = await shiftService.createAssignment(editId.id_shift, nextEmpId, data.date);
+            const assignment = await assignWithConfirm(editId.id_shift, nextEmpId, data.date, employeeName || "This employee");
+            if (!assignment) { modal.value.saving = false; return; }
             updated = { ...updated, id_shiftAssignment: assignment.id_shiftAssignment, id_employee: nextEmpId, employee: employeeName };
           } else if (prevEmpId && nextEmpId && prevEmpId !== nextEmpId) {
             await shiftService.deleteAssignment(editId.id_shiftAssignment);
-            const assignment = await shiftService.createAssignment(editId.id_shift, nextEmpId, data.date);
+            const assignment = await assignWithConfirm(editId.id_shift, nextEmpId, data.date, employeeName || "This employee");
+            if (!assignment) {
+              // User cancelled — restore the prior assignee so the shift
+              // isn't left hanging unassigned.
+              try { await shiftService.createAssignment(editId.id_shift, prevEmpId, data.date, true); } catch (_) {}
+              modal.value.saving = false;
+              return;
+            }
             updated = { ...updated, id_shiftAssignment: assignment.id_shiftAssignment, id_employee: nextEmpId, employee: employeeName };
           }
           shifts.value[idx] = updated;
         }
       } else {
-        const { shift, assignment } = await shiftService.createAndAssign({
-          id_employee:  data.id_employee ? Number(data.id_employee) : null,
+        const id_employee = data.id_employee ? Number(data.id_employee) : null;
+        const args = {
+          id_employee,
           date:         data.date,
           startHour, endHour,
           notes:        data.notes,
           positionName,
           id_position:  data.id_position,
           id_department: selectedDeptId.value || null,
-        });
+        };
+        let result;
+        try {
+          result = await shiftService.createAndAssign(args);
+        } catch (err) {
+          const body = err.response?.data;
+          if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY" && err.pendingAssignment) {
+            const ok = await confirmConflict(employeeName || "This employee", body.unavailabilityLabel || "Unavailable");
+            if (ok) {
+              // Shift already persisted — retry just the assignment with force.
+              const assignment = await shiftService.createAssignment(
+                err.pendingAssignment.id_shift, err.pendingAssignment.id_employee, err.pendingAssignment.date, true,
+              );
+              result = { shift: err.orphanShift, assignment };
+            } else {
+              // Cancelled — clean up the orphan shift and bail.
+              try { await apiClient.delete(`/shifts/${err.orphanShift.id_shift}`); } catch (_) {}
+              modal.value.saving = false;
+              return;
+            }
+          } else {
+            throw err;
+          }
+        }
+        const { shift, assignment } = result;
         shifts.value.push({
           id_shiftAssignment: assignment?.id_shiftAssignment || null,
           id_shift:    shift.id_shift,
-          id_employee: data.id_employee ? Number(data.id_employee) : null,
+          id_employee,
           employee:    employeeName,
           date:        data.date,
           startLabel:  fmtHour(startHour),
@@ -628,7 +755,7 @@ async function saveModal() {
 
     closeModal();
   } catch (err) {
-    modal.value.error = err.message || "Save failed.";
+    modal.value.error = err.response?.data?.message || err.message || "Save failed.";
   } finally {
     modal.value.saving = false;
   }
@@ -757,6 +884,39 @@ function openAvailabilityViewer(emp) {
 function closeAvailabilityViewer() {
   availabilityViewer.value.open = false;
 }
+
+// ── Bulk class-schedule sync (manager-only) ─────────────────────────────────
+const bulkSync = ref({
+  confirmOpen:  false,
+  resultsOpen:  false,
+  running:      false,
+  result:       null,   // { semester, succeeded: [...], failed: [...] }
+});
+
+function openBulkSyncConfirm() {
+  if (!selectedDeptId.value) {
+    apiError.value = "No department selected — pick one before syncing.";
+    return;
+  }
+  bulkSync.value = { confirmOpen: true, resultsOpen: false, running: false, result: null };
+}
+
+async function runBulkSync() {
+  if (!selectedDeptId.value) return;
+  bulkSync.value.confirmOpen = false;
+  bulkSync.value.running = true;
+  try {
+    const res = await importUnavailabilityForDepartment(selectedDeptId.value);
+    bulkSync.value.result = res.data || { semester: "", succeeded: [], failed: [] };
+    bulkSync.value.resultsOpen = true;
+    // Tell Dashboard / TemplateEditor / open viewer modals to re-fetch.
+    bumpUnavailabilityRefresh();
+  } catch (err) {
+    apiError.value = "Sync failed: " + (err.response?.data?.message || err.message || "Unknown error");
+  } finally {
+    bulkSync.value.running = false;
+  }
+}
 </script>
 
 <style scoped>
@@ -846,6 +1006,34 @@ function closeAvailabilityViewer() {
 }
 .search-input:focus { border-color: var(--accent); }
 .search-input::placeholder { color: var(--tx-ghost); }
+
+.panel-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.secondary-btn {
+  background: var(--bg-surface); border: 1px solid var(--bdr-medium);
+  color: var(--tx-secondary); padding: 8px 14px; border-radius: 8px;
+  cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 600;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.secondary-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.secondary-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* Bulk-sync results modal */
+.bulk-sync-failed {
+  background: var(--bg-surface); border: 1px solid var(--bdr-subtle);
+  border-radius: 8px; padding: 10px 14px; margin-bottom: 16px;
+  max-height: 200px; overflow-y: auto;
+}
+.bulk-sync-failed-title {
+  font-size: 11px; font-weight: 700; color: var(--tx-muted);
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;
+}
+.bulk-sync-failed-row {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 5px 0; font-size: 13px; border-bottom: 1px solid var(--bdr-subtle);
+}
+.bulk-sync-failed-row:last-child { border-bottom: none; }
+.bulk-sync-failed-name { color: var(--tx-primary); font-weight: 500; flex-shrink: 0; }
+.bulk-sync-failed-error { color: var(--err-text); font-size: 12px; text-align: right; }
 
 .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--bdr-subtle); }
 .data-table { width: 100%; border-collapse: collapse; font-size: 15px; }

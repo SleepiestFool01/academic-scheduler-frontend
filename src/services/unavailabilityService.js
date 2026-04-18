@@ -14,3 +14,12 @@ export const getUnavailability = (params = {}) => {
 export const createUnavailability = (data) => apiClient.post(`/employee-unavailability`, data);
 export const updateUnavailability = (id, data) => apiClient.put(`/employee-unavailability/${id}`, data);
 export const deleteUnavailability = (id) => apiClient.delete(`/employee-unavailability/${id}`);
+
+// Backend proxies to stingray; frontend never hits stingray directly. The
+// `semester` field is optional — if omitted, the backend derives it from
+// the employee's dept active-season setting, falling back to a date-based
+// guess.
+export const importUnavailabilityForEmployee = (id_employee, semester) =>
+    apiClient.post(`/employee-unavailability/import`, { id_employee, semester });
+export const importUnavailabilityForDepartment = (id_department, semester) =>
+    apiClient.post(`/employee-unavailability/import-bulk`, { id_department, semester });

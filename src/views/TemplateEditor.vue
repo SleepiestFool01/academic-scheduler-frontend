@@ -192,12 +192,11 @@
                   <button class="panel-remove-btn" @click="removePanelEmployee(row)" title="Remove">✕</button>
                 </div>
                 <div v-if="panel.employees.length === 0" class="panel-add-row">
-                  <select class="panel-add-select" v-model="panel.addEmpId">
-                    <option value="">Add employee…</option>
-                    <option v-for="emp in unassignedEmployees" :key="emp.id_employee" :value="emp.id_employee">
-                      {{ emp.fName }} {{ emp.lName }}{{ emp.conflict ? ' ⚠ ' + (emp.conflict.label || 'Unavailable') : '' }}
-                    </option>
-                  </select>
+                  <EmployeePicker
+                    v-model="panel.addEmpId"
+                    value-field="id_employee"
+                    :options="unassignedEmployees"
+                    placeholder="Add employee…" />
                   <button class="panel-add-btn" :disabled="!panel.addEmpId || panel.addingEmp" @click="addPanelEmployee">
                     {{ panel.addingEmp ? '…' : 'Add' }}
                   </button>
@@ -307,20 +306,17 @@
         </div>
         <div class="form-group">
           <label>Employee <span class="optional">(optional)</span></label>
-          <select v-model="quickCreate.id_employee" :disabled="!quickCreate.id_position">
-            <option value="">— No employee —</option>
-            <option
-              v-for="emp in employeesForPosition(quickCreate.id_position, {
-                dayIdx: quickCreate.dayIndex,
-                startHour: quickCreate.startHour,
-                endHour: quickCreate.endHour,
-              })"
-              :key="emp.id_employee"
-              :value="emp.id_employee">
-              {{ emp.fName }} {{ emp.lName }}{{ emp.conflict ? ' ⚠ ' + (emp.conflict.label || 'Unavailable') : '' }}
-            </option>
-          </select>
-          <p v-if="quickCreate.id_position && employeesForPosition(quickCreate.id_position).length === 0" class="optional">No employees assigned to this position.</p>
+          <EmployeePicker
+            v-model="quickCreate.id_employee"
+            value-field="id_employee"
+            :options="employeesForPosition(quickCreate.id_position, {
+              dayIdx: quickCreate.dayIndex,
+              startHour: quickCreate.startHour,
+              endHour: quickCreate.endHour,
+            }).map(e => ({ ...e, name: `${e.fName} ${e.lName}` }))"
+            :disabled="!quickCreate.id_position"
+            placeholder="— No employee —"
+            empty-text="No employees assigned to this position." />
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -350,10 +346,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useTheme } from "../composables/useTheme.js";
 import { useDepartment } from "../composables/useDepartment.js";
+import EmployeePicker from "../components/EmployeePicker.vue";
 import Utils from "../config/utils.js";
 import {
   getTemplate,
@@ -373,6 +370,7 @@ import {
 import { getPositions, getEmployees, getCalendarEntries, getSettingValues, getPositionEmployees } from "../services/departmentService.js";
 import { fetchTaskLists, assignTaskListToShift, getShiftTaskLists, removeShiftTaskList } from "../services/taskService.js";
 import { getUnavailability } from "../services/unavailabilityService.js";
+import { useUnavailabilityRefresh } from "../composables/useUnavailabilityRefresh.js";
 import apiClient from "../services/services.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -436,11 +434,16 @@ function templateConflictFor(id_employee, dayIdx, startHour, endHour) {
   const dayName = DAY_NAMES_FULL_UNAVAIL[dayIdx];
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+  const targetId = Number(id_employee);
   for (const row of deptUnavailability.value) {
-    if (row.id_employee !== id_employee) continue;
+    // Coerce both sides — Sequelize can return integer FKs as strings
+    // depending on driver config.
+    if (Number(row.id_employee) !== targetId) continue;
     if (row.dayOfWeek !== dayName) continue;
     if (row.scopeType === "season") {
-      if (!activeSeason.value || row.season !== activeSeason.value) continue;
+      // If the dept hasn't configured activeSeason yet, accept the row so
+      // imported class schedules still surface as conflicts.
+      if (activeSeason.value && row.season !== activeSeason.value) continue;
     } else if (row.scopeType === "dateRange") {
       if (!row.startDate || !row.endDate) continue;
       if (todayKey < row.startDate || todayKey > row.endDate) continue;
@@ -631,7 +634,11 @@ const unassignedEmployees = computed(() => {
     startHour: sh.startHour,
     endHour:   sh.endHour,
   } : {});
-  return eligible.filter(e => !assigned.has(e.id_employee));
+  // Synthesize `name` so the shared EmployeePicker (which expects a
+  // `name` field) can render these without extra mapping at call sites.
+  return eligible
+    .filter(e => !assigned.has(e.id_employee))
+    .map(e => ({ ...e, name: `${e.fName} ${e.lName}` }));
 });
 
 const unassignedTaskLists = computed(() => {
@@ -756,6 +763,17 @@ async function loadAll() {
 onMounted(async () => {
   await loadAll();
   if (calBody.value) calBody.value.scrollTop = 7 * CELL_HEIGHT;
+});
+
+// Re-fetch dept unavailability when any sync completes so the employee
+// dropdown's ⚠ annotations update without a browser refresh.
+const { lastSyncTimestamp: __unavailSyncTs } = useUnavailabilityRefresh();
+watch(__unavailSyncTs, () => {
+  const id_department = selectedDeptId.value || currentUser?.id_department || null;
+  if (!id_department) return;
+  getUnavailability({ id_department })
+    .then(r => { deptUnavailability.value = r.data || []; })
+    .catch(() => {});
 });
 
 // ── Save template name ────────────────────────────────────────────────────────
