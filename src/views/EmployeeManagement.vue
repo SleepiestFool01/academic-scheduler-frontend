@@ -331,7 +331,6 @@
     <UnavailabilityConflictModal
       :open="conflictPrompt.open"
       :subject="conflictPrompt.subject"
-      :label="conflictPrompt.label"
       @confirm="onConflictConfirm"
       @cancel="onConflictCancel" />
 
@@ -595,10 +594,10 @@ function openEditShift(s) {
 function closeModal() { modal.value.open = false; }
 
 // ── Unavailability conflict confirmation (soft block, overridable) ──────────
-const conflictPrompt = ref({ open: false, subject: "", label: "", _resolve: null });
-function confirmConflict(subject, label) {
+const conflictPrompt = ref({ open: false, subject: "", _resolve: null });
+function confirmConflict(subject) {
   return new Promise((resolve) => {
-    conflictPrompt.value = { open: true, subject, label, _resolve: resolve };
+    conflictPrompt.value = { open: true, subject, _resolve: resolve };
   });
 }
 function onConflictConfirm() {
@@ -622,7 +621,7 @@ async function assignWithConfirm(id_shift, id_employee, date, subject) {
   } catch (err) {
     const body = err.response?.data;
     if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY") {
-      const ok = await confirmConflict(subject, body.unavailabilityLabel || "Unavailable");
+      const ok = await confirmConflict(subject);
       if (!ok) return null;
       return await shiftService.createAssignment(id_shift, id_employee, date, true);
     }
@@ -717,7 +716,7 @@ async function saveModal() {
         } catch (err) {
           const body = err.response?.data;
           if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY" && err.pendingAssignment) {
-            const ok = await confirmConflict(employeeName || "This employee", body.unavailabilityLabel || "Unavailable");
+            const ok = await confirmConflict(employeeName || "This employee");
             if (ok) {
               // Shift already persisted — retry just the assignment with force.
               const assignment = await shiftService.createAssignment(

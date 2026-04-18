@@ -12,13 +12,13 @@
           <h3 class="modal-title">Scheduling conflict</h3>
         </div>
 
+        <!-- Manager-facing copy deliberately omits the reason. The
+             employee's privacy is preserved — whether the conflict is a
+             class, a recurring appointment, or anything else, all the
+             manager sees is "unavailable during this shift". -->
         <p class="modal-body-text">
           <strong>{{ subject || 'This employee' }}</strong>
-          {{ verb }}
-          <span class="conflict-label-pill">
-            <span class="conflict-label-dot"></span>{{ label || 'Unavailable' }}
-          </span>
-          during this shift. Continue anyway?
+          {{ isSelf ? 'are' : 'is' }} unavailable during this shift. Continue anyway?
         </p>
 
         <div class="modal-actions">
@@ -31,13 +31,24 @@
 </template>
 
 <script setup>
-defineProps({
+import { computed } from "vue";
+
+const props = defineProps({
   open:     { type: Boolean, default: false },
-  subject:  { type: String,  default: "" },      // e.g. "Sarah Smith" or "You"
-  verb:     { type: String,  default: "is marked" }, // "is marked" / "are marked"
+  subject:  { type: String,  default: "" },   // e.g. "Sarah Smith" or "You"
+  // `label` is still accepted by callers but intentionally unused in the
+  // template — manager-facing copy stays generic. Kept as a prop so the
+  // existing call sites (which pass the conflict's label through) don't
+  // need editing.
   label:    { type: String,  default: "" },
 });
 const emit = defineEmits(["confirm", "cancel"]);
+
+// Grammar: "You are unavailable" vs "Sarah is unavailable". Simple check
+// — if the subject is "You" (case-insensitive), the verb becomes "are".
+const isSelf = computed(() =>
+  String(props.subject || "").trim().toLowerCase() === "you"
+);
 function confirm() { emit("confirm"); }
 function cancel()  { emit("cancel"); }
 </script>
@@ -64,24 +75,6 @@ function cancel()  { emit("cancel"); }
 }
 .modal-title { font-size: 18px; font-weight: 700; color: var(--tx-primary); margin: 0; }
 .modal-body-text { font-size: 15px; color: var(--tx-secondary); line-height: 1.55; margin-bottom: 22px; }
-
-.conflict-label-pill {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-size: 12px; font-weight: 700;
-  padding: 2px 9px 2px 7px;
-  background: rgba(255, 23, 68, 0.13);
-  border: 1px solid rgba(255, 23, 68, 0.35);
-  color: rgba(255, 23, 68, 0.95);
-  border-radius: 100px;
-  font-family: 'DM Mono', monospace;
-  vertical-align: baseline;
-  margin: 0 2px;
-}
-.conflict-label-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: rgba(255, 23, 68, 0.95);
-  box-shadow: 0 0 0 2px rgba(255, 23, 68, 0.18);
-}
 
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .cancel-btn {

@@ -370,6 +370,7 @@ import {
 import { getPositions, getEmployees, getCalendarEntries, getSettingValues, getPositionEmployees } from "../services/departmentService.js";
 import { fetchTaskLists, assignTaskListToShift, getShiftTaskLists, removeShiftTaskList } from "../services/taskService.js";
 import { getUnavailability } from "../services/unavailabilityService.js";
+import { getActiveSemester } from "../services/semesterService.js";
 import { useUnavailabilityRefresh } from "../composables/useUnavailabilityRefresh.js";
 import apiClient from "../services/services.js";
 
@@ -407,6 +408,20 @@ const positionEmployeeIds = ref({});
 const deptUnavailability = ref([]);
 const DAY_NAMES_FULL_UNAVAIL = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
+// Compare activeSeason setting ("Fall" or "Fall 2026") to a row's season
+// ("Spring 2026"). Matches on semester name + year, year optional on
+// either side so "Fall" matches "Fall 2026" but not "Spring 2026".
+function seasonsMatch(activeSeason, rowSeason) {
+  if (!activeSeason) return true;
+  if (!rowSeason) return false;
+  const [activeSem, activeYear] = String(activeSeason).trim().split(/\s+/);
+  const [rowSem,    rowYear]    = String(rowSeason).trim().split(/\s+/);
+  if (!activeSem || !rowSem) return false;
+  if (activeSem.toLowerCase() !== rowSem.toLowerCase()) return false;
+  if (activeYear && rowYear && activeYear !== rowYear) return false;
+  return true;
+}
+
 // Returns the employees assigned to the given position. If no position is
 // selected, returns no employees (forces position-first). When dayIdx +
 // startHour/endHour are provided, each returned row is annotated with a
@@ -441,9 +456,7 @@ function templateConflictFor(id_employee, dayIdx, startHour, endHour) {
     if (Number(row.id_employee) !== targetId) continue;
     if (row.dayOfWeek !== dayName) continue;
     if (row.scopeType === "season") {
-      // If the dept hasn't configured activeSeason yet, accept the row so
-      // imported class schedules still surface as conflicts.
-      if (activeSeason.value && row.season !== activeSeason.value) continue;
+      if (!seasonsMatch(activeSemester.value, row.season)) continue;
     } else if (row.scopeType === "dateRange") {
       if (!row.startDate || !row.endDate) continue;
       if (todayKey < row.startDate || todayKey > row.endDate) continue;
@@ -458,7 +471,8 @@ function parseTime(t) { if (!t) return 0; const [h, m] = t.split(":").map(Number
 
 // ── Hours of Operation (visual overlay only — does not modify real HOO) ───────
 const calendarHours      = ref([]); // raw rows from /calendar
-const activeSeason       = ref("");  // currently saved active season for the dept
+const activeSeason       = ref("");  // currently saved active season for the dept (legacy — used for hours-of-operation variants)
+const activeSemester     = ref("");  // Semester row whose date range contains today — used for class-schedule conflict matching
 const selectedHoursKey   = ref(null); // key of the season the user is currently viewing
 const HOURS_NONE_KEY     = "__none__";
 
@@ -752,6 +766,12 @@ async function loadAll() {
       getUnavailability({ id_department }).then(r => {
         deptUnavailability.value = r.data || [];
       }).catch(() => { deptUnavailability.value = []; });
+
+      // Active Semester for class-schedule matching — distinct from the
+      // `activeSeason` setting above which drives hours-of-operation.
+      getActiveSemester(id_department)
+        .then(r => { activeSemester.value = r.data?.name || ""; })
+        .catch(() => { activeSemester.value = ""; });
     }
   } catch (err) {
     apiError.value = "Could not load template: " + (err.message || "Network error");

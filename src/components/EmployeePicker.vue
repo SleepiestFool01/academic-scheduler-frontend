@@ -6,9 +6,13 @@
       <span class="emp-picker-trigger-text" :class="{ 'emp-picker-placeholder': !selectedOption }">
         {{ selectedOption ? selectedOption.name : (placeholder || '— Unassigned —') }}
       </span>
+      <!-- Never surface the underlying reason here — managers just see
+           "Unavailable" regardless of whether the employee hid the
+           label. The label is reserved for the employee's own
+           Availability page. -->
       <span v-if="selectedOption && selectedOption.conflict" class="emp-picker-conflict-pill">
         <span class="emp-picker-conflict-dot"></span>
-        {{ selectedOption.conflict.label || 'Unavailable' }}
+        Unavailable
       </span>
       <svg class="emp-picker-caret" width="10" height="10" viewBox="0 0 10 10" fill="none"
         :style="{ transform: open ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform .15s' }">
@@ -31,7 +35,7 @@
           <span class="emp-picker-option-name">{{ opt.name }}</span>
           <span v-if="opt.conflict" class="emp-picker-conflict-pill">
             <span class="emp-picker-conflict-dot"></span>
-            {{ opt.conflict.label || 'Unavailable' }}
+            Unavailable
           </span>
         </button>
         <div v-if="!options.length" class="emp-picker-empty">{{ emptyText || 'No employees available.' }}</div>

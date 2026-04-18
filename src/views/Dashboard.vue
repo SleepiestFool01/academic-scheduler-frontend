@@ -839,8 +839,6 @@
   <UnavailabilityConflictModal
     :open="conflictPrompt.open"
     :subject="conflictPrompt.subject"
-    :verb="conflictPrompt.verb"
-    :label="conflictPrompt.label"
     @confirm="onConflictConfirm"
     @cancel="onConflictCancel" />
 
@@ -869,6 +867,7 @@ import {
   fetchSwapRequests,
 } from "../services/schedulingService.js";
 import { getUnavailability } from "../services/unavailabilityService.js";
+import { getActiveSemester } from "../services/semesterService.js";
 import { timeStrToHour } from "../services/employeeManagementService.js";
 import { useUnavailabilityRefresh } from "../composables/useUnavailabilityRefresh.js";
 import { getDepartment, getCalendarEntries, getEvents, getPositions, getSettingValues, getPositionEmployees, getDepartmentAccessRequests } from "../services/departmentService.js";
@@ -982,7 +981,8 @@ const deptUnavailability = ref([]);
 const myTimeOffRequests    = ref([]);
 const myDeptAccessRequests = ref([]);
 const calendarHours   = ref([]); // hours of operation from department calendar
-const activeSeason    = ref(""); // currently active season name (empty = no filter)
+const activeSeason    = ref(""); // currently active season name (empty = no filter) — used for hours-of-operation variants only
+const activeSemester  = ref(""); // name of the Semester row whose [startDate, endDate] contains today — used for class-schedule conflict detection
 const deptEvents      = ref([]); // department events
 const deptName        = ref('');
 const positions       = ref([]);
@@ -1035,6 +1035,22 @@ function employeeHasApprovedTimeOff(id_employee, date, startHour, endHour) {
 // apply only while the dept's activeSeason matches; "dateRange" rows apply
 // only if `date` is inside [startDate, endDate].
 const DAY_NAMES_FULL_UNAVAIL = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+// Compare an activeSeason setting (e.g. "Fall", "Fall 2026") against a
+// row's `season` field ("Spring 2026"). Matches on semester name + year,
+// with either side allowed to omit the year. Falls back to "accept
+// everything" when activeSeason is empty/unset so freshly-imported rows
+// still count even before the dept owner has chosen a semester.
+function seasonsMatch(activeSeason, rowSeason) {
+  if (!activeSeason) return true;
+  if (!rowSeason) return false;
+  const [activeSem, activeYear] = String(activeSeason).trim().split(/\s+/);
+  const [rowSem,    rowYear]    = String(rowSeason).trim().split(/\s+/);
+  if (!activeSem || !rowSem) return false;
+  if (activeSem.toLowerCase() !== rowSem.toLowerCase()) return false;
+  if (activeYear && rowYear && activeYear !== rowYear) return false;
+  return true;
+}
 function employeeUnavailabilityConflict(id_employee, date, startHour, endHour) {
   if (!date) return null;
   // Derive day name from the YYYY-MM-DD key without timezone skew.
@@ -1048,11 +1064,7 @@ function employeeUnavailabilityConflict(id_employee, date, startHour, endHour) {
     if (Number(row.id_employee) !== targetId) continue;
     if (row.dayOfWeek !== dayName) continue;
     if (row.scopeType === "season") {
-      // If the dept has an activeSeason configured, require a match.
-      // If it's unset (admin hasn't chosen one yet), accept the row so
-      // freshly-imported class schedules still count as conflicts rather
-      // than silently disappearing from the picker.
-      if (activeSeason.value && row.season !== activeSeason.value) continue;
+      if (!seasonsMatch(activeSemester.value, row.season)) continue;
     } else if (row.scopeType === "dateRange") {
       if (!row.startDate || !row.endDate) continue;
       if (date < row.startDate || date > row.endDate) continue;
@@ -1078,9 +1090,7 @@ function unavailabilityForEmployeeOnDate(id_employee, date) {
     if (row.dayOfWeek !== dayName) return false;
     if (!row.startTime || !row.endTime) return false;
     if (row.scopeType === "season") {
-      // Same lenient rule as employeeUnavailabilityConflict: if the dept
-      // hasn't chosen an activeSeason, show imported rows anyway.
-      return !activeSeason.value || row.season === activeSeason.value;
+      return seasonsMatch(activeSemester.value, row.season);
     }
     if (row.scopeType === "dateRange") {
       return row.startDate && row.endDate && date >= row.startDate && date <= row.endDate;
@@ -1119,14 +1129,15 @@ function canTakeShift(shift) {
 }
 
 // ── Unavailability conflict confirmation (shared modal state) ─────────────────
-// Promise-based — any caller can `await confirmConflict(subject, label, verb)`
-// and get back true (user confirmed) or false (cancelled). The modal is
-// rendered once in the template and driven by `conflictPrompt.open`.
-const conflictPrompt = ref({ open: false, subject: "", verb: "is marked", label: "", _resolve: null });
+// Promise-based — any caller can `await confirmConflict(subject)` and
+// get back true (user confirmed) or false (cancelled). The modal always
+// shows generic "unavailable" copy — it never exposes the underlying
+// reason, so we only need the subject (employee's name or "You").
+const conflictPrompt = ref({ open: false, subject: "", _resolve: null });
 
-function confirmConflict(subject, label, verb = "is marked") {
+function confirmConflict(subject) {
   return new Promise((resolve) => {
-    conflictPrompt.value = { open: true, subject, label, verb, _resolve: resolve };
+    conflictPrompt.value = { open: true, subject, _resolve: resolve };
   });
 }
 function onConflictConfirm() {
@@ -1156,7 +1167,7 @@ async function createAssignmentWithConfirm(id_shift, id_employee, date, subject)
   } catch (err) {
     const body = err.response?.data;
     if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY") {
-      const ok = await confirmConflict(subject, body.unavailabilityLabel || "Unavailable");
+      const ok = await confirmConflict(subject);
       if (!ok) return null;
       return await apiCreateAssignment(id_shift, id_employee, date, true);
     }
@@ -1183,7 +1194,7 @@ async function tryTakeShift(shift, empId, force) {
     // Soft conflict (class schedule / manual unavailability) — confirm
     // with the user and retry with force=true.
     if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY") {
-      const ok = await confirmConflict("You", body.unavailabilityLabel || "Unavailable", "are marked");
+      const ok = await confirmConflict("You");
       if (ok) return tryTakeShift(shift, empId, true);
       return;
     }
@@ -2105,10 +2116,19 @@ async function loadAll() {
       getDepartment(deptId).then(r => { deptName.value = r.data?.name || ''; }).catch(() => {});
       getCalendarEntries(deptId).then(r => { calendarHours.value = r.data || []; }).catch(() => {});
       getEvents(deptId).then(r => { deptEvents.value = r.data || []; }).catch(() => {});
+      // Legacy "Active Season" setting — used for picking default
+      // hours-of-operation variants. Keeps holding short values like
+      // "Fall" that span multiple years, per dept's choice.
       getSettingValues(deptId).then(r => {
         const sv = (r.data || []).find(v => v.name === "Active Season" || v.key === "active_season");
         activeSeason.value = sv?.value || "";
       }).catch(() => {});
+      // Active Semester — derived from the Semester table whose date
+      // range contains today. Distinct from `activeSeason` above. This
+      // is what class-schedule unavailability rows are matched against.
+      getActiveSemester(deptId)
+        .then(r => { activeSemester.value = r.data?.name || ""; })
+        .catch(() => { activeSemester.value = ""; });
       // Unavailability for everyone in this dept — powers conflict warnings
       // in the employee dropdown and the hatched overlay on the calendar.
       getUnavailability({ id_department: deptId }).then(r => {
@@ -2154,7 +2174,7 @@ async function confirmQuickCreate() {
     // Soft conflict — the shift was created; only the assignment failed.
     // Confirm with the user and retry just the assignment with force=true.
     if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY" && err.pendingAssignment) {
-      const ok = await confirmConflict(emp?.name || "This employee", body.unavailabilityLabel || "Unavailable");
+      const ok = await confirmConflict(emp?.name || "This employee");
       if (ok) {
         try {
           const assignment = await apiCreateAssignment(
@@ -2310,7 +2330,7 @@ async function addShift() {
       // just the assignment with force after user confirms.
       const body = err.response?.data;
       if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY" && err.pendingAssignment) {
-        const ok = await confirmConflict(emp?.name || "This employee", body.unavailabilityLabel || "Unavailable");
+        const ok = await confirmConflict(emp?.name || "This employee");
         if (ok) {
           try {
             const assignment = await apiCreateAssignment(err.pendingAssignment.id_shift, err.pendingAssignment.id_employee, err.pendingAssignment.date, true);

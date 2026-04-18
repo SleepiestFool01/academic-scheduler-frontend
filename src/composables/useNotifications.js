@@ -7,6 +7,7 @@ import {
   getPendingDeptAccess,
   updateSwapRequest,
   updateDeptAccess,
+  updateTimeOffRequest,
 } from "../services/notificationService.js";
 import { useDepartment } from "./useDepartment.js";
 
@@ -18,6 +19,12 @@ const deptAccess = ref([]);
 
 const loading  = ref(false);
 const lastError = ref("");
+// Bumped every time the bell resolves an item (approve / deny). Pages
+// like Requests.vue and Tradeboard.vue watch this and re-fetch their
+// own data, so a manager who acts from the bell while a page is open
+// sees their page refresh without a manual reload.
+const lastActionAt = ref(0);
+function bumpAction() { lastActionAt.value = Date.now(); }
 
 // Time-off has no persisted status in the backend — client-side dismissals
 // are stored per-user in localStorage so approve/deny sticks across reloads.
@@ -66,8 +73,17 @@ async function refresh() {
     const deptShiftIds = new Set((shiftRes.data || []).map(s => s.id_shift));
 
     const dismissed = loadDismissed();
+    // Backend-status filter: only unresolved requests belong in the bell.
+    // Normalize because the field may come back as any case ("Pending",
+    // "pending", or empty for very old rows that predate the status
+    // column).
+    const isPending = (s) => {
+      const v = String(s || "pending").toLowerCase();
+      return v !== "approved" && v !== "denied";
+    };
     timeOff.value = (timeOffRes.data || [])
       .filter(a => deptEmpIds.has(a.id_employee))
+      .filter(a => isPending(a.status))
       .filter(a => !dismissed.has(a.id_personalAvailability))
       .map(a => ({ ...a, _employee: empMap[a.id_employee] }));
 
@@ -107,33 +123,50 @@ async function approveSwap(item) {
   try {
     await updateSwapRequest(item.id_swapRequest, "Approved");
     swaps.value = swaps.value.filter(s => s.id_swapRequest !== item.id_swapRequest);
+    bumpAction();
   } catch (err) { lastError.value = "Approve failed: " + err.message; }
 }
 async function denySwap(item) {
   try {
     await updateSwapRequest(item.id_swapRequest, "Denied");
     swaps.value = swaps.value.filter(s => s.id_swapRequest !== item.id_swapRequest);
+    bumpAction();
   } catch (err) { lastError.value = "Deny failed: " + err.message; }
 }
 async function approveDeptAccess(item) {
   try {
     await updateDeptAccess(item.id_departmentAccessRequest, "Approved");
     deptAccess.value = deptAccess.value.filter(d => d.id_departmentAccessRequest !== item.id_departmentAccessRequest);
+    bumpAction();
   } catch (err) { lastError.value = "Approve failed: " + err.message; }
 }
 async function denyDeptAccess(item) {
   try {
     await updateDeptAccess(item.id_departmentAccessRequest, "Denied");
     deptAccess.value = deptAccess.value.filter(d => d.id_departmentAccessRequest !== item.id_departmentAccessRequest);
+    bumpAction();
   } catch (err) { lastError.value = "Deny failed: " + err.message; }
 }
-function approveTimeOff(item) {
-  addDismissed(item.id_personalAvailability);
-  timeOff.value = timeOff.value.filter(t => t.id_personalAvailability !== item.id_personalAvailability);
+// Time-off now persists status on the backend (post-merge). The bell
+// actually resolves the request instead of only dismissing it locally.
+// `addDismissed` is kept as a belt-and-suspenders: if the PUT somehow
+// doesn't stick the status, the local dismissed set still hides it from
+// the bell's next poll.
+async function approveTimeOff(item) {
+  try {
+    await updateTimeOffRequest(item, "Approved");
+    addDismissed(item.id_personalAvailability);
+    timeOff.value = timeOff.value.filter(t => t.id_personalAvailability !== item.id_personalAvailability);
+    bumpAction();
+  } catch (err) { lastError.value = "Approve failed: " + err.message; }
 }
-function denyTimeOff(item) {
-  addDismissed(item.id_personalAvailability);
-  timeOff.value = timeOff.value.filter(t => t.id_personalAvailability !== item.id_personalAvailability);
+async function denyTimeOff(item) {
+  try {
+    await updateTimeOffRequest(item, "Denied");
+    addDismissed(item.id_personalAvailability);
+    timeOff.value = timeOff.value.filter(t => t.id_personalAvailability !== item.id_personalAvailability);
+    bumpAction();
+  } catch (err) { lastError.value = "Deny failed: " + err.message; }
 }
 
 // Remove a pending item from the shared notification state. Called by the
@@ -168,6 +201,7 @@ export function useNotifications() {
     timeOff, swaps, deptAccess,
     loading, lastError,
     totalCount, countsByRoute,
+    lastActionAt,  // bumps after any approve/deny — pages watch to re-fetch
     refresh, startPolling, stopPolling,
     approveSwap, denySwap,
     approveDeptAccess, denyDeptAccess,

@@ -1,5 +1,5 @@
 <template>
-  <div class="avail-root">
+  <div class="avail-root" @mousemove="onGlobalMouseMove" @mouseup="onGlobalMouseUp">
     <!-- ── Loading / Error ── -->
     <div v-if="loading" class="loading-overlay">
       <div class="loading-spinner"></div>
@@ -49,13 +49,21 @@
               {{ fmtHour(h) }}
             </div>
           </div>
-          <div v-for="(d, colIdx) in DAY_NAMES" :key="colIdx" class="day-column">
+          <div v-for="(d, colIdx) in DAY_NAMES" :key="colIdx"
+            class="day-column"
+            :class="{ 'is-dragging-col': drag.active && drag.dayIndex === colIdx }"
+            @mousedown.prevent="onColumnMouseDown($event, colIdx)">
             <div v-for="h in HOURS" :key="h" class="hour-cell" :style="{ height: HOUR_PX + 'px' }"></div>
+            <!-- Ghost block while the user drags to create -->
+            <div v-if="drag.active && drag.dayIndex === colIdx" class="ghost-block" :style="ghostStyle">
+              <span class="ghost-label">{{ ghostLabel }}</span>
+            </div>
             <div v-for="row in rowsForDay(colIdx)" :key="row.id_employeeUnavailability"
               class="avail-block"
               :class="{ 'avail-block--imported': row.source === 'imported' }"
               :style="blockStyle(row)"
               :title="row.source === 'imported' ? 'Imported — read only' : 'Click to edit'"
+              @mousedown.stop
               @click="row.source === 'manual' ? openEditModal(row) : null">
               <div class="avail-block-title">{{ blockTitle(row) }}</div>
               <div class="avail-block-time">{{ fmtTimeRange(row.startTime, row.endTime) }}</div>
@@ -186,6 +194,7 @@ import Utils from "../config/utils.js";
 import { useDepartment } from "../composables/useDepartment.js";
 import apiClient from "../services/services.js";
 import { getSettingValues } from "../services/departmentService.js";
+import { getActiveSemester } from "../services/semesterService.js";
 import {
   getUnavailability,
   createUnavailability,
@@ -212,6 +221,13 @@ const modal = ref({ open: false, isEdit: false, saving: false, error: "", data: 
 const deleteConfirm = ref({ open: false, saving: false, item: null });
 const syncing     = ref(false);
 const syncMessage = ref("");
+
+// ── Click-and-drag to create ───────────────────────────────────────────────
+// Drag state mirrors the Dashboard's model: user presses on a day column,
+// moves vertically, releases. On release we open the Add modal with the
+// day + times pre-filled.
+const SNAP_MINUTES = 15;
+const drag = ref({ active: false, dayIndex: null, startHour: null, currentHour: null, colEl: null });
 
 // ── Helpers ──
 function fmtHour(h) {
@@ -252,6 +268,71 @@ function blockStyle(row) {
   return { top: top + "px", height: height + "px" };
 }
 
+// Convert a mouseevent's clientY inside a .day-column into a fractional
+// hour snapped to the nearest SNAP_MINUTES, clamped to the grid.
+function getHourFromEvent(e, colEl) {
+  const rect = colEl.getBoundingClientRect();
+  const relY = e.clientY - rect.top;
+  const rawHour = HOURS[0] + relY / HOUR_PX;
+  const snap = SNAP_MINUTES / 60;
+  const snapped = Math.round(rawHour / snap) * snap;
+  return Math.max(HOURS[0], Math.min(HOURS[0] + HOURS.length, snapped));
+}
+
+function onColumnMouseDown(e, colIdx) {
+  if (e.button !== 0) return;
+  const colEl = e.currentTarget;
+  const startHour = getHourFromEvent(e, colEl);
+  drag.value = { active: true, dayIndex: colIdx, startHour, currentHour: startHour, colEl };
+}
+
+function onGlobalMouseMove(e) {
+  if (!drag.value.active || !drag.value.colEl) return;
+  drag.value.currentHour = getHourFromEvent(e, drag.value.colEl);
+}
+
+function onGlobalMouseUp() {
+  if (!drag.value.active) return;
+  const { dayIndex, startHour, currentHour } = drag.value;
+  const lo = Math.min(startHour, currentHour);
+  const hi = Math.max(startHour, currentHour) + SNAP_MINUTES / 60;
+  drag.value.active = false;
+
+  // Anything shorter than one snap step is a click, not a drag — ignore.
+  if (hi - lo < SNAP_MINUTES / 60 + 0.001) return;
+
+  // Open the Add modal pre-filled with the dragged range. Employee can
+  // still edit anything, pick a label, toggle hideReason, switch scope.
+  openAddModal();
+  modal.value.data.dayOfWeek = DAY_NAMES_FULL[dayIndex];
+  modal.value.data.startTime = toTimeInput(lo);
+  modal.value.data.endTime   = toTimeInput(hi);
+}
+
+function toTimeInput(h) {
+  const total = Math.round(h * 60);
+  const hours = Math.floor(total / 60);
+  const mins = total % 60;
+  return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
+}
+
+// Ghost-block styling + label while dragging.
+const ghostStyle = computed(() => {
+  if (!drag.value.active) return { top: 0, height: 0 };
+  const lo = Math.min(drag.value.startHour, drag.value.currentHour);
+  const hi = Math.max(drag.value.startHour, drag.value.currentHour) + SNAP_MINUTES / 60;
+  return {
+    top: ((lo - HOURS[0]) * HOUR_PX) + "px",
+    height: Math.max(18, (hi - lo) * HOUR_PX) + "px",
+  };
+});
+const ghostLabel = computed(() => {
+  if (!drag.value.active) return "";
+  const lo = Math.min(drag.value.startHour, drag.value.currentHour);
+  const hi = Math.max(drag.value.startHour, drag.value.currentHour) + SNAP_MINUTES / 60;
+  return `${fmtHour(lo)} – ${fmtHour(hi)}`;
+});
+
 const sortedRows = computed(() => {
   const copy = rows.value.slice();
   copy.sort((a, b) => {
@@ -271,15 +352,23 @@ async function loadAll() {
   try {
     const res = await getUnavailability({ id_employee: empId });
     rows.value = res.data || [];
-    // Pull the active season for the selected dept so the modal can label
-    // the "this semester" option meaningfully.
+    // Pull the active semester for the selected dept so the modal can
+    // label the "this semester" option with e.g. "Spring 2026". Falls
+    // back to the legacy Active Season setting when the dept hasn't yet
+    // configured Semester rows — that way the modal still works on
+    // departments that never set up the new model.
     const deptId = selectedDeptId.value || currentUser.value?.id_department;
     if (deptId) {
       try {
-        const sv = await getSettingValues(deptId);
-        const active = (sv.data || []).find(v => v.name === "Active Season" || v.key === "active_season");
-        activeSeason.value = active?.value || "";
-      } catch { /* non-critical */ }
+        const sem = await getActiveSemester(deptId);
+        activeSeason.value = sem.data?.name || "";
+      } catch {
+        try {
+          const sv = await getSettingValues(deptId);
+          const active = (sv.data || []).find(v => v.name === "Active Season" || v.key === "active_season");
+          activeSeason.value = active?.value || "";
+        } catch { /* non-critical */ }
+      }
     }
   } catch (err) {
     apiError.value = "Could not load availability: " + (err.response?.data?.message || err.message || "Network error");
@@ -507,8 +596,28 @@ async function syncClassSchedule() {
   display: flex; align-items: flex-start; justify-content: flex-end;
   padding-top: 4px;
 }
-.day-column { position: relative; border-left: 1px solid var(--bdr-subtle); }
+.day-column {
+  position: relative;
+  border-left: 1px solid var(--bdr-subtle);
+  cursor: crosshair;
+  user-select: none;
+}
+.day-column.is-dragging-col { background: var(--accent-bg); }
 .hour-cell { border-bottom: 1px solid var(--bdr-subtle); }
+
+.ghost-block {
+  position: absolute; left: 2px; right: 2px;
+  border: 2px solid var(--accent);
+  background: var(--accent-bg);
+  border-radius: 6px;
+  display: flex; align-items: flex-start; padding: 4px 8px;
+  pointer-events: none;
+  z-index: 3;
+}
+.ghost-label {
+  font-size: 12px; font-weight: 600; color: var(--accent);
+  font-family: 'DM Mono', monospace;
+}
 
 .avail-block {
   position: absolute; left: 2px; right: 2px;
