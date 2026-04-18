@@ -367,7 +367,10 @@ import { ref, computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import Utils from "../config/utils.js";
 import { useDepartment } from "../composables/useDepartment.js";
+import { useNotifications } from "../composables/useNotifications.js";
 import { useTheme } from "../composables/useTheme.js";
+
+const { dismiss: dismissNotification } = useNotifications();
 import DeptSwitcher from "../components/DeptSwitcher.vue";
 import apiClient from "../services/services.js";
 import { timeStrToHour, fmtHour } from "../services/employeeManagementService.js";
@@ -669,6 +672,8 @@ async function updateStatus(r, status) {
     await apiClient.put(`/swap-requests/${r.id_swapRequest}`, { status });
     const idx = swapRequests.value.findIndex(s => s.id_swapRequest === r.id_swapRequest);
     if (idx !== -1) swapRequests.value[idx] = { ...swapRequests.value[idx], status };
+    // Keep the bell badge + Tradeboard-tab dot in sync with this action.
+    dismissNotification("swap", r.id_swapRequest);
   } catch (err) {
     apiError.value = "Failed to update request: " + (err.message || "Network error");
   }
