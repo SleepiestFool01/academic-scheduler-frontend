@@ -400,6 +400,54 @@
             </div>
           </div>
 
+          <!-- ════ SEMESTERS TAB ════ -->
+          <div v-else-if="activeTab === 'Semesters'" class="tab-panel">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">Semesters</h2>
+                <p class="panel-sub">
+                  Academic term bounds used to match student class schedules against shift times.
+                  The semester whose date range contains today is considered "active".
+                </p>
+              </div>
+              <div class="panel-header-actions">
+                <!-- Hidden file input drives the upload. The label-as-button
+                     pattern keeps styling consistent with the sibling buttons. -->
+                <input
+                  ref="semesterPdfInput"
+                  type="file"
+                  accept="application/pdf"
+                  style="display:none"
+                  @change="onSemesterPdfChange" />
+                <button class="secondary-btn" :disabled="pdfImport.parsing" @click="semesterPdfInput?.click()">
+                  {{ pdfImport.parsing ? 'Reading…' : 'Upload calendar PDF' }}
+                </button>
+                <button class="primary-btn" @click="openCreateSemester">+ Add Semester</button>
+              </div>
+            </div>
+
+            <div v-if="semesters.length === 0" class="empty-state">
+              No semesters configured yet. Add one to enable class-schedule conflict detection.
+            </div>
+            <div v-else class="semesters-list">
+              <div v-for="s in semesters" :key="s.id_semester"
+                class="semester-card"
+                :class="{ 'semester-card--active': isSemesterActive(s) }">
+                <div class="semester-card-main">
+                  <div class="semester-card-head">
+                    <span class="semester-name">{{ s.name }}</span>
+                    <span v-if="isSemesterActive(s)" class="semester-active-badge">Active</span>
+                  </div>
+                  <div class="semester-dates mono">{{ s.startDate }} → {{ s.endDate }}</div>
+                </div>
+                <div class="action-btns">
+                  <button class="icon-action" title="Edit" @click="openEditSemester(s)">✎</button>
+                  <button class="icon-action danger" title="Delete" @click="confirmDeleteSemester(s)">✕</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- ════ SETTINGS TAB ════ -->
           <div v-else-if="activeTab === 'Settings'" class="tab-panel">
             <div class="panel-header">
@@ -667,6 +715,98 @@
       </Transition>
 
       <!-- ══════════════════════════════════════
+           SEMESTER MODAL
+      ══════════════════════════════════════ -->
+      <Transition name="modal">
+        <div v-if="semesterModal.open" class="modal-overlay" @click.self="semesterModal.open = false">
+          <div class="modal">
+            <h3 class="modal-title">{{ semesterModal.isEdit ? 'Edit Semester' : 'Add Semester' }}</h3>
+            <div class="form-group">
+              <label>Name</label>
+              <input v-model="semesterModal.data.name" type="text" placeholder="e.g. Spring 2026, Fall 2026" />
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Start Date</label>
+                <input v-model="semesterModal.data.startDate" type="date" />
+              </div>
+              <div class="form-group">
+                <label>End Date</label>
+                <input v-model="semesterModal.data.endDate" type="date" />
+              </div>
+            </div>
+            <p v-if="semesterModal.error" class="modal-error">{{ semesterModal.error }}</p>
+            <div class="modal-actions">
+              <button class="cancel-btn" @click="semesterModal.open = false">Cancel</button>
+              <button class="confirm-btn" :disabled="semesterModal.saving" @click="saveSemester">
+                {{ semesterModal.saving ? 'Saving…' : semesterModal.isEdit ? 'Save Changes' : 'Create' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- PDF import preview — user reviews/edits detected semesters
+           before any rows are created in the DB -->
+      <Transition name="modal">
+        <div v-if="pdfImport.open" class="modal-overlay" @click.self="pdfImport.open = false">
+          <div class="modal pdf-import-modal">
+            <h3 class="modal-title">Import semesters from PDF</h3>
+            <p class="modal-body-text">
+              Detected {{ pdfImport.rows.length }} semester{{ pdfImport.rows.length === 1 ? '' : 's' }}.
+              Review and edit before importing — rows missing dates will be skipped.
+            </p>
+
+            <div v-if="pdfImport.rows.length === 0" class="pdf-import-empty">
+              Nothing recognizable in this PDF. Try a different file, or add semesters manually.
+            </div>
+            <div v-else class="pdf-import-list">
+              <div v-for="(row, i) in pdfImport.rows" :key="i" class="pdf-import-row">
+                <label class="pdf-import-check">
+                  <input type="checkbox" v-model="row.include" />
+                </label>
+                <input class="pdf-import-name" type="text" v-model="row.name" placeholder="Semester name" />
+                <input class="pdf-import-date" type="date" v-model="row.startDate" />
+                <span class="pdf-import-arrow">→</span>
+                <input class="pdf-import-date" type="date" v-model="row.endDate" />
+              </div>
+            </div>
+
+            <p v-if="pdfImport.error" class="modal-error">{{ pdfImport.error }}</p>
+            <div class="modal-actions">
+              <button class="cancel-btn" @click="pdfImport.open = false">Cancel</button>
+              <button
+                class="confirm-btn"
+                :disabled="pdfImport.saving || pdfImport.rows.every(r => !r.include)"
+                @click="confirmPdfImport">
+                {{ pdfImport.saving ? 'Importing…' : `Import ${selectedImportCount}` }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- Delete-semester confirm -->
+      <Transition name="modal">
+        <div v-if="semesterDeleteConfirm.open" class="modal-overlay" @click.self="semesterDeleteConfirm.open = false">
+          <div class="modal modal-sm">
+            <h3 class="modal-title">Delete this semester?</h3>
+            <p class="modal-body-text">
+              Removing <strong>{{ semesterDeleteConfirm.item?.name }}</strong> won't affect
+              any unavailability rows already tagged with this semester's name, but conflict
+              detection will stop applying once today leaves this range.
+            </p>
+            <div class="modal-actions">
+              <button class="cancel-btn" @click="semesterDeleteConfirm.open = false">Cancel</button>
+              <button class="confirm-btn danger" :disabled="semesterDeleteConfirm.saving" @click="executeSemesterDelete">
+                {{ semesterDeleteConfirm.saving ? 'Deleting…' : 'Delete' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- ══════════════════════════════════════
            EMPLOYEE MODAL
       ══════════════════════════════════════ -->
       <Transition name="modal">
@@ -818,6 +958,17 @@ import {
   assignPositionEmployee,
   removePositionEmployee,
 } from "../services/departmentService.js";
+import {
+  getSemesters,
+  createSemester,
+  updateSemester,
+  deleteSemester,
+  pickActiveSemester,
+} from "../services/semesterService.js";
+import { parseSemestersFromText } from "../utils/parseSemestersFromText.js";
+// `pdfExtract.js` pulls in pdfjs-dist (~450KB). Deferred via dynamic
+// import below so the PDF library only loads if the user actually
+// clicks "Upload calendar PDF".
 import apiClient from "../services/services.js";
 
 const router      = useRouter();
@@ -833,7 +984,7 @@ const userInitials = computed(() => {
 });
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-const TABS    = ["Overview", "Positions", "Employees", "Hours", "Events", "Settings"];
+const TABS    = ["Overview", "Positions", "Employees", "Hours", "Events", "Semesters", "Settings"];
 const DAYS    = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -853,6 +1004,7 @@ const employees       = ref([]);
 const allStaff        = ref([]); // unfiltered — used for manager name lookups
 const calendarEntries = ref([]);
 const events          = ref([]);
+const semesters        = ref([]);
 const deptManagerLinks = ref([]);
 
 // Pending access requests from this manager
@@ -1002,8 +1154,9 @@ async function loadDeptData(id) {
   events.value          = [];
   positions.value       = [];
   employees.value       = [];
+  semesters.value       = [];
   try {
-    const [deptRes, posRes, empRes, allStaffRes, calRes, evtRes, mgrRes] = await Promise.allSettled([
+    const [deptRes, posRes, empRes, allStaffRes, calRes, evtRes, mgrRes, semRes] = await Promise.allSettled([
       getDepartment(id),
       getPositions(id),
       getEmployees(id),
@@ -1011,6 +1164,7 @@ async function loadDeptData(id) {
       getCalendarEntries(id),
       getEvents(id),
       getDeptManagers(id),
+      getSemesters(id),
     ]);
 
     if (deptRes.status      === "fulfilled") department.value       = deptRes.value.data      || {};
@@ -1020,12 +1174,158 @@ async function loadDeptData(id) {
     if (calRes.status       === "fulfilled") calendarEntries.value  = calRes.value.data       || [];
     if (evtRes.status       === "fulfilled") events.value           = evtRes.value.data       || [];
     if (mgrRes.status       === "fulfilled") deptManagerLinks.value = mgrRes.value.data       || [];
+    if (semRes.status       === "fulfilled") semesters.value        = semRes.value.data       || [];
   } catch (err) {
     apiError.value = "Could not load department data: " + (err.message || "Network error");
   } finally {
     loading.value = false;
   }
   await Promise.all([loadBufferTime(id), loadActiveSeason(id)]);
+}
+
+// Which semester contains today? Used to tag the card with an "Active"
+// badge in the UI. Server does the same computation when it looks up
+// conflicts — this is just a visual cue.
+function isSemesterActive(s) {
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+  return s && s.startDate <= todayKey && todayKey <= s.endDate;
+}
+
+const semesterModal = ref({ open: false, isEdit: false, data: {}, editId: null, saving: false, error: "" });
+const semesterDeleteConfirm = ref({ open: false, item: null, saving: false });
+
+function openCreateSemester() {
+  semesterModal.value = {
+    open: true, isEdit: false, editId: null, saving: false, error: "",
+    data: { name: "", startDate: "", endDate: "" },
+  };
+}
+function openEditSemester(s) {
+  semesterModal.value = {
+    open: true, isEdit: true, editId: s.id_semester, saving: false, error: "",
+    data: { name: s.name, startDate: s.startDate, endDate: s.endDate },
+  };
+}
+async function saveSemester() {
+  const d = semesterModal.value.data;
+  if (!d.name || !d.startDate || !d.endDate) {
+    semesterModal.value.error = "Name, start date, and end date are required.";
+    return;
+  }
+  if (d.startDate > d.endDate) {
+    semesterModal.value.error = "End date must be on or after start date.";
+    return;
+  }
+  semesterModal.value.saving = true;
+  semesterModal.value.error = "";
+  try {
+    if (semesterModal.value.isEdit) {
+      const res = await updateSemester(semesterModal.value.editId, d);
+      const idx = semesters.value.findIndex(s => s.id_semester === semesterModal.value.editId);
+      if (idx !== -1) semesters.value[idx] = res.data;
+    } else {
+      const res = await createSemester({ ...d, id_department: selectedDeptId.value });
+      semesters.value = [...semesters.value, res.data]
+        .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)));
+    }
+    semesterModal.value.open = false;
+  } catch (err) {
+    semesterModal.value.error = err.response?.data?.message || err.message || "Save failed.";
+  } finally {
+    semesterModal.value.saving = false;
+  }
+}
+
+function confirmDeleteSemester(s) {
+  semesterDeleteConfirm.value = { open: true, item: s, saving: false };
+}
+
+// ── PDF import ──────────────────────────────────────────────────────────────
+// User uploads an academic calendar PDF → we extract text client-side
+// and heuristically detect semesters. The preview modal lets them edit
+// / check off rows before any DB writes happen.
+const semesterPdfInput = ref(null);
+const pdfImport = ref({
+  open: false,
+  parsing: false,
+  saving: false,
+  error: "",
+  rows: [],  // [{ include, name, startDate, endDate }]
+});
+
+const selectedImportCount = computed(() =>
+  pdfImport.value.rows.filter(r => r.include).length
+);
+
+async function onSemesterPdfChange(e) {
+  const file = e.target?.files?.[0];
+  // Always reset the input's value so the user can re-upload the same
+  // file later (change events only fire when the value actually changes).
+  if (e.target) e.target.value = "";
+  if (!file) return;
+  pdfImport.value = { open: false, parsing: true, saving: false, error: "", rows: [] };
+  try {
+    const { extractTextFromPdf } = await import("../utils/pdfExtract.js");
+    const text = await extractTextFromPdf(file);
+    const detected = parseSemestersFromText(text);
+    pdfImport.value = {
+      open: true,
+      parsing: false,
+      saving: false,
+      error: "",
+      rows: detected.map(r => ({ include: true, ...r })),
+    };
+  } catch (err) {
+    pdfImport.value.parsing = false;
+    apiError.value = "Couldn't read that PDF: " + (err.message || "Unknown error");
+  }
+}
+
+async function confirmPdfImport() {
+  const selected = pdfImport.value.rows.filter(r => r.include && r.name && r.startDate && r.endDate);
+  if (!selected.length) {
+    pdfImport.value.error = "Nothing to import — check at least one row with complete dates.";
+    return;
+  }
+  pdfImport.value.saving = true;
+  pdfImport.value.error = "";
+  try {
+    // Sequential rather than Promise.all so a single failure doesn't
+    // leave us with half the rows committed and no clear idea which.
+    for (const r of selected) {
+      const res = await createSemester({
+        id_department: selectedDeptId.value,
+        name: r.name,
+        startDate: r.startDate,
+        endDate: r.endDate,
+      });
+      semesters.value = [...semesters.value, res.data];
+    }
+    semesters.value = semesters.value
+      .slice()
+      .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)));
+    pdfImport.value.open = false;
+  } catch (err) {
+    pdfImport.value.error = err.response?.data?.message || err.message || "Import failed partway through.";
+  } finally {
+    pdfImport.value.saving = false;
+  }
+}
+async function executeSemesterDelete() {
+  const item = semesterDeleteConfirm.value.item;
+  if (!item) return;
+  semesterDeleteConfirm.value.saving = true;
+  try {
+    await deleteSemester(item.id_semester);
+    semesters.value = semesters.value.filter(s => s.id_semester !== item.id_semester);
+    semesterDeleteConfirm.value.open = false;
+  } catch (err) {
+    apiError.value = "Delete failed: " + (err.response?.data?.message || err.message);
+    semesterDeleteConfirm.value.open = false;
+  } finally {
+    semesterDeleteConfirm.value.saving = false;
+  }
 }
 
 
@@ -2057,6 +2357,68 @@ async function saveBufferTime() {
 .event-meta  { display: flex; gap: 12px; margin-bottom: 6px; flex-wrap: wrap; }
 .event-meta-item { font-size: 14px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
 .event-desc  { font-size: 15px; color: var(--tx-secondary); }
+
+/* ── Semesters ── */
+.panel-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.secondary-btn {
+  background: var(--bg-surface); border: 1px solid var(--bdr-medium);
+  color: var(--tx-secondary); padding: 8px 14px; border-radius: 8px;
+  cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 600;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.secondary-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.secondary-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.semesters-list { display: flex; flex-direction: column; gap: 10px; max-width: 720px; }
+.semester-card {
+  display: flex; align-items: center; gap: 16px;
+  background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 12px;
+  padding: 14px 18px; transition: border-color 0.15s;
+}
+.semester-card:hover { border-color: var(--bdr-medium); }
+.semester-card--active { border-color: var(--accent); background: var(--accent-bg); }
+.semester-card-main { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.semester-card-head { display: flex; align-items: center; gap: 10px; }
+.semester-name {
+  font-size: 16px; font-weight: 600; color: var(--tx-primary);
+}
+.semester-active-badge {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 100px;
+  background: var(--accent); color: #fff;
+}
+.semester-dates { font-size: 13px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
+
+/* PDF import preview */
+.pdf-import-modal { width: 680px; max-width: 95vw; }
+.pdf-import-empty {
+  padding: 18px; text-align: center;
+  color: var(--tx-faint); font-size: 14px; font-style: italic;
+  background: var(--bg-surface); border: 1px dashed var(--bdr-subtle);
+  border-radius: 10px; margin: 8px 0 16px;
+}
+.pdf-import-list { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; margin-bottom: 16px; }
+.pdf-import-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; background: var(--bg-surface);
+  border: 1px solid var(--bdr-subtle); border-radius: 8px;
+}
+.pdf-import-check { display: flex; align-items: center; }
+.pdf-import-name {
+  flex: 1;
+  background: transparent; border: 1px solid transparent;
+  color: var(--tx-primary); font-family: inherit; font-size: 14px;
+  padding: 5px 8px; border-radius: 6px; outline: none;
+  font-weight: 500;
+}
+.pdf-import-name:focus { border-color: var(--accent); background: var(--bg-modal); }
+.pdf-import-date {
+  background: var(--bg-modal); border: 1px solid var(--bdr-medium);
+  color: var(--tx-primary); font-family: 'DM Mono', monospace; font-size: 13px;
+  padding: 4px 6px; border-radius: 6px; outline: none;
+}
+.pdf-import-date:focus { border-color: var(--accent); }
+.pdf-import-arrow { color: var(--tx-ghost); font-size: 14px; }
 
 /* ── Settings ── */
 .settings-section { max-width: 600px; }

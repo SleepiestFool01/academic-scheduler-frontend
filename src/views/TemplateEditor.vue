@@ -192,12 +192,11 @@
                   <button class="panel-remove-btn" @click="removePanelEmployee(row)" title="Remove">✕</button>
                 </div>
                 <div v-if="panel.employees.length === 0" class="panel-add-row">
-                  <select class="panel-add-select" v-model="panel.addEmpId">
-                    <option value="">Add employee…</option>
-                    <option v-for="emp in unassignedEmployees" :key="emp.id_employee" :value="emp.id_employee">
-                      {{ emp.fName }} {{ emp.lName }}
-                    </option>
-                  </select>
+                  <EmployeePicker
+                    v-model="panel.addEmpId"
+                    value-field="id_employee"
+                    :options="unassignedEmployees"
+                    placeholder="Add employee…" />
                   <button class="panel-add-btn" :disabled="!panel.addEmpId || panel.addingEmp" @click="addPanelEmployee">
                     {{ panel.addingEmp ? '…' : 'Add' }}
                   </button>
@@ -307,13 +306,17 @@
         </div>
         <div class="form-group">
           <label>Employee <span class="optional">(optional)</span></label>
-          <select v-model="quickCreate.id_employee" :disabled="!quickCreate.id_position">
-            <option value="">— No employee —</option>
-            <option v-for="emp in employeesForPosition(quickCreate.id_position)" :key="emp.id_employee" :value="emp.id_employee">
-              {{ emp.fName }} {{ emp.lName }}
-            </option>
-          </select>
-          <p v-if="quickCreate.id_position && employeesForPosition(quickCreate.id_position).length === 0" class="optional">No employees assigned to this position.</p>
+          <EmployeePicker
+            v-model="quickCreate.id_employee"
+            value-field="id_employee"
+            :options="employeesForPosition(quickCreate.id_position, {
+              dayIdx: quickCreate.dayIndex,
+              startHour: quickCreate.startHour,
+              endHour: quickCreate.endHour,
+            }).map(e => ({ ...e, name: `${e.fName} ${e.lName}` }))"
+            :disabled="!quickCreate.id_position"
+            placeholder="— No employee —"
+            empty-text="No employees assigned to this position." />
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -343,10 +346,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useTheme } from "../composables/useTheme.js";
 import { useDepartment } from "../composables/useDepartment.js";
+import EmployeePicker from "../components/EmployeePicker.vue";
 import Utils from "../config/utils.js";
 import {
   getTemplate,
@@ -365,6 +369,9 @@ import {
 } from "../services/templateService.js";
 import { getPositions, getEmployees, getCalendarEntries, getSettingValues, getPositionEmployees } from "../services/departmentService.js";
 import { fetchTaskLists, assignTaskListToShift, getShiftTaskLists, removeShiftTaskList } from "../services/taskService.js";
+import { getUnavailability } from "../services/unavailabilityService.js";
+import { getActiveSemester } from "../services/semesterService.js";
+import { useUnavailabilityRefresh } from "../composables/useUnavailabilityRefresh.js";
 import apiClient from "../services/services.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -396,19 +403,76 @@ const allTaskLists     = ref([]);
 // Map of id_position → array of id_employee assigned to that position
 const positionEmployeeIds = ref({});
 
+// Dept-wide EmployeeUnavailability rows — annotates the template's
+// employee dropdown with a ⚠ + reason when the shift time overlaps.
+const deptUnavailability = ref([]);
+const DAY_NAMES_FULL_UNAVAIL = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+// Compare activeSeason setting ("Fall" or "Fall 2026") to a row's season
+// ("Spring 2026"). Matches on semester name + year, year optional on
+// either side so "Fall" matches "Fall 2026" but not "Spring 2026".
+function seasonsMatch(activeSeason, rowSeason) {
+  if (!activeSeason) return true;
+  if (!rowSeason) return false;
+  const [activeSem, activeYear] = String(activeSeason).trim().split(/\s+/);
+  const [rowSem,    rowYear]    = String(rowSeason).trim().split(/\s+/);
+  if (!activeSem || !rowSem) return false;
+  if (activeSem.toLowerCase() !== rowSem.toLowerCase()) return false;
+  if (activeYear && rowYear && activeYear !== rowYear) return false;
+  return true;
+}
+
 // Returns the employees assigned to the given position. If no position is
-// selected, returns no employees (forces position-first).
-function employeesForPosition(id_position) {
+// selected, returns no employees (forces position-first). When dayIdx +
+// startHour/endHour are provided, each returned row is annotated with a
+// `conflict` object (or null) so the dropdown can show a warning.
+function employeesForPosition(id_position, opts = {}) {
   if (id_position == null || id_position === "") return [];
   const ids = positionEmployeeIds.value[id_position];
   if (!ids) return [];
   const idSet = new Set(ids);
-  return allEmployees.value.filter(e => idSet.has(e.id_employee));
+  const eligible = allEmployees.value.filter(e => idSet.has(e.id_employee));
+  const { dayIdx, startHour, endHour } = opts;
+  if (dayIdx == null || startHour == null || endHour == null) return eligible;
+  return eligible.map(emp => ({
+    ...emp,
+    conflict: templateConflictFor(emp.id_employee, dayIdx, startHour, endHour),
+  }));
 }
+
+// Templates are abstract Mon–Sun patterns with no concrete date, so we
+// match by dayOfWeek + time only. We still filter to rows that are
+// "currently active" (season-scoped rows must match activeSeason; date
+// range rows must contain today) so expired entries don't pollute the
+// view.
+function templateConflictFor(id_employee, dayIdx, startHour, endHour) {
+  const dayName = DAY_NAMES_FULL_UNAVAIL[dayIdx];
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+  const targetId = Number(id_employee);
+  for (const row of deptUnavailability.value) {
+    // Coerce both sides — Sequelize can return integer FKs as strings
+    // depending on driver config.
+    if (Number(row.id_employee) !== targetId) continue;
+    if (row.dayOfWeek !== dayName) continue;
+    if (row.scopeType === "season") {
+      if (!seasonsMatch(activeSemester.value, row.season)) continue;
+    } else if (row.scopeType === "dateRange") {
+      if (!row.startDate || !row.endDate) continue;
+      if (todayKey < row.startDate || todayKey > row.endDate) continue;
+    }
+    const rowStart = parseTime(row.startTime);
+    const rowEnd   = parseTime(row.endTime);
+    if (startHour < rowEnd && rowStart < endHour) return row;
+  }
+  return null;
+}
+function parseTime(t) { if (!t) return 0; const [h, m] = t.split(":").map(Number); return h + m / 60; }
 
 // ── Hours of Operation (visual overlay only — does not modify real HOO) ───────
 const calendarHours      = ref([]); // raw rows from /calendar
-const activeSeason       = ref("");  // currently saved active season for the dept
+const activeSeason       = ref("");  // currently saved active season for the dept (legacy — used for hours-of-operation variants)
+const activeSemester     = ref("");  // Semester row whose date range contains today — used for class-schedule conflict matching
 const selectedHoursKey   = ref(null); // key of the season the user is currently viewing
 const HOURS_NONE_KEY     = "__none__";
 
@@ -576,9 +640,19 @@ const panelEdit = ref({
 const unassignedEmployees = computed(() => {
   const assigned = new Set(panel.value.employees.map(e => e.id_employee));
   // Restrict to employees assigned to the shift's position. If no position
-  // is set on the panel yet, no employees are eligible.
-  const eligible = employeesForPosition(panelEdit.value.id_position);
-  return eligible.filter(e => !assigned.has(e.id_employee));
+  // is set on the panel yet, no employees are eligible. Passes the
+  // selected shift's day/time so each row gets a `conflict` annotation.
+  const sh = selectedShift.value;
+  const eligible = employeesForPosition(panelEdit.value.id_position, sh ? {
+    dayIdx:    sh.dayOfWeek,
+    startHour: sh.startHour,
+    endHour:   sh.endHour,
+  } : {});
+  // Synthesize `name` so the shared EmployeePicker (which expects a
+  // `name` field) can render these without extra mapping at call sites.
+  return eligible
+    .filter(e => !assigned.has(e.id_employee))
+    .map(e => ({ ...e, name: `${e.fName} ${e.lName}` }));
 });
 
 const unassignedTaskLists = computed(() => {
@@ -686,6 +760,18 @@ async function loadAll() {
           if (match) selectedHoursKey.value = match.key;
         }
       }).catch(() => {});
+
+      // Load unavailability for everyone in this dept — drives the same
+      // conflict ⚠ annotation shown in Dashboard's employee dropdowns.
+      getUnavailability({ id_department }).then(r => {
+        deptUnavailability.value = r.data || [];
+      }).catch(() => { deptUnavailability.value = []; });
+
+      // Active Semester for class-schedule matching — distinct from the
+      // `activeSeason` setting above which drives hours-of-operation.
+      getActiveSemester(id_department)
+        .then(r => { activeSemester.value = r.data?.name || ""; })
+        .catch(() => { activeSemester.value = ""; });
     }
   } catch (err) {
     apiError.value = "Could not load template: " + (err.message || "Network error");
@@ -697,6 +783,17 @@ async function loadAll() {
 onMounted(async () => {
   await loadAll();
   if (calBody.value) calBody.value.scrollTop = 7 * CELL_HEIGHT;
+});
+
+// Re-fetch dept unavailability when any sync completes so the employee
+// dropdown's ⚠ annotations update without a browser refresh.
+const { lastSyncTimestamp: __unavailSyncTs } = useUnavailabilityRefresh();
+watch(__unavailSyncTs, () => {
+  const id_department = selectedDeptId.value || currentUser?.id_department || null;
+  if (!id_department) return;
+  getUnavailability({ id_department })
+    .then(r => { deptUnavailability.value = r.data || []; })
+    .catch(() => {});
 });
 
 // ── Save template name ────────────────────────────────────────────────────────

@@ -370,7 +370,7 @@ import { useDepartment } from "../composables/useDepartment.js";
 import { useNotifications } from "../composables/useNotifications.js";
 import { useTheme } from "../composables/useTheme.js";
 
-const { dismiss: dismissNotification } = useNotifications();
+const { dismiss: dismissNotification, lastActionAt: notifActionAt } = useNotifications();
 import DeptSwitcher from "../components/DeptSwitcher.vue";
 import apiClient from "../services/services.js";
 import { timeStrToHour, fmtHour } from "../services/employeeManagementService.js";
@@ -534,6 +534,10 @@ async function loadAll() {
 }
 
 watch(selectedDeptId, loadAll);
+// Bell → page sync: when the manager approves/denies from the
+// notification bell while this page is open, re-fetch so the local
+// swapRequests / needsApproval lists reflect the resolution.
+watch(notifActionAt, () => { loadAll(); });
 onMounted(async () => {
   if (!myDepts.value.length) await loadDepts(currentUser.value);
   loadAll();

@@ -280,7 +280,7 @@ import {
   getAllDepartments,
 } from "../services/departmentService.js";
 
-const { dismiss: dismissNotification } = useNotifications();
+const { dismiss: dismissNotification, lastActionAt: notifActionAt } = useNotifications();
 
 const loading     = ref(false);
 const apiError    = ref("");
@@ -391,6 +391,15 @@ onMounted(async () => {
   // for managers who haven't visited a page that loads departments yet.
   if (!myDepts.value.length) await loadDepts(currentUser.value);
   loadAll();
+});
+
+// When the manager approves/denies from the notification bell, the
+// bell mutates its own state but our local copies here don't know.
+// Bumping `lastActionAt` on the composable lets us re-fetch so the
+// page stays in sync with the bell. Covers all three types at once.
+watch(notifActionAt, () => {
+  loadAll();
+  if (deptRequests.value.length || requestType.value === "deptaccess") loadDeptRequests();
 });
 
 const pendingRequests = computed(() => availability.value.filter(r => displayStatus(r.status) === "Pending"));
