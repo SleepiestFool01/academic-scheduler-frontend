@@ -268,6 +268,16 @@
                 <div v-if="drag.active && drag.dayIndex === 0" class="ghost-block" :style="ghostStyle">
                   <span class="ghost-label">{{ ghostLabel }}</span>
                 </div>
+                <!-- Unavailability overlay for the selected shift's assignee -->
+                <div v-for="u in (selectedShift && selectedShift.id_employee
+                    ? unavailabilityForEmployeeOnDate(selectedShift.id_employee, dateToKey(dayViewDate))
+                    : [])"
+                  :key="'unavail-' + u.id_employeeUnavailability"
+                  class="unavailability-overlay"
+                  :style="unavailabilityBlockStyle(u)"
+                  :title="(u.label || 'Unavailable') + ' — ' + u.startTime.slice(0,5) + '–' + u.endTime.slice(0,5)">
+                  <span class="unavailability-overlay-label">{{ u.label || 'Unavailable' }}</span>
+                </div>
                 <div v-for="shift in dayViewShifts" :key="shift.id"
                   class="shift-block"
                   :data-shift-id="String(shift.id)"
@@ -338,6 +348,16 @@
                 </div>
                 <div v-if="drag.active && drag.dayIndex === colIdx" class="ghost-block" :style="ghostStyle">
                   <span class="ghost-label">{{ ghostLabel }}</span>
+                </div>
+                <!-- Unavailability overlay for the selected shift's assignee -->
+                <div v-for="u in (selectedShift && selectedShift.id_employee
+                    ? unavailabilityForEmployeeOnDate(selectedShift.id_employee, dateToKey(date))
+                    : [])"
+                  :key="'unavail-' + u.id_employeeUnavailability"
+                  class="unavailability-overlay"
+                  :style="unavailabilityBlockStyle(u)"
+                  :title="(u.label || 'Unavailable') + ' — ' + u.startTime.slice(0,5) + '–' + u.endTime.slice(0,5)">
+                  <span class="unavailability-overlay-label">{{ u.label || 'Unavailable' }}</span>
                 </div>
                 <div v-for="shift in shiftsForWeekDay(colIdx)" :key="shift.id"
                   class="shift-block"
@@ -443,7 +463,7 @@
               :key="e.name"
               :value="e.name"
             >
-              {{ e.name }}
+              {{ e.name }}{{ e.conflict ? ' ⚠ ' + (e.conflict.label || 'Unavailable') : '' }}
             </option>
           </select>
           <p
@@ -504,7 +524,7 @@
                 :key="e.name"
                 :value="e.name"
               >
-                {{ e.name }}
+                {{ e.name }}{{ e.conflict ? ' ⚠ ' + (e.conflict.label || 'Unavailable') : '' }}
               </option>
             </select>
             <p
@@ -865,6 +885,7 @@ import {
   fetchSwapRequests,
 } from "../services/schedulingService.js";
 import { getDepartment, getCalendarEntries, getEvents, getPositions, getSettingValues, getPositionEmployees } from "../services/departmentService.js";
+import { getUnavailability } from "../services/unavailabilityService.js";
 import {
   fetchTaskLists,
   fetchTasks,
@@ -965,6 +986,11 @@ const shifts             = ref([]);
 const pendingRequests    = ref([]);
 const sidebarAvailability = ref([]);
 const approvedAvailability = ref([]);
+// Dept-wide EmployeeUnavailability rows — fuels dropdown conflict
+// annotations and the hatched overlay on the calendar. Loaded in loadAll
+// alongside other dept data. Scope resolution reads the existing
+// `activeSeason` ref (loaded a few lines below).
+const deptUnavailability = ref([]);
 const calendarHours   = ref([]); // hours of operation from department calendar
 const activeSeason    = ref(""); // currently active season name (empty = no filter)
 const deptEvents      = ref([]); // department events
@@ -990,9 +1016,17 @@ function employeesForPosition(id_position, options = {}) {
   const eligible = employees.value.filter(e => idSet.has(e.id_employee));
   const { date, startHour, endHour } = options;
   if (!date || startHour == null || endHour == null) return eligible;
-  return eligible.filter((employee) =>
-    !employeeHasApprovedTimeOff(employee.id_employee, date, startHour, endHour)
-  );
+  // Hard filter: approved time off still excludes the employee from the
+  // dropdown (they literally can't work that shift).
+  // Soft annotation: recurring unavailability (class schedule, etc.) stays
+  // in the dropdown with a `conflict` property so the option can show a
+  // warning — managers can override when they need to.
+  return eligible
+    .filter((employee) => !employeeHasApprovedTimeOff(employee.id_employee, date, startHour, endHour))
+    .map((employee) => ({
+      ...employee,
+      conflict: employeeUnavailabilityConflict(employee.id_employee, date, startHour, endHour),
+    }));
 }
 
 function employeeHasApprovedTimeOff(id_employee, date, startHour, endHour) {
@@ -1003,6 +1037,63 @@ function employeeHasApprovedTimeOff(id_employee, date, startHour, endHour) {
     const reqEnd = timeStrToHour(request.endTime);
     return startHour < reqEnd && reqStart < endHour;
   });
+}
+
+// Return the first conflicting unavailability row (or null) for the given
+// employee on a specific shift date/time. Mirrors
+// employeeHasApprovedTimeOff but honors both scope types: "season" rows
+// apply only while the dept's activeSeason matches; "dateRange" rows apply
+// only if `date` is inside [startDate, endDate].
+const DAY_NAMES_FULL_UNAVAIL = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+function employeeUnavailabilityConflict(id_employee, date, startHour, endHour) {
+  if (!date) return null;
+  // Derive day name from the YYYY-MM-DD key without timezone skew.
+  const [y, m, d] = date.split("-").map(Number);
+  const dayName = DAY_NAMES_FULL_UNAVAIL[new Date(y, m - 1, d).getDay()];
+  for (const row of deptUnavailability.value) {
+    if (row.id_employee !== id_employee) continue;
+    if (row.dayOfWeek !== dayName) continue;
+    if (row.scopeType === "season") {
+      if (!activeSeason.value || row.season !== activeSeason.value) continue;
+    } else if (row.scopeType === "dateRange") {
+      if (!row.startDate || !row.endDate) continue;
+      if (date < row.startDate || date > row.endDate) continue;
+    }
+    const rowStart = timeStrToHour(row.startTime);
+    const rowEnd   = timeStrToHour(row.endTime);
+    if (startHour < rowEnd && rowStart < endHour) return row;
+  }
+  return null;
+}
+
+// All unavailability rows that apply to the given employee on the given
+// YYYY-MM-DD date — used by the calendar overlay to paint hatched blocks
+// behind the shift grid when a shift is selected.
+function unavailabilityForEmployeeOnDate(id_employee, date) {
+  if (!id_employee || !date) return [];
+  const [y, m, d] = date.split("-").map(Number);
+  const dayName = DAY_NAMES_FULL_UNAVAIL[new Date(y, m - 1, d).getDay()];
+  return deptUnavailability.value.filter(row => {
+    if (row.id_employee !== id_employee) return false;
+    if (row.dayOfWeek !== dayName) return false;
+    if (row.scopeType === "season") {
+      return activeSeason.value && row.season === activeSeason.value;
+    }
+    if (row.scopeType === "dateRange") {
+      return row.startDate && row.endDate && date >= row.startDate && date <= row.endDate;
+    }
+    return false;
+  });
+}
+
+// Absolute-position style for an unavailability block on the calendar,
+// mirroring the shift-block positioning math (CAL_START_HOUR + cellHeight).
+function unavailabilityBlockStyle(row) {
+  const startH = timeStrToHour(row.startTime);
+  const endH   = timeStrToHour(row.endTime);
+  const top    = Math.max(0, (startH - CAL_START_HOUR) * cellHeight.value);
+  const height = Math.max(18, (endH - startH) * cellHeight.value);
+  return { top: top + "px", height: height + "px" };
 }
 
 // Can the current (employee) user claim this unassigned shift?
@@ -1852,6 +1943,11 @@ async function loadAll() {
         const sv = (r.data || []).find(v => v.name === "Active Season" || v.key === "active_season");
         activeSeason.value = sv?.value || "";
       }).catch(() => {});
+      // Unavailability for everyone in this dept — powers conflict warnings
+      // in the employee dropdown and the hatched overlay on the calendar.
+      getUnavailability({ id_department: deptId }).then(r => {
+        deptUnavailability.value = r.data || [];
+      }).catch(() => { deptUnavailability.value = []; });
     }
     loadMyTasks(); // async, non-blocking — populates employee sidebar
     loadShiftTaskSummaries(); // async, non-blocking — populates manager shift-block badges
@@ -2990,6 +3086,32 @@ function fitToView() {
 .ghost-label { font-size: 14px; color: var(--accent); font-family: 'DM Mono', monospace; font-weight: 500; white-space: nowrap; }
 
 .shift-block { position: absolute; border-radius: 6px; padding: 5px 8px; cursor: pointer; overflow: hidden; z-index: 2; transition: filter 0.15s; }
+
+/* Hatched unavailability overlay — shown on the day column for the
+   selected shift's assignee. Sits behind shift blocks (z-index 1) so the
+   active shift still reads on top. */
+.unavailability-overlay {
+  position: absolute; left: 2px; right: 2px;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 23, 68, 0.14), rgba(255, 23, 68, 0.14) 6px,
+    transparent 6px, transparent 12px
+  );
+  border: 1px dashed rgba(255, 23, 68, 0.45);
+  border-radius: 5px;
+  z-index: 1; pointer-events: none;
+  display: flex; align-items: flex-start;
+}
+.unavailability-overlay-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
+  color: rgba(255, 23, 68, 0.9);
+  background: rgba(255,255,255,0.75);
+  padding: 1px 6px; border-radius: 3px;
+  margin: 3px 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: calc(100% - 8px);
+  font-family: 'DM Mono', monospace;
+}
 .shift-block:hover { filter: brightness(1.12); }
 .take-shift-btn {
   position: absolute; bottom: 4px; right: 4px;

@@ -115,12 +115,13 @@ const tabs = computed(() => {
     ];
   }
   return [
-    { label: "Dashboard",  route: "/dashboard" },
-    { label: "Department", route: "/department" },
-    { label: "Tradeboard", route: "/tradeboard" },
-    { label: "Tasks",      route: "/tasks" },
-    { label: "Shifts",     route: "/shifts" },
-    { label: "Requests",   route: "/requests" },
+    { label: "Dashboard",    route: "/dashboard" },
+    { label: "Department",   route: "/department" },
+    { label: "Tradeboard",   route: "/tradeboard" },
+    { label: "Tasks",        route: "/tasks" },
+    { label: "Shifts",       route: "/shifts" },
+    { label: "Requests",     route: "/requests" },
+    { label: "Availability", route: "/availability" },
   ];
 });
 

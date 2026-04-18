@@ -56,6 +56,12 @@
                         <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                       </svg>
                     </button>
+                    <button class="icon-action" title="View availability" @click="openAvailabilityViewer(emp)">
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                        <rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
+                        <path d="M5 1v3M11 1v3M2 6.5h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                      </svg>
+                    </button>
                     <button class="icon-action danger" title="Remove from department" @click="confirmRemoveFromDept(emp)">
                       <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                         <path d="M3 8h10M13 5l-3 3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -309,6 +315,12 @@
         </div>
       </div>
     </Transition>
+
+    <!-- ── Availability viewer (manager reference while scheduling) ── -->
+    <AvailabilityViewerModal
+      :open="availabilityViewer.open"
+      :employee="availabilityViewer.employee"
+      @close="closeAvailabilityViewer" />
   </div>
 </template>
 
@@ -318,6 +330,7 @@ import { useRouter, useRoute } from "vue-router";
 import Utils from "../config/utils.js";
 import { useDepartment } from "../composables/useDepartment.js";
 import DeptSwitcher from "../components/DeptSwitcher.vue";
+import AvailabilityViewerModal from "../components/AvailabilityViewerModal.vue";
 import {
   employeeService,
   shiftService,
@@ -733,6 +746,16 @@ async function executeRemoveFromDept() {
   } finally {
     removeFromDeptConfirm.value.saving = false;
   }
+}
+
+// ── Availability viewer ───────────────────────────────────────────────────────
+const availabilityViewer = ref({ open: false, employee: null });
+
+function openAvailabilityViewer(emp) {
+  availabilityViewer.value = { open: true, employee: emp };
+}
+function closeAvailabilityViewer() {
+  availabilityViewer.value.open = false;
 }
 </script>
 

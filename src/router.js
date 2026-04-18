@@ -27,6 +27,7 @@ const router = createRouter({
         { path: "tradeboard",      component: () => import("./views/Tradeboard.vue") },
         { path: "tasks",           component: () => import("./views/Tasks.vue") },
         { path: "requests",        component: () => import("./views/Requests.vue") },
+        { path: "availability",    component: () => import("./views/Availability.vue") },
         { path: "templates",       component: () => import("./views/Templates.vue") },
         { path: "templates/:id",   component: () => import("./views/TemplateEditor.vue") },
         { path: "shifts",          component: () => import("./views/ShiftsPage.vue") },
