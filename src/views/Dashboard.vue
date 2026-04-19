@@ -17,8 +17,8 @@
 
     <div class="layout">
 
-      <!-- ── Sidebar ── -->
-      <aside class="sidebar">
+      <!-- ── Sidebar ── (hidden on phone — its content lives in the agenda + drawer) -->
+      <aside v-if="!isPhone" class="sidebar">
         <div class="mini-cal-header">
           <button class="cal-nav-btn" @click="navigate(-1)">‹</button>
           <span class="mini-cal-month">{{ miniCalMonth }}</span>
@@ -221,10 +221,10 @@
             </Transition>
           </div>
           <div class="cal-view-group" :class="{ 'push-right': !isManager }">
-            <button v-for="v in ['Day','Week','Month']" :key="v" class="view-btn"
+            <button v-for="v in (isPhone ? ['Day'] : ['Day','Week','Month'])" :key="v" class="view-btn"
               :class="{ active: calView === v }" @click="setView(v)">{{ v }}</button>
           </div>
-          <div v-if="calView !== 'Month'" class="zoom-group">
+          <div v-if="calView !== 'Month' && !isPhone" class="zoom-group">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" class="zoom-icon"><circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.6"/><line x1="10.5" y1="10.5" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="4" y1="6.5" x2="9" y2="6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
             <input type="range" class="zoom-slider" min="20" max="160" step="4" :value="cellHeight" @input="cellHeight = +$event.target.value" title="Adjust zoom" />
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" class="zoom-icon"><circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.6"/><line x1="10.5" y1="10.5" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="4" y1="6.5" x2="9" y2="6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="6.5" y1="4" x2="6.5" y2="9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -237,7 +237,8 @@
              DAY VIEW
         ════════════════════════════════════ -->
         <Transition name="view-fade" mode="out-in">
-        <div v-if="calView === 'Day'" key="day" class="cal-grid-wrapper">
+        <div v-if="calView === 'Day'" key="day" class="cal-grid-wrapper"
+          @touchstart.passive="onDaySwipeStart" @touchend.passive="onDaySwipeEnd">
           <div class="cal-body" ref="calBody">
           <div class="cal-header-row">
             <div class="time-gutter"></div>
@@ -851,11 +852,13 @@ import Utils from "../config/utils.js";
 import AuthServices from "../services/authServices.js";
 import { useTheme } from "../composables/useTheme.js";
 import { useDepartment } from "../composables/useDepartment.js";
+import { useBreakpoint } from "../composables/useBreakpoint.js";
 import DeptSwitcher from "../components/DeptSwitcher.vue";
 import EmployeePicker from "../components/EmployeePicker.vue";
 import UnavailabilityConflictModal from "../components/UnavailabilityConflictModal.vue";
 
 const { isDark, toggleTheme } = useTheme();
+const { isPhone, isTouch } = useBreakpoint();
 import {
   fetchEmployees,
   fetchShiftsWithAssignments,
@@ -1719,6 +1722,37 @@ function setView(v) {
   calView.value = v;
   selectedShift.value       = null;
   quickCreate.value.visible = false;
+}
+
+// On phone there's no room for week or month view — force Day if a user
+// resizes from tablet/desktop into phone width while viewing those.
+watch(isPhone, (phone) => {
+  if (phone && calView.value !== "Day") setView("Day");
+}, { immediate: true });
+
+// ── Touch swipe nav (phone only) ────────────────────────────────────────────
+// Horizontal swipe on the day grid → previous/next day. Threshold tuned so
+// vertical scrolling of the grid still works.
+const swipe = { startX: 0, startY: 0, t: 0 };
+function onDaySwipeStart(e) {
+  if (!isTouch.value) return;
+  const t = e.changedTouches?.[0];
+  if (!t) return;
+  swipe.startX = t.clientX;
+  swipe.startY = t.clientY;
+  swipe.t = Date.now();
+}
+function onDaySwipeEnd(e) {
+  if (!isTouch.value || calView.value !== "Day") return;
+  const t = e.changedTouches?.[0];
+  if (!t) return;
+  const dx = t.clientX - swipe.startX;
+  const dy = t.clientY - swipe.startY;
+  const dt = Date.now() - swipe.t;
+  if (dt > 600) return;
+  if (Math.abs(dx) < 60) return;
+  if (Math.abs(dy) > 40) return;
+  navigate(dx < 0 ? 1 : -1);
 }
 
 // Click a day header in week view → drill to day
@@ -4096,5 +4130,39 @@ function fitToView() {
 .tpl-dpc-pop-enter-from, .tpl-dpc-pop-leave-to {
   opacity: 0;
   transform: scale(.96) translateY(-4px);
+}
+
+/* ── Mobile (phone) overrides ──
+   Keep the desktop layout untouched; only override what breaks on a 375px
+   viewport. Tablet sits between — it gets the desktop layout but with a
+   narrower sidebar and gentler toolbar padding via the smaller breakpoint. */
+@media (max-width: 599.98px) {
+  .cal-toolbar {
+    flex-wrap: wrap;
+    padding: 8px 10px;
+    gap: 8px;
+  }
+  .cal-nav-group { flex: 1 1 auto; }
+  .cal-range-label {
+    font-size: 13px;
+    flex: 1;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .add-shift-btn { padding: 6px 10px; font-size: 13px; }
+  .tpl-dropdown-btn { padding: 6px 10px; font-size: 13px; }
+  .tpl-dropdown-btn span { display: none; }
+
+  /* Week and Month views remain reachable on phone via direct navigation,
+     but their dense grids would horizontally collapse — let them pan
+     instead so users can still scroll across them. */
+  .cal-grid-wrapper { overflow-x: auto; }
+}
+
+/* Tablet — narrower sidebar so the calendar gets more width. */
+@media (min-width: 600px) and (max-width: 959.98px) {
+  .sidebar { width: 180px; }
 }
 </style>

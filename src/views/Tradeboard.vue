@@ -43,6 +43,41 @@
             <p class="empty-title">All clear</p>
             <p class="empty-sub">No claimed shifts waiting for approval.</p>
           </div>
+
+          <!-- Phone view: stacked cards. The 6-col table is unusable on a 375px screen. -->
+          <div v-else-if="isPhone" class="approval-cards">
+            <div v-for="r in needsApproval" :key="r.id_swapRequest" class="approval-card">
+              <div class="approval-pair">
+                <div class="emp-cell">
+                  <div class="emp-avatar" :style="{ background: colorFor(r.id_employeeRequester) }">{{ initialsFor(r.id_employeeRequester) }}</div>
+                  <div>
+                    <p class="approval-pair-label">From</p>
+                    <p class="approval-pair-name">{{ nameFor(r.id_employeeRequester) }}</p>
+                  </div>
+                </div>
+                <span class="approval-arrow">→</span>
+                <div class="emp-cell">
+                  <div class="emp-avatar" :style="{ background: colorFor(r.id_employeeRequested) }">{{ initialsFor(r.id_employeeRequested) }}</div>
+                  <div>
+                    <p class="approval-pair-label">To</p>
+                    <p class="approval-pair-name">{{ nameFor(r.id_employeeRequested) }}</p>
+                  </div>
+                </div>
+              </div>
+              <div class="approval-meta">
+                <span class="mono">{{ r.shiftDate }}</span>
+                <span class="approval-meta-sep">·</span>
+                <span class="mono">{{ r.shiftTime }}</span>
+                <span v-if="r.positionName" class="pos-badge">{{ r.positionName }}</span>
+              </div>
+              <div class="approval-actions">
+                <button class="approve-btn approve-btn--lg" @click="updateStatus(r, 'Approved')">✓ Approve</button>
+                <button class="deny-btn deny-btn--lg"       @click="updateStatus(r, 'Denied')">✕ Deny</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tablet/desktop view: table -->
           <div v-else class="table-wrap">
             <table class="data-table">
               <thead>
@@ -369,8 +404,10 @@ import Utils from "../config/utils.js";
 import { useDepartment } from "../composables/useDepartment.js";
 import { useNotifications } from "../composables/useNotifications.js";
 import { useTheme } from "../composables/useTheme.js";
+import { useBreakpoint } from "../composables/useBreakpoint.js";
 
 const { dismiss: dismissNotification, lastActionAt: notifActionAt } = useNotifications();
+const { isPhone } = useBreakpoint();
 import DeptSwitcher from "../components/DeptSwitcher.vue";
 import apiClient from "../services/services.js";
 import { timeStrToHour, fmtHour } from "../services/employeeManagementService.js";
@@ -1000,4 +1037,63 @@ async function updateStatus(r, status) {
 
 .modal-enter-active, .modal-leave-active { transition: opacity 0.2s, transform 0.2s; }
 .modal-enter-from, .modal-leave-to { opacity: 0; transform: scale(0.96); }
+
+/* ── Phone-only manager-approval card list ── */
+.approval-cards { display: flex; flex-direction: column; gap: 10px; }
+.approval-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--bdr-subtle);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.approval-pair {
+  display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap;
+}
+.approval-pair .emp-cell { flex: 1 1 40%; min-width: 0; }
+.approval-pair-label {
+  font-size: 10px; font-weight: 700; color: var(--tx-faint);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.approval-pair-name {
+  font-size: 14px; font-weight: 600; color: var(--tx-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.approval-arrow { color: var(--tx-faint); font-size: 16px; flex: 0 0 auto; }
+
+.approval-meta {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 13px; color: var(--tx-secondary);
+  padding: 8px 0; border-top: 1px solid var(--bdr-subtle);
+}
+.approval-meta-sep { color: var(--tx-faint); }
+
+.approval-actions {
+  display: flex; gap: 8px;
+}
+.approval-actions .approve-btn--lg,
+.approval-actions .deny-btn--lg {
+  flex: 1;
+  min-height: var(--tap-target-min);
+  padding: 10px 14px;
+  font-size: 14px; font-weight: 600;
+  border-radius: 9px;
+}
+
+/* Phone trade card grid: stack to one column. The desktop minmax(260px,1fr)
+   pattern already collapses to one column at <520px in most browsers, but
+   forcing it here removes ambiguity and removes the leftover horizontal gap. */
+@media (max-width: 599.98px) {
+  .trade-grid { grid-template-columns: 1fr; gap: 10px; }
+  .content { padding: 16px 14px; }
+  .page-header { gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .page-heading { font-size: 22px; }
+
+  /* Make Take/Withdraw buttons easier to tap. */
+  .take-btn, .withdraw-btn { min-height: var(--tap-target-min); padding: 10px 14px; font-size: 14px; }
+
+  /* History tables get horizontal scroll instead of overflowing. */
+  .table-wrap { overflow-x: auto; }
+}
 </style>

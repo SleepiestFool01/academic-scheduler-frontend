@@ -1,12 +1,19 @@
 <template>
   <div class="app-layout">
-    <nav class="topnav">
+    <nav class="topnav" :class="{ 'topnav--mobile': isTouch }">
+      <button v-if="isTouch" class="nav-hamburger" @click="navOpen = true" aria-label="Open navigation">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <line x1="4" y1="7"  x2="20" y2="7"/>
+          <line x1="4" y1="12" x2="20" y2="12"/>
+          <line x1="4" y1="17" x2="20" y2="17"/>
+        </svg>
+      </button>
       <router-link to="/dashboard" class="nav-logo-link" aria-label="Go to dashboard">
         <img v-if="isDark" src="../assets/cowork_logo_dark.png" alt="CoWork" class="nav-logo-img" />
         <img v-else src="../assets/cowork_logo_light.png" alt="CoWork" class="nav-logo-img" />
       </router-link>
-      <DeptSwitcher />
-      <div class="nav-tabs">
+      <DeptSwitcher v-if="!isTouch" />
+      <div v-if="!isTouch" class="nav-tabs">
         <router-link
           v-for="tab in tabs"
           :key="tab.label"
@@ -18,7 +25,7 @@
         </router-link>
       </div>
       <div class="nav-right">
-        <button class="theme-toggle" @click="toggleTheme" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
+        <button v-if="!isTouch" class="theme-toggle" @click="toggleTheme" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
           <svg v-if="isDark" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <circle cx="12" cy="12" r="5"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/>
             <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
@@ -36,6 +43,48 @@
         </div>
       </div>
     </nav>
+
+    <!-- Mobile nav drawer (slides in from the left on phone/tablet) -->
+    <Transition name="slide-left">
+      <div v-if="navOpen && isTouch" class="nav-overlay" @click.self="navOpen = false">
+        <aside class="nav-drawer" role="navigation">
+          <div class="nav-drawer-header">
+            <img v-if="isDark" src="../assets/cowork_logo_dark.png" alt="CoWork" class="nav-logo-img" />
+            <img v-else src="../assets/cowork_logo_light.png" alt="CoWork" class="nav-logo-img" />
+            <button class="nav-drawer-close" @click="navOpen = false" aria-label="Close navigation">✕</button>
+          </div>
+          <div class="nav-drawer-dept">
+            <DeptSwitcher />
+          </div>
+          <div class="nav-drawer-tabs">
+            <router-link
+              v-for="tab in tabs"
+              :key="tab.label"
+              :to="tab.route"
+              class="nav-drawer-tab"
+              :class="{ active: isActive(tab) }"
+              @click="navOpen = false">
+              {{ tab.label }}
+              <span v-if="isManager && (countsByRoute[tab.route] || 0) > 0" class="nav-dot nav-dot--drawer"></span>
+            </router-link>
+          </div>
+          <div class="nav-drawer-footer">
+            <button class="theme-toggle" @click="toggleTheme" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
+              <svg v-if="isDark" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <circle cx="12" cy="12" r="5"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/>
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                <line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/>
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+              </svg>
+              <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+              <span class="theme-toggle-label">{{ isDark ? "Light mode" : "Dark mode" }}</span>
+            </button>
+          </div>
+        </aside>
+      </div>
+    </Transition>
 
     <!-- Profile slide-out panel -->
     <Transition name="slide-right">
@@ -73,13 +122,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import Utils from "../config/utils.js";
 import AuthServices from "../services/authServices.js";
 import { useTheme } from "../composables/useTheme.js";
 import { useDepartment } from "../composables/useDepartment.js";
 import { useNotifications } from "../composables/useNotifications.js";
+import { useBreakpoint } from "../composables/useBreakpoint.js";
 import DeptSwitcher from "../components/DeptSwitcher.vue";
 import NotificationBell from "../components/NotificationBell.vue";
 
@@ -88,9 +138,16 @@ const route  = useRoute();
 const { isDark, toggleTheme } = useTheme();
 const { myDepts, loadDepts } = useDepartment();
 const { countsByRoute, startPolling, stopPolling } = useNotifications();
+const { isTouch } = useBreakpoint();
 
 const currentUser = ref(Utils.getStore("user") || { fName: "?", lName: "?" });
 const profileOpen = ref(false);
+const navOpen     = ref(false);
+
+// Auto-close the drawer if the viewport widens past mobile (e.g. user
+// rotates a tablet or resizes the dev tools); otherwise it stays in DOM
+// hidden behind the desktop nav.
+watch(isTouch, (touch) => { if (!touch) navOpen.value = false; });
 
 const userInitials = computed(() => {
   const u = currentUser.value;
@@ -215,6 +272,31 @@ onBeforeUnmount(() => {
   z-index: 100;
 }
 
+.topnav--mobile {
+  gap: 12px;
+  padding: 0 12px;
+  height: 60px;
+}
+
+.nav-hamburger {
+  background: none;
+  border: 1px solid var(--bdr-subtle);
+  color: var(--tx-primary);
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+.nav-hamburger:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+
+.topnav--mobile .nav-logo-img { height: 36px; }
+.topnav--mobile .nav-right    { gap: 10px; }
+
 .nav-logo-img { height: 52px; width: auto; object-fit: contain; }
 .nav-logo-link {
   display: inline-flex;
@@ -293,7 +375,7 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(4px);
 }
 .profile-panel {
-  width: 320px; background: var(--bg-surface); border-left: 1px solid var(--bdr-subtle);
+  width: min(320px, 100vw); background: var(--bg-surface); border-left: 1px solid var(--bdr-subtle);
   padding: 28px 24px; display: flex; flex-direction: column; gap: 20px;
   box-shadow: -8px 0 30px rgba(0,0,0,0.3);
 }
@@ -330,4 +412,62 @@ onBeforeUnmount(() => {
 .slide-right-enter-active, .slide-right-leave-active { transition: opacity 0.25s, transform 0.25s; }
 .slide-right-enter-from .profile-panel, .slide-right-leave-to .profile-panel { transform: translateX(100%); }
 .slide-right-enter-from, .slide-right-leave-to { opacity: 0; }
+
+/* ── Mobile nav drawer ── */
+.nav-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+  z-index: 500; display: flex; justify-content: flex-start;
+  backdrop-filter: blur(4px);
+}
+.nav-drawer {
+  width: min(300px, 86vw); height: 100%;
+  background: var(--bg-surface); border-right: 1px solid var(--bdr-subtle);
+  padding: 22px 18px; display: flex; flex-direction: column; gap: 16px;
+  box-shadow: 8px 0 30px rgba(0,0,0,0.3);
+  overflow-y: auto;
+}
+.nav-drawer-header {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.nav-drawer-header .nav-logo-img { height: 38px; }
+.nav-drawer-close {
+  background: none; border: 1px solid var(--bdr-medium); color: var(--tx-muted);
+  width: 32px; height: 32px; border-radius: 6px; cursor: pointer; font-size: 14px;
+  display: flex; align-items: center; justify-content: center; transition: color 0.15s;
+}
+.nav-drawer-close:hover { color: var(--tx-primary); }
+
+.nav-drawer-dept { padding: 4px 0; }
+
+.nav-drawer-tabs { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.nav-drawer-tab {
+  position: relative;
+  display: flex; align-items: center;
+  padding: 12px 14px; border-radius: 8px;
+  color: var(--tx-secondary); font-family: 'Satoshi', sans-serif; font-size: 16px;
+  text-decoration: none; transition: background 0.15s, color 0.15s;
+  min-height: var(--tap-target-min);
+}
+.nav-drawer-tab:hover { background: var(--bg-hover); color: var(--tx-primary); }
+.nav-drawer-tab.active { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+
+.nav-dot--drawer {
+  position: static; margin-left: auto;
+  box-shadow: none;
+}
+
+.nav-drawer-footer { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--bdr-subtle); }
+.nav-drawer-footer .theme-toggle {
+  width: 100%;
+  height: auto;
+  padding: 10px 14px;
+  border-radius: 9px;
+  gap: 10px;
+  font-family: 'Satoshi', sans-serif; font-size: 14px; color: var(--tx-secondary);
+}
+.theme-toggle-label { font-size: 14px; }
+
+.slide-left-enter-active, .slide-left-leave-active { transition: opacity 0.25s, transform 0.25s; }
+.slide-left-enter-from .nav-drawer, .slide-left-leave-to .nav-drawer { transform: translateX(-100%); }
+.slide-left-enter-from, .slide-left-leave-to { opacity: 0; }
 </style>
