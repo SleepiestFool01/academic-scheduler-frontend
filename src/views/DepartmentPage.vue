@@ -227,12 +227,51 @@
               </div>
             </div>
 
+            <!-- Department configuration: buffer time + manager management -->
+            <div class="settings-section">
+              <div class="setting-row">
+                <div class="setting-info">
+                  <div class="setting-label">Student Buffer Time</div>
+                  <div class="setting-desc">Minutes of buffer time to add between student employee shifts.</div>
+                </div>
+                <div class="setting-control">
+                  <input v-model.number="bufferTime" type="number" min="0" max="60" class="setting-input" placeholder="0" />
+                  <span class="setting-unit">min</span>
+                  <button class="primary-btn" @click="saveBufferTime" :disabled="savingBuffer">
+                    {{ savingBuffer ? 'Saving…' : 'Save' }}
+                  </button>
+                </div>
+              </div>
+              <p v-if="bufferSaved"  class="save-success">Settings saved.</p>
+              <p v-if="bufferError"  class="save-error">{{ bufferError }}</p>
+            </div>
+
             <!-- Managers -->
-            <div class="overview-card ov-managers-card">
-              <div class="ov-label">Managers</div>
-              <div v-if="deptManagers.length === 0" class="ov-empty-hint">No managers assigned.</div>
-              <div v-else class="ov-managers-list">
-                <span v-for="name in deptManagers" :key="name" class="ov-manager-chip">{{ name }}</span>
+            <div class="settings-section">
+              <div class="setting-row mgr-setting-row">
+                <div class="setting-info">
+                  <div class="setting-label">Managers</div>
+                  <div class="setting-desc">Employees who can manage this department.</div>
+                </div>
+                <div class="mgr-setting-body">
+                  <div v-for="link in deptManagerLinks" :key="link.id_managerDepartment" class="mgr-setting-item">
+                    <span class="mgr-setting-name">{{ managerName(link.id_employee) }}</span>
+                    <span v-if="link.id_employee === currentUser.id_employee" class="mgr-you-badge">You</span>
+                    <button v-else class="icon-action danger" title="Remove" @click="removeManager(link)">✕</button>
+                  </div>
+                  <div class="mgr-add-row">
+                    <select v-model="addManagerId" class="mgr-select">
+                      <option value="">— Add a manager —</option>
+                      <option v-for="emp in assignableManagers" :key="emp.id_employee" :value="emp.id_employee">
+                        {{ emp.fName }} {{ emp.lName }}
+                      </option>
+                    </select>
+                    <button class="primary-btn" :disabled="!addManagerId || addingManager" @click="addManager">
+                      {{ addingManager ? 'Adding…' : 'Add' }}
+                    </button>
+                  </div>
+                  <p v-if="managerError" class="save-error">{{ managerError }}</p>
+                </div>
               </div>
             </div>
 
@@ -461,59 +500,6 @@
                 <div class="action-btns">
                   <button class="icon-action" title="Edit" @click="openEditSemester(s)">✎</button>
                   <button class="icon-action danger" title="Delete" @click="confirmDeleteSemester(s)">✕</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- ════ SETTINGS TAB ════ -->
-          <div v-else-if="activeTab === 'Settings'" class="tab-panel">
-            <div class="panel-header">
-              <h2 class="panel-title">Settings</h2>
-            </div>
-            <div class="settings-section">
-              <div class="setting-row">
-                <div class="setting-info">
-                  <div class="setting-label">Student Buffer Time</div>
-                  <div class="setting-desc">Minutes of buffer time to add between student employee shifts.</div>
-                </div>
-                <div class="setting-control">
-                  <input v-model.number="bufferTime" type="number" min="0" max="60" class="setting-input" placeholder="0" />
-                  <span class="setting-unit">min</span>
-                  <button class="primary-btn" @click="saveBufferTime" :disabled="savingBuffer">
-                    {{ savingBuffer ? 'Saving…' : 'Save' }}
-                  </button>
-                </div>
-              </div>
-              <p v-if="bufferSaved"  class="save-success">Settings saved.</p>
-              <p v-if="bufferError"  class="save-error">{{ bufferError }}</p>
-            </div>
-
-            <!-- Managers -->
-            <div class="settings-section">
-              <div class="setting-row mgr-setting-row">
-                <div class="setting-info">
-                  <div class="setting-label">Managers</div>
-                  <div class="setting-desc">Employees who can manage this department.</div>
-                </div>
-                <div class="mgr-setting-body">
-                  <div v-for="link in deptManagerLinks" :key="link.id_managerDepartment" class="mgr-setting-item">
-                    <span class="mgr-setting-name">{{ managerName(link.id_employee) }}</span>
-                    <span v-if="link.id_employee === currentUser.id_employee" class="mgr-you-badge">You</span>
-                    <button v-else class="icon-action danger" title="Remove" @click="removeManager(link)">✕</button>
-                  </div>
-                  <div class="mgr-add-row">
-                    <select v-model="addManagerId" class="mgr-select">
-                      <option value="">— Add a manager —</option>
-                      <option v-for="emp in assignableManagers" :key="emp.id_employee" :value="emp.id_employee">
-                        {{ emp.fName }} {{ emp.lName }}
-                      </option>
-                    </select>
-                    <button class="primary-btn" :disabled="!addManagerId || addingManager" @click="addManager">
-                      {{ addingManager ? 'Adding…' : 'Add' }}
-                    </button>
-                  </div>
-                  <p v-if="managerError" class="save-error">{{ managerError }}</p>
                 </div>
               </div>
             </div>
@@ -1003,7 +989,7 @@ const userInitials = computed(() => {
 });
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-const TABS    = ["Overview", "Positions", "Employees", "Hours", "Events", "Semesters", "Settings"];
+const TABS    = ["Overview", "Positions", "Employees", "Hours", "Events", "Semesters"];
 const DAYS    = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -1385,31 +1371,7 @@ const todayEntry = computed(() => {
   return getEntryForSeasonDay(activeSeason.value, today);
 });
 
-const deptManagers = computed(() => {
-  const seen = new Set();
-  const names = [];
-
-  // From junction table
-  for (const link of deptManagerLinks.value) {
-    const emp = allStaff.value.find(e => e.id_employee === link.id_employee);
-    if (emp && !seen.has(emp.id_employee)) {
-      seen.add(emp.id_employee);
-      names.push(`${emp.fName} ${emp.lName}`);
-    }
-  }
-
-  // From employees whose primary dept matches and are Manager/Admin
-  for (const emp of employees.value) {
-    if ((emp.role === "Manager" || emp.role === "Admin") && !seen.has(emp.id_employee)) {
-      seen.add(emp.id_employee);
-      names.push(`${emp.fName} ${emp.lName}`);
-    }
-  }
-
-  return names;
-});
-
-// ── Manager assignment (Settings tab) ─────────────────────────────────────────
+// ── Manager assignment ─────────────────────────────────────────
 const addManagerId   = ref("");
 const addingManager  = ref(false);
 const managerError   = ref("");

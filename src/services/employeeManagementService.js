@@ -5,6 +5,7 @@
  * Uses the existing apiClient from services.js (handles auth token automatically).
  */
 import apiClient from "./services.js";
+import { fmtHour as _fmtHour } from "../composables/usePreferences.js";
 
 // ── Employees ──────────────────────────────────────────────────────────────────
 
@@ -49,14 +50,7 @@ export function timeStrToHour(t) {
   const [h, m] = t.split(":").map(Number);
   return h + m / 60;
 }
-export function fmtHour(h) {
-  const total = Math.round(h * 60);
-  const hr = Math.floor(total / 60);
-  const min = total % 60;
-  const suffix = hr >= 12 ? "pm" : "am";
-  const disp = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
-  return min === 0 ? `${disp}${suffix}` : `${disp}:${String(min).padStart(2, "0")}${suffix}`;
-}
+export const fmtHour = _fmtHour;
 const DAY_ENUM = ["Sun", "Mon", "Tue", "Wed", "Thur", "Fri", "Sat"];
 
 export const shiftService = {

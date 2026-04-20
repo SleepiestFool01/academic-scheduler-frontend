@@ -407,6 +407,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useDepartment } from "../composables/useDepartment.js";
+import { usePreferences } from "../composables/usePreferences.js";
 import { useRouter } from "vue-router";
 import Utils from "../config/utils.js";
 import apiClient from "../services/services.js";
@@ -671,14 +672,7 @@ function timeStrToHour(t) {
   return h + m / 60;
 }
 
-function fmtHour(h) {
-  const total  = Math.round(h * 60);
-  const hr     = Math.floor(total / 60);
-  const min    = total % 60;
-  const suffix = hr >= 12 ? "pm" : "am";
-  const disp   = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
-  return min === 0 ? `${disp}${suffix}` : `${disp}:${String(min).padStart(2, "0")}${suffix}`;
-}
+const { fmtHour } = usePreferences();
 
 const empLoading    = ref(false);
 const empActiveShift = ref(null);

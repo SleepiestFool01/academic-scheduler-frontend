@@ -233,6 +233,7 @@ import { ref, computed, onMounted, watch } from "vue";
 import Utils from "../config/utils.js";
 import { useDepartment } from "../composables/useDepartment.js";
 import { useBreakpoint } from "../composables/useBreakpoint.js";
+import { usePreferences } from "../composables/usePreferences.js";
 import apiClient from "../services/services.js";
 import { getSettingValues } from "../services/departmentService.js";
 import { getActiveSemester } from "../services/semesterService.js";
@@ -276,13 +277,7 @@ const SNAP_MINUTES = 15;
 const drag = ref({ active: false, dayIndex: null, startHour: null, currentHour: null, colEl: null });
 
 // ── Helpers ──
-function fmtHour(h) {
-  const hr = Math.floor(h);
-  const min = Math.round((h - hr) * 60);
-  const suffix = hr >= 12 ? "pm" : "am";
-  const disp = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
-  return min === 0 ? `${disp}${suffix}` : `${disp}:${String(min).padStart(2,"0")}${suffix}`;
-}
+const { fmtHour } = usePreferences();
 function timeStrToHour(t) {
   if (!t) return 0;
   const [h, m] = t.split(":").map(Number);
