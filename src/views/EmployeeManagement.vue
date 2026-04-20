@@ -28,7 +28,43 @@
           </div>
         </div>
 
-        <div class="table-wrap">
+        <!-- Phone: stacked cards -->
+        <div v-if="isPhone" class="mobile-cards">
+          <div v-if="filteredEmployees.length === 0" class="mobile-empty">No employees found.</div>
+          <div v-for="emp in filteredEmployees" :key="emp.id_employee" class="mobile-card">
+            <div class="mobile-card-top">
+              <div class="emp-avatar" :style="{ background: empColor(emp) }">{{ initials(emp) }}</div>
+              <div class="mobile-card-title-block">
+                <div class="mobile-card-title">{{ emp.fName }} {{ emp.lName }}</div>
+                <div class="mobile-card-sub">{{ emp.email }}</div>
+              </div>
+              <span class="role-badge" :class="emp.role?.toLowerCase()">{{ emp.role }}</span>
+            </div>
+            <div class="mobile-card-actions">
+              <button class="icon-action" title="Edit" @click="openEditEmployee(emp)">✎</button>
+              <button class="icon-action" title="Manage Positions" @click="openManagePositions(emp)">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="5" r="2.5" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </button>
+              <button class="icon-action" title="View availability" @click="openAvailabilityViewer(emp)">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M5 1v3M11 1v3M2 6.5h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </button>
+              <button class="icon-action danger" title="Remove from department" @click="confirmRemoveFromDept(emp)">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 8h10M13 5l-3 3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tablet/desktop: data table -->
+        <div v-else class="table-wrap">
           <table class="data-table">
             <thead>
               <tr>
@@ -93,7 +129,32 @@
           <input v-model="shiftSearch" class="search-input" placeholder="Search by employee or date…" />
         </div>
 
-        <div class="table-wrap">
+        <!-- Phone: stacked cards -->
+        <div v-if="isPhone" class="mobile-cards">
+          <div v-if="filteredShifts.length === 0" class="mobile-empty">No shifts found.</div>
+          <div v-for="s in filteredShifts" :key="s.id_shiftAssignment ?? s.id_shift" class="mobile-card">
+            <div class="mobile-card-top">
+              <div class="emp-avatar" :style="{ background: empColorById(s.id_employee) }">{{ initialsById(s.id_employee) }}</div>
+              <div class="mobile-card-title-block">
+                <div class="mobile-card-title">{{ s.employee || 'Unassigned' }}</div>
+                <div class="mobile-card-sub">{{ s.positionName || '—' }}</div>
+              </div>
+              <div class="mobile-card-actions-inline">
+                <button class="icon-action" title="Edit" @click="openEditShift(s)">✎</button>
+                <button class="icon-action danger" title="Delete" @click="confirmDelete('shift', s)">✕</button>
+              </div>
+            </div>
+            <div class="mobile-card-meta">
+              <span class="mono">{{ s.date }}</span>
+              <span class="mobile-card-sep">·</span>
+              <span class="mono">{{ s.startLabel }} – {{ s.endLabel }}</span>
+            </div>
+            <div v-if="s.notes" class="mobile-card-notes">{{ s.notes }}</div>
+          </div>
+        </div>
+
+        <!-- Tablet/desktop: data table -->
+        <div v-else class="table-wrap">
           <table class="data-table">
             <thead>
               <tr>
@@ -382,6 +443,7 @@ import { ref, computed, onMounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import Utils from "../config/utils.js";
 import { useDepartment } from "../composables/useDepartment.js";
+import { useBreakpoint } from "../composables/useBreakpoint.js";
 import DeptSwitcher from "../components/DeptSwitcher.vue";
 import AvailabilityViewerModal from "../components/AvailabilityViewerModal.vue";
 import UnavailabilityConflictModal from "../components/UnavailabilityConflictModal.vue";
@@ -522,6 +584,7 @@ async function loadAll() {
 }
 
 const { selectedDeptId, myDepts, loadDepts } = useDepartment();
+const { isPhone } = useBreakpoint();
 watch(selectedDeptId, loadAll);
 onMounted(() => {
   if (!myDepts.value.length) loadDepts(currentUser.value);
@@ -1148,4 +1211,53 @@ async function runBulkSync() {
 .color-native { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--bdr-medium); cursor: pointer; padding: 0; background: none; flex-shrink: 0; }
 .color-preview { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .color-hex { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--tx-muted); }
+
+/* ── Phone card list (replaces the Employees/Shifts tables) ── */
+.mobile-cards { display: flex; flex-direction: column; gap: 10px; }
+.mobile-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--bdr-subtle);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.mobile-card-top {
+  display: flex; align-items: center; gap: 10px;
+}
+.mobile-card-title-block { flex: 1; min-width: 0; }
+.mobile-card-title {
+  font-size: 15px; font-weight: 600; color: var(--tx-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mobile-card-sub {
+  font-size: 12px; color: var(--tx-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mobile-card-actions {
+  display: flex; gap: 6px; justify-content: flex-end;
+  padding-top: 8px; border-top: 1px solid var(--bdr-subtle);
+}
+.mobile-card-actions-inline { display: flex; gap: 4px; flex-shrink: 0; }
+.mobile-card-meta {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 13px; color: var(--tx-secondary);
+}
+.mobile-card-sep { color: var(--tx-faint); }
+.mobile-card-notes {
+  font-size: 12px; color: var(--tx-faint);
+  padding-top: 6px; border-top: 1px solid var(--bdr-subtle);
+  line-height: 1.4;
+}
+.mobile-empty {
+  padding: 20px 16px; text-align: center;
+  font-size: 14px; color: var(--tx-faint);
+  background: var(--bg-surface); border: 1px dashed var(--bdr-subtle); border-radius: 10px;
+}
+
+/* Phone-only layout tweaks for the employee page. */
+@media (max-width: 599.98px) {
+  .panel-header { gap: 10px; }
+  .panel-header-actions { width: 100%; flex-direction: column; align-items: stretch; }
+  .panel-header-actions .search-input { width: 100%; }
+}
 </style>

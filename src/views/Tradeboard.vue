@@ -172,7 +172,29 @@
               <span class="section-sub">Past 7 days</span>
             </div>
           </div>
-          <div class="table-wrap">
+          <!-- Phone view: stacked cards -->
+          <div v-if="isPhone" class="history-cards">
+            <div v-if="allRequests.length === 0" class="history-empty">No trade activity in the past 7 days.</div>
+            <div v-for="r in allRequests" :key="r.id_swapRequest" class="history-card">
+              <div class="history-card-top">
+                <span class="mono">{{ r.shiftDate }}</span>
+                <span class="history-sep">·</span>
+                <span class="mono">{{ r.shiftTime }}</span>
+                <span class="status-badge" :class="r.status.toLowerCase()">{{ r.status }}</span>
+              </div>
+              <div class="history-card-row">
+                <span class="history-label">From</span>
+                <span class="history-value">{{ nameFor(r.id_employeeRequester) }}</span>
+              </div>
+              <div class="history-card-row">
+                <span class="history-label">To</span>
+                <span class="history-value">{{ r.id_employeeRequested ? nameFor(r.id_employeeRequested) : '—' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tablet/desktop view: table -->
+          <div v-else class="table-wrap">
             <table class="data-table">
               <thead>
                 <tr>
@@ -306,7 +328,33 @@
             </div>
             <span class="section-sub">Shifts you've put on the board — past 7 days.</span>
           </div>
-          <div class="table-wrap">
+          <!-- Phone view: stacked cards -->
+          <div v-if="isPhone" class="history-cards">
+            <div v-if="myPosts.length === 0" class="history-empty">No posts in the past 7 days.</div>
+            <div v-for="r in myPosts" :key="r.id_swapRequest" class="history-card">
+              <div class="history-card-top">
+                <span class="mono">{{ r.shiftDate }}</span>
+                <span class="history-sep">·</span>
+                <span class="mono">{{ r.shiftTime }}</span>
+                <span class="status-badge" :class="r.status.toLowerCase()">{{ r.status }}</span>
+              </div>
+              <div v-if="r.positionName" class="history-card-row">
+                <span class="history-label">Position</span>
+                <span class="pos-badge">{{ r.positionName }}</span>
+              </div>
+              <div class="history-card-row">
+                <span class="history-label">Claimed by</span>
+                <div v-if="r.id_employeeRequested" class="emp-cell">
+                  <div class="emp-avatar" :style="{ background: colorFor(r.id_employeeRequested) }">{{ initialsFor(r.id_employeeRequested) }}</div>
+                  <span class="history-value">{{ nameFor(r.id_employeeRequested) }}</span>
+                </div>
+                <span v-else class="tx-ghost">Not yet claimed</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tablet/desktop view: table -->
+          <div v-else class="table-wrap">
             <table class="data-table">
               <thead>
                 <tr><th>Date</th><th>Time</th><th>Position</th><th>Claimed By</th><th>Status</th></tr>
@@ -1079,6 +1127,43 @@ async function updateStatus(r, status) {
   padding: 10px 14px;
   font-size: 14px; font-weight: 600;
   border-radius: 9px;
+}
+
+/* ── Phone-only history/my-posts card list ── */
+.history-cards { display: flex; flex-direction: column; gap: 10px; }
+.history-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--bdr-subtle);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.history-card-top {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 13px; color: var(--tx-secondary);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--bdr-subtle);
+}
+.history-card-top .status-badge { margin-left: auto; }
+.history-sep { color: var(--tx-faint); }
+.history-card-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 14px;
+}
+.history-label {
+  font-size: 10px; font-weight: 700; color: var(--tx-faint);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  flex: 0 0 80px;
+}
+.history-value {
+  color: var(--tx-primary); font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0;
+}
+.history-empty {
+  padding: 20px 16px; text-align: center;
+  font-size: 14px; color: var(--tx-faint);
+  background: var(--bg-surface); border: 1px dashed var(--bdr-subtle); border-radius: 10px;
 }
 
 /* Phone trade card grid: stack to one column. The desktop minmax(260px,1fr)

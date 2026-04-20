@@ -83,14 +83,6 @@
           <button v-for="tab in TABS" :key="tab" class="dept-sub-tab"
             :class="{ active: activeTab === tab }"
             @click="activeTab = tab">{{ tab }}</button>
-          <div class="dept-sub-nav-right">
-            <button
-              class="new-dept-btn"
-              title="Create a new department"
-              @click="openCreateDeptModal">
-              + New Department
-            </button>
-          </div>
         </div>
 
         <!-- ── Error ── -->
@@ -101,33 +93,40 @@
 
         <!-- ── Department header ── -->
         <div class="dept-header">
+          <div class="dept-header-main">
+            <div class="dept-name-row">
+              <div class="dept-color-dot"></div>
+              <template v-if="!editingName">
+                <h1 class="dept-name">{{ department.name || 'Unnamed Department' }}</h1>
+                <button class="inline-edit-btn" @click="startEditName" title="Edit name">✎</button>
+              </template>
+              <template v-else>
+                <input v-model="nameEdit" class="inline-input" @keyup.enter="saveName" @keyup.escape="cancelEditName" autofocus />
+                <button class="save-inline-btn" @click="saveName" :disabled="savingName">✓</button>
+                <button class="cancel-inline-btn" @click="cancelEditName">✕</button>
+              </template>
+            </div>
 
-          <div class="dept-name-row">
-            <div class="dept-color-dot"></div>
-            <template v-if="!editingName">
-              <h1 class="dept-name">{{ department.name || 'Unnamed Department' }}</h1>
-              <button class="inline-edit-btn" @click="startEditName" title="Edit name">✎</button>
-            </template>
-            <template v-else>
-              <input v-model="nameEdit" class="inline-input" @keyup.enter="saveName" @keyup.escape="cancelEditName" autofocus />
-              <button class="save-inline-btn" @click="saveName" :disabled="savingName">✓</button>
-              <button class="cancel-inline-btn" @click="cancelEditName">✕</button>
-            </template>
-            <button class="request-access-btn" style="margin-left: auto;" @click="openRequestModal" title="Request access to manage another department">
-              + Request Another Department
-            </button>
+            <div class="dept-desc-row">
+              <template v-if="!editingDesc">
+                <p class="dept-desc">{{ department.description || 'No description' }}</p>
+                <button class="inline-edit-btn" @click="startEditDesc" title="Edit description">✎</button>
+              </template>
+              <template v-else>
+                <input v-model="descEdit" class="inline-input wide" @keyup.enter="saveDesc" @keyup.escape="cancelEditDesc" autofocus />
+                <button class="save-inline-btn" @click="saveDesc" :disabled="savingDesc">✓</button>
+                <button class="cancel-inline-btn" @click="cancelEditDesc">✕</button>
+              </template>
+            </div>
           </div>
 
-          <div class="dept-desc-row">
-            <template v-if="!editingDesc">
-              <p class="dept-desc">{{ department.description || 'No description' }}</p>
-              <button class="inline-edit-btn" @click="startEditDesc" title="Edit description">✎</button>
-            </template>
-            <template v-else>
-              <input v-model="descEdit" class="inline-input wide" @keyup.enter="saveDesc" @keyup.escape="cancelEditDesc" autofocus />
-              <button class="save-inline-btn" @click="saveDesc" :disabled="savingDesc">✓</button>
-              <button class="cancel-inline-btn" @click="cancelEditDesc">✕</button>
-            </template>
+          <div class="dept-header-actions">
+            <button class="request-access-btn" @click="openRequestModal" title="Request access to manage another department">
+              + Request Department
+            </button>
+            <button class="new-dept-btn" @click="openCreateDeptModal" title="Create a new department">
+              + New Department
+            </button>
           </div>
         </div>
 
@@ -291,6 +290,25 @@
               </div>
             </div>
             <div v-if="employees.length === 0" class="empty-state">No employees yet. Add one to get started.</div>
+
+            <!-- Phone: stacked card list (no horizontal scroll) -->
+            <div v-else-if="isPhone" class="dept-emp-cards">
+              <div v-if="filteredEmployees.length === 0" class="dept-emp-empty">No employees match your search.</div>
+              <div v-for="emp in filteredEmployees" :key="emp.id_employee" class="dept-emp-card">
+                <div class="emp-avatar" :style="{ background: empColor(emp) }">{{ empInitials(emp) }}</div>
+                <div class="dept-emp-body">
+                  <div class="dept-emp-name">{{ emp.fName }} {{ emp.lName }}</div>
+                  <div class="dept-emp-email">{{ emp.email }}</div>
+                  <span class="role-badge" :class="emp.role?.toLowerCase()">{{ emp.role }}</span>
+                </div>
+                <div class="dept-emp-actions">
+                  <button class="icon-action" title="Edit" @click="openEditEmployee(emp)">✎</button>
+                  <button class="icon-action danger" title="Remove" @click="confirmDeleteEmployee(emp)">✕</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tablet/desktop: table -->
             <div v-else class="table-wrap">
               <table class="data-table">
                 <thead>
@@ -924,6 +942,7 @@ import { ref, computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import Utils from "../config/utils.js";
 import { useDepartment } from "../composables/useDepartment.js";
+import { useBreakpoint } from "../composables/useBreakpoint.js";
 import DeptSwitcher from "../components/DeptSwitcher.vue";
 import {
   getAllDepartments,
@@ -996,6 +1015,7 @@ const noDeptsYet     = ref(false);
 
 // Department switcher — shared composable
 const { myDepts, selectedDeptId, loadDepts, setDept } = useDepartment();
+const { isPhone } = useBreakpoint();
 const allDepts = ref([]); // all departments in system (for request modal)
 
 const department      = ref({});
@@ -2038,11 +2058,20 @@ async function saveBufferTime() {
 
 .new-dept-btn {
   background: var(--accent-bg); border: 1px solid var(--accent-border);
-  color: var(--accent); padding: 5px 12px; border-radius: 6px;
-  font-size: 14px; font-weight: 600; font-family: 'Satoshi', sans-serif;
+  color: var(--accent); padding: 4px 10px; border-radius: 6px;
+  font-size: 12px; font-weight: 600; font-family: 'Satoshi', sans-serif;
   cursor: pointer; transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
 }
 .new-dept-btn:hover { background: var(--accent-subtle); border-color: var(--accent); }
+
+/* Button pair in the header: Request Department + New Department. Always
+   a vertical stack on the right side of the dept header, aligned with the
+   top of the name/description column on its left. */
+.dept-header-actions {
+  display: flex; flex-direction: column; gap: 6px;
+  align-items: stretch; flex-shrink: 0;
+}
 .nav-right { margin-left: auto; }
 .back-btn {
   display: flex; align-items: center; gap: 6px;
@@ -2094,7 +2123,9 @@ async function saveBufferTime() {
 .dept-header {
   padding: 20px 36px 16px;
   background: var(--bg-surface); border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0;
+  display: flex; align-items: flex-start; gap: 16px;
 }
+.dept-header-main { flex: 1; min-width: 0; }
 .dept-selector-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .dept-selector-label { font-size: 14px; color: var(--tx-muted); font-weight: 500; }
 .dept-selector {
@@ -2142,8 +2173,9 @@ async function saveBufferTime() {
 }
 .request-access-btn {
   background: none; border: 1px solid var(--bdr-medium); color: var(--tx-muted);
-  padding: 5px 14px; border-radius: 8px; cursor: pointer; font-size: 14px;
+  padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px;
   font-family: 'Satoshi', sans-serif; transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
 }
 .request-access-btn:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -2550,4 +2582,70 @@ async function saveBufferTime() {
   font-size: 14px; transition: color 0.15s, border-color 0.15s;
 }
 .emp-cancel-btn:hover { color: var(--err-text); border-color: var(--err-text); }
+
+/* ── Phone overrides ── */
+@media (max-width: 599.98px) {
+  /* Seven tabs + "New Department" won't fit on a 390px row. Turn the
+     sub-nav into an iOS-style horizontally-scrollable strip so every tab
+     stays one tap away (faster than a dropdown). "New Department" flows
+     at the end of the strip instead of being pushed right. */
+  .dept-sub-nav {
+    padding: 10px 14px;
+    gap: 2px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+  }
+  .dept-sub-nav::-webkit-scrollbar { display: none; }
+  .dept-sub-tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: 14px;
+    padding: 6px 12px;
+  }
+  /* Tighter padding on phone — the dept header takes up a lot of vertical
+     real estate otherwise. The two-column (main | actions) layout is
+     already handled by the base .dept-header flex. */
+  .dept-header { padding: 14px 14px 12px; gap: 10px; }
+
+  /* Tab panel content: the panel-header search + add-button row stacks
+     vertically so the search input isn't squeezed. */
+  .tab-panel .panel-header { gap: 10px; }
+  .tab-panel .panel-header > div[style*="flex"] { width: 100%; flex-direction: column !important; align-items: stretch !important; }
+  .tab-panel .search-input { width: 100%; }
+
+  /* Overview tab: every card becomes a full-width row instead of flowing
+     into a 2- or 3-column grid, so users see one block at a time. */
+  .overview-grid,
+  .overview-wide-grid { grid-template-columns: 1fr; gap: 10px; }
+  .overview-wide-grid { margin-top: 10px; }
+}
+
+/* ── Employees tab: phone card list ── */
+.dept-emp-cards { display: flex; flex-direction: column; gap: 8px; }
+.dept-emp-card {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--bdr-subtle);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.dept-emp-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dept-emp-name {
+  font-size: 15px; font-weight: 600; color: var(--tx-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dept-emp-email {
+  font-size: 12px; color: var(--tx-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dept-emp-body .role-badge { margin-top: 2px; align-self: flex-start; }
+.dept-emp-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.dept-emp-empty {
+  padding: 16px; text-align: center;
+  font-size: 14px; color: var(--tx-faint);
+  background: var(--bg-surface); border: 1px dashed var(--bdr-subtle); border-radius: 10px;
+}
 </style>

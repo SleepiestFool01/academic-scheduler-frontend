@@ -123,7 +123,7 @@
         </p>
       </div>
 
-      <div v-else class="row-list">
+      <div v-else-if="!isPhone" class="row-list">
         <h3 class="row-list-title">All entries</h3>
         <div v-for="row in sortedRows" :key="row.id_employeeUnavailability" class="row-item">
           <span class="row-source" :class="'row-source--' + row.source">
