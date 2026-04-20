@@ -1,14 +1,30 @@
 <template>
   <div class="editor-root" @mousemove="onGlobalMouseMove" @mouseup="onGlobalMouseUp" :class="{ 'cmd-create-mode': cmdHeld }">
 
+    <!-- ── Phone notice (editor is desktop-only) ── -->
+    <div v-if="isPhone" class="phone-notice">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <rect x="2" y="4" width="20" height="14" rx="2"/>
+        <line x1="8" y1="21" x2="16" y2="21"/>
+        <line x1="12" y1="18" x2="12" y2="21"/>
+      </svg>
+      <h2 class="phone-notice-title">Template Editor needs a larger screen</h2>
+      <p class="phone-notice-body">
+        The template editor uses click-and-drag to place shifts and a three-pane
+        layout that doesn't fit a phone. Open this page on a tablet or desktop
+        to edit templates.
+      </p>
+      <button class="phone-notice-back" @click="$router.push('/templates')">← Back to Templates</button>
+    </div>
+
     <!-- ── Loading overlay ── -->
-    <div v-if="loading" class="loading-overlay">
+    <div v-if="!isPhone && loading" class="loading-overlay">
       <div class="loading-spinner"></div>
       <span class="loading-text">Loading template…</span>
     </div>
 
     <!-- ── Template header bar ── -->
-    <div v-if="!loading" class="template-header-bar">
+    <div v-if="!loading && !isPhone" class="template-header-bar">
       <button class="back-link" @click="$router.push('/templates')">← Templates</button>
       <input
         class="template-name-input"
@@ -21,13 +37,13 @@
     </div>
 
     <!-- ── Error Banner ── -->
-    <div v-if="apiError" class="error-banner">
+    <div v-if="apiError && !isPhone" class="error-banner">
       {{ apiError }}
       <button class="retry-btn" @click="loadAll">Retry</button>
     </div>
 
     <!-- ── Main body: hours sidebar + calendar + right panel ── -->
-    <div class="editor-body">
+    <div v-if="!isPhone" class="editor-body">
 
       <!-- ── Hours of Operation Sidebar (visual overlay only) ── -->
       <aside class="hours-sidebar">
@@ -350,6 +366,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useTheme } from "../composables/useTheme.js";
 import { useDepartment } from "../composables/useDepartment.js";
+import { useBreakpoint } from "../composables/useBreakpoint.js";
 import EmployeePicker from "../components/EmployeePicker.vue";
 import Utils from "../config/utils.js";
 import {
@@ -387,6 +404,7 @@ const EMPLOYEE_COLORS  = ["#F0E6D3","#C0392B","#FF1744","#E8724A","#9B6B9B","#4A
 // ── State ─────────────────────────────────────────────────────────────────────
 useTheme(); // ensures data-theme is applied on this page
 const { selectedDeptId } = useDepartment();
+const { isPhone } = useBreakpoint();
 const router = useRouter();
 const route  = useRoute();
 const id     = computed(() => route.params.id);
@@ -1938,4 +1956,34 @@ function fromTimeInput(t) {
 /* ── Transitions ── */
 .popover-anim-enter-active, .popover-anim-leave-active { transition: opacity .12s, transform .12s; }
 .popover-anim-enter-from, .popover-anim-leave-to { opacity: 0; transform: scale(.96) translateY(-4px); }
+
+/* ── Phone notice ── */
+.phone-notice {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center;
+  padding: 32px 22px;
+  gap: 14px;
+  color: var(--tx-secondary);
+  max-width: 100%;
+}
+.phone-notice svg { color: var(--accent); opacity: 0.8; }
+.phone-notice-title {
+  font-size: 19px; font-weight: 700; color: var(--tx-heading);
+  line-height: 1.25; max-width: 280px;
+}
+.phone-notice-body {
+  font-size: 14px; color: var(--tx-faint);
+  max-width: 320px; line-height: 1.5;
+}
+.phone-notice-back {
+  margin-top: 8px;
+  background: var(--bg-surface); border: 1px solid var(--bdr-medium);
+  color: var(--tx-primary);
+  padding: 10px 18px; border-radius: 9px;
+  font-family: inherit; font-size: 14px; font-weight: 600;
+  cursor: pointer;
+  min-height: var(--tap-target-min);
+}
+.phone-notice-back:hover { border-color: var(--accent); color: var(--accent); }
 </style>

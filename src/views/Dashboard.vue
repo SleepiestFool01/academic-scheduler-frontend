@@ -17,8 +17,8 @@
 
     <div class="layout">
 
-      <!-- ── Sidebar ── -->
-      <aside class="sidebar">
+      <!-- ── Sidebar ── (hidden on phone — its content lives in the agenda + drawer) -->
+      <aside v-if="!isPhone" class="sidebar">
         <div class="mini-cal-header">
           <button class="cal-nav-btn" @click="navigate(-1)">‹</button>
           <span class="mini-cal-month">{{ miniCalMonth }}</span>
@@ -220,14 +220,36 @@
               </div>
             </Transition>
           </div>
-          <div class="cal-view-group" :class="{ 'push-right': !isManager }">
+          <!-- Desktop/tablet: segmented Day | Week | Month buttons -->
+          <div v-if="!isPhone" class="cal-view-group" :class="{ 'push-right': !isManager }">
             <button v-for="v in ['Day','Week','Month']" :key="v" class="view-btn"
               :class="{ active: calView === v }" @click="setView(v)">{{ v }}</button>
           </div>
+          <!-- Phone: compact dropdown — Day/Week/Month buttons won't fit in the toolbar -->
+          <div v-else class="view-dropdown-wrap" @click.stop>
+            <button class="view-dropdown-btn" :class="{ active: viewDropdownOpen }" @click="toggleViewDropdown">
+              <span>{{ calView.charAt(0) }}</span>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
+                :style="{ transform: viewDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform .15s' }">
+                <path d="M2 3.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <Transition name="tpl-dd-pop">
+              <div v-if="viewDropdownOpen" class="view-dd-menu" @click.stop>
+                <button v-for="v in ['Day','Week','Month']" :key="v"
+                  class="view-dd-item"
+                  :class="{ active: calView === v }"
+                  @click="pickView(v)">{{ v }}</button>
+              </div>
+            </Transition>
+          </div>
+          <!-- Zoom + Fit: slider desktop-only, Fit is useful on phone too for time-grid views -->
           <div v-if="calView !== 'Month'" class="zoom-group">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" class="zoom-icon"><circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.6"/><line x1="10.5" y1="10.5" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="4" y1="6.5" x2="9" y2="6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            <input type="range" class="zoom-slider" min="20" max="160" step="4" :value="cellHeight" @input="cellHeight = +$event.target.value" title="Adjust zoom" />
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" class="zoom-icon"><circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.6"/><line x1="10.5" y1="10.5" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="4" y1="6.5" x2="9" y2="6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="6.5" y1="4" x2="6.5" y2="9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <template v-if="!isPhone">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" class="zoom-icon"><circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.6"/><line x1="10.5" y1="10.5" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="4" y1="6.5" x2="9" y2="6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              <input type="range" class="zoom-slider" min="20" max="160" step="4" :value="cellHeight" @input="cellHeight = +$event.target.value" title="Adjust zoom" />
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" class="zoom-icon"><circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.6"/><line x1="10.5" y1="10.5" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="4" y1="6.5" x2="9" y2="6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="6.5" y1="4" x2="6.5" y2="9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </template>
             <button class="fit-btn" @click="fitToView" title="Fit business hours to screen">Fit</button>
           </div>
           <button v-if="isManager" class="add-shift-btn" @click="openBlankModal"><span>+</span> Add Shift</button>
@@ -237,7 +259,8 @@
              DAY VIEW
         ════════════════════════════════════ -->
         <Transition name="view-fade" mode="out-in">
-        <div v-if="calView === 'Day'" key="day" class="cal-grid-wrapper">
+        <div v-if="calView === 'Day'" key="day" class="cal-grid-wrapper"
+          @touchstart.passive="onDaySwipeStart" @touchend.passive="onDaySwipeEnd">
           <div class="cal-body" ref="calBody">
           <div class="cal-header-row">
             <div class="time-gutter"></div>
@@ -254,6 +277,9 @@
               <div class="day-column"
                 :class="{ 'is-dragging-col': drag.active && drag.dayIndex === 0, 'paste-target': isPasteMode, 'no-edit': !isManager }"
                 @mousedown.prevent="isPasteMode ? null : onColumnMouseDown($event, 0)"
+                @touchstart.passive="isPasteMode ? null : onColumnTouchStart($event, 0)"
+                @touchmove="onColumnTouchMove"
+                @touchend.passive="onColumnTouchEnd"
                 @click="isPasteMode ? pasteToDay(dayViewDate) : null">
                 <div v-for="hour in hours" :key="hour" class="hour-cell"></div>
                 <!-- Hours of operation markers -->
@@ -335,6 +361,9 @@
               <div v-for="(date, colIdx) in weekDates" :key="colIdx" class="day-column"
                 :class="{ 'is-dragging-col': drag.active && drag.dayIndex === colIdx, 'paste-target': isPasteMode, 'no-edit': !isManager }"
                 @mousedown.prevent="isPasteMode ? null : onColumnMouseDown($event, colIdx)"
+                @touchstart.passive="isPasteMode ? null : onColumnTouchStart($event, colIdx)"
+                @touchmove="onColumnTouchMove"
+                @touchend.passive="onColumnTouchEnd"
                 @click="isPasteMode ? pasteToDay(date) : null">
                 <div v-for="hour in hours" :key="hour" class="hour-cell"></div>
                 <!-- Hours of operation markers -->
@@ -851,11 +880,13 @@ import Utils from "../config/utils.js";
 import AuthServices from "../services/authServices.js";
 import { useTheme } from "../composables/useTheme.js";
 import { useDepartment } from "../composables/useDepartment.js";
+import { useBreakpoint } from "../composables/useBreakpoint.js";
 import DeptSwitcher from "../components/DeptSwitcher.vue";
 import EmployeePicker from "../components/EmployeePicker.vue";
 import UnavailabilityConflictModal from "../components/UnavailabilityConflictModal.vue";
 
 const { isDark, toggleTheme } = useTheme();
+const { isPhone, isTouch } = useBreakpoint();
 import {
   fetchEmployees,
   fetchShiftsWithAssignments,
@@ -937,7 +968,10 @@ async function logout() {
   router.push("/start");
 }
 const activeTab      = ref("Dashboard");
-const calView        = ref("Week");
+// Default view depends on viewport at mount: phones start on Day (a week
+// grid at 390px is cramped); anything larger starts on Week. After mount,
+// the user can switch freely — we don't force-switch on resize.
+const calView        = ref(isPhone.value ? "Day" : "Week");
 const weekOffset     = ref(0);
 const dayOffset      = ref(0);
 const monthOffset    = ref(0);
@@ -1719,6 +1753,128 @@ function setView(v) {
   calView.value = v;
   selectedShift.value       = null;
   quickCreate.value.visible = false;
+}
+
+// ── Touch swipe nav (phone only) ────────────────────────────────────────────
+// Horizontal swipe on the day grid → previous/next day. Threshold tuned so
+// vertical scrolling of the grid still works.
+const swipe = { startX: 0, startY: 0, t: 0 };
+function onDaySwipeStart(e) {
+  if (!isTouch.value) return;
+  const t = e.changedTouches?.[0];
+  if (!t) return;
+  swipe.startX = t.clientX;
+  swipe.startY = t.clientY;
+  swipe.t = Date.now();
+}
+function onDaySwipeEnd(e) {
+  if (!isTouch.value || calView.value !== "Day") return;
+  const t = e.changedTouches?.[0];
+  if (!t) return;
+  const dx = t.clientX - swipe.startX;
+  const dy = t.clientY - swipe.startY;
+  const dt = Date.now() - swipe.t;
+  if (dt > 600) return;
+  if (Math.abs(dx) < 60) return;
+  if (Math.abs(dy) > 40) return;
+  navigate(dx < 0 ? 1 : -1);
+}
+
+// ── Touch create (tap + long-press-drag) ────────────────────────────────────
+// Two creation gestures for managers on touch:
+//   • Quick tap on empty grid  → open quick-create popover with 1-hour block
+//   • Long-press then drag     → paint a custom range, same modal as desktop
+// Both reuse the existing mouse-based drag state & onGlobalMouseUp logic by
+// synthesizing event objects; no duplicated modal/popover code.
+const LONG_PRESS_MS = 400;
+const TAP_MOVE_TOL  = 10;
+const touchCreate = {
+  active: false, mode: "pending",
+  startX: 0, startY: 0, lastX: 0, lastY: 0,
+  startTime: 0, dayIndex: null, colEl: null,
+  pressTimer: null,
+};
+
+function onColumnTouchStart(e, colIdx) {
+  if (!isTouch.value || !isManager.value || isPasteMode.value) return;
+  const t = e.touches?.[0];
+  if (!t) return;
+  touchCreate.active    = true;
+  touchCreate.mode      = "pending";
+  touchCreate.startX    = t.clientX;
+  touchCreate.startY    = t.clientY;
+  touchCreate.lastX     = t.clientX;
+  touchCreate.lastY     = t.clientY;
+  touchCreate.startTime = Date.now();
+  touchCreate.dayIndex  = colIdx;
+  touchCreate.colEl     = e.currentTarget;
+  clearTimeout(touchCreate.pressTimer);
+  touchCreate.pressTimer = setTimeout(() => {
+    if (touchCreate.mode !== "pending") return;
+    touchCreate.mode = "drag";
+    onColumnMouseDown(
+      { button: 0, clientX: touchCreate.startX, clientY: touchCreate.startY, currentTarget: touchCreate.colEl, metaKey: false, ctrlKey: false },
+      colIdx,
+    );
+    if (navigator.vibrate) navigator.vibrate(15);
+  }, LONG_PRESS_MS);
+}
+
+function onColumnTouchMove(e) {
+  if (!touchCreate.active) return;
+  const t = e.touches?.[0];
+  if (!t) return;
+  touchCreate.lastX = t.clientX;
+  touchCreate.lastY = t.clientY;
+  if (touchCreate.mode === "pending") {
+    const dx = Math.abs(t.clientX - touchCreate.startX);
+    const dy = Math.abs(t.clientY - touchCreate.startY);
+    if (dx > TAP_MOVE_TOL || dy > TAP_MOVE_TOL) {
+      clearTimeout(touchCreate.pressTimer);
+      touchCreate.mode = "cancelled";
+    }
+    return;
+  }
+  if (touchCreate.mode === "drag") {
+    // Block the default scroll so the drag feels like painting a range.
+    if (e.cancelable) e.preventDefault();
+    onGlobalMouseMove({ clientX: t.clientX, clientY: t.clientY });
+  }
+}
+
+function onColumnTouchEnd() {
+  if (!touchCreate.active) return;
+  const wasDrag    = touchCreate.mode === "drag";
+  const wasPending = touchCreate.mode === "pending";
+  const dt         = Date.now() - touchCreate.startTime;
+  const colEl      = touchCreate.colEl;
+  const colIdx     = touchCreate.dayIndex;
+  const startX     = touchCreate.startX;
+  const startY     = touchCreate.startY;
+  const lastX      = touchCreate.lastX;
+  const lastY      = touchCreate.lastY;
+  clearTimeout(touchCreate.pressTimer);
+  touchCreate.active = false;
+  touchCreate.mode = "cancelled";
+  touchCreate.pressTimer = null;
+  touchCreate.colEl = null;
+
+  if (wasDrag) {
+    onGlobalMouseUp({ clientX: lastX, clientY: lastY });
+    return;
+  }
+  if (wasPending && dt < LONG_PRESS_MS) {
+    // Synthesize a 1-hour drag so the same onGlobalMouseUp code path runs.
+    // Subtract one snap step because onGlobalMouseUp adds it back.
+    const startHour = getHourFromEvent({ clientY: startY }, colEl);
+    const endHour   = Math.min(startHour + 1, CAL_START_HOUR + 24);
+    drag.value = {
+      active: true, dayIndex: colIdx,
+      startHour, currentHour: endHour - SNAP_MINUTES / 60,
+      colEl,
+    };
+    onGlobalMouseUp({ clientX: startX, clientY: startY });
+  }
 }
 
 // Click a day header in week view → drill to day
@@ -2777,6 +2933,12 @@ const DAY_ENUM = ["Sun", "Mon", "Tue", "Wed", "Thur", "Fri", "Sat"];
 const templates = ref([]);
 const templatesLoading = ref(false);
 const templateDropdownOpen = ref(false);
+const viewDropdownOpen     = ref(false);
+function toggleViewDropdown() { viewDropdownOpen.value = !viewDropdownOpen.value; }
+function pickView(v) {
+  setView(v);
+  viewDropdownOpen.value = false;
+}
 
 async function loadTemplatesForDropdown() {
   if (!isManager.value) return;
@@ -3044,6 +3206,7 @@ function formatDateDisplay(iso) {
 // Close dropdown / picker on outside click
 function onDocClickForTemplate() {
   if (templateDropdownOpen.value) templateDropdownOpen.value = false;
+  if (viewDropdownOpen.value)     viewDropdownOpen.value     = false;
   if (datePicker.value.open) closePicker();
 }
 watch(() => applyModal.value.open, v => { if (!v) closePicker(); });
@@ -3937,6 +4100,61 @@ function fitToView() {
   transition: background 0.12s;
 }
 .tpl-dd-item:hover { background: var(--bg-hover, var(--bg-active)); }
+
+/* ── View dropdown (phone only) ── */
+.view-dropdown-wrap { position: relative; }
+.view-dropdown-btn {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--bdr-medium);
+  color: var(--tx-primary);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px; font-weight: 600;
+  font-family: 'Satoshi', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  min-height: var(--tap-target-min);
+}
+.view-dropdown-btn:hover,
+.view-dropdown-btn.active {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.view-dd-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 200;
+  min-width: 140px;
+  background: var(--bg-modal);
+  border: 1px solid var(--bdr-faint, var(--bdr-accent));
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.25);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.view-dd-item {
+  background: none;
+  border: none;
+  color: var(--tx-primary);
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px; font-weight: 500;
+  min-height: var(--tap-target-min);
+  transition: background 0.12s, color 0.12s;
+}
+.view-dd-item:hover { background: var(--bg-hover, var(--bg-active)); }
+.view-dd-item.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 600;
+}
 .tpl-dd-name { font-size: 14px; font-weight: 600; color: var(--tx-primary); }
 .tpl-dd-desc {
   font-size: 12px;
@@ -4096,5 +4314,88 @@ function fitToView() {
 .tpl-dpc-pop-enter-from, .tpl-dpc-pop-leave-to {
   opacity: 0;
   transform: scale(.96) translateY(-4px);
+}
+
+/* ── Mobile (phone) overrides ──
+   Keep the desktop layout untouched; only override what breaks on a 375px
+   viewport. Tablet sits between — it gets the desktop layout but with a
+   narrower sidebar and gentler toolbar padding via the smaller breakpoint. */
+@media (max-width: 599.98px) {
+  .cal-toolbar {
+    flex-wrap: wrap;
+    padding: 8px 10px;
+    gap: 8px;
+  }
+  .cal-nav-group { flex: 1 1 auto; }
+  .cal-range-label {
+    font-size: 13px;
+    flex: 1;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Row 2 layout (using CSS `order` so DOM order stays manager-friendly):
+     view dropdown + fit on the LEFT, templates in the MIDDLE, add-shift
+     on the RIGHT. Two `margin-left: auto` stops distribute slack space
+     between the left cluster / templates / add-shift so templates floats
+     near the center regardless of which items are present. */
+  .cal-toolbar { gap: 6px 8px; }
+  .cal-toolbar .cal-nav-group      { order: 1; }
+  .cal-toolbar .view-dropdown-wrap { order: 2; }
+  .cal-toolbar .zoom-group         { order: 3; }
+  .cal-toolbar .tpl-dropdown-wrap  { order: 4; margin-left: auto; }
+  .cal-toolbar .add-shift-btn      { order: 5; margin-left: auto; padding: 8px 14px; font-size: 14px; }
+
+  .tpl-dropdown-btn { padding: 8px 10px; font-size: 13px; min-height: var(--tap-target-min); }
+  .tpl-dropdown-btn span { display: none; }
+
+  /* Menu: anchor to the button's left edge (not centered) and clamp to
+     the viewport so it can't overflow either side. Without this, a
+     template name wider than the button pushed the menu off-screen. */
+  .tpl-dd-menu {
+    left: 0;
+    right: auto;
+    transform: none;
+    min-width: 180px;
+    max-width: min(280px, calc(100vw - 20px));
+  }
+
+  /* View dropdown: single-letter label (D / W / M) keeps it compact. */
+  .view-dropdown-btn { padding: 8px 10px; min-width: 54px; justify-content: space-between; }
+
+  /* Fit button: matched sizing with the view dropdown. */
+  .zoom-group .fit-btn { padding: 8px 14px; font-size: 13px; min-height: var(--tap-target-min); }
+
+  /* Week & Month views fit within phone width rather than panning:
+     shrink the time gutter, tighten typography, and compress shift-block
+     labels so seven day columns squeeze in without horizontal scroll.
+     Day view is unaffected (already full-width of a single column). */
+  .cal-grid-wrapper { overflow-x: hidden; }
+  .time-gutter, .time-column { width: 38px; }
+  .time-slot-label { font-size: 10px; padding: 2px 4px 0; }
+  .day-letter  { font-size: 11px; letter-spacing: 0.05em; }
+  .day-number  { font-size: 15px; width: 24px; height: 24px; }
+  .shift-employee { font-size: 11px; line-height: 1.1; }
+  .shift-time     { font-size: 10px; }
+  .shift-pos-badge { font-size: 9px; padding: 1px 5px; }
+  .shift-block { padding: 3px 5px; }
+
+  /* Month view: lock the 7-column grid to viewport so no horizontal scroll.
+     `minmax(0, 1fr)` lets cells shrink narrower than their content's natural
+     min-width — without it, a wide event name in any cell pushes the whole
+     grid wider than the screen. */
+  .month-dow-row,
+  .month-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .month-cell { min-height: 72px; padding: 2px; min-width: 0; }
+  .month-cell-num { font-size: 11px; }
+  .month-event-pill { font-size: 9px; padding: 1px 3px; gap: 2px; min-width: 0; }
+  .month-event-name { font-size: 9px; min-width: 0; }
+  .month-dow { font-size: 11px; padding: 6px 0; }
+}
+
+/* Tablet — narrower sidebar so the calendar gets more width. */
+@media (min-width: 600px) and (max-width: 959.98px) {
+  .sidebar { width: 180px; }
 }
 </style>

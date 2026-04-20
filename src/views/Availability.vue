@@ -35,8 +35,48 @@
         {{ syncMessage }}
       </p>
 
-      <!-- ── Weekly grid ── -->
-      <div class="grid-wrap">
+      <!-- ── Phone-only single-day view ── -->
+      <div v-if="isPhone" class="phone-day-view">
+        <div class="phone-day-chips" role="tablist">
+          <button
+            v-for="(d, i) in DAY_NAMES_FULL"
+            :key="i"
+            class="phone-day-chip"
+            :class="{ active: selectedDayIdx === i }"
+            role="tab"
+            :aria-selected="selectedDayIdx === i"
+            @click="selectedDayIdx = i">
+            {{ DAY_NAMES[i] }}
+            <span class="phone-day-chip-num">{{ d.slice(0, 3) }}</span>
+          </button>
+        </div>
+        <div v-if="rowsForDay(selectedDayIdx).length === 0" class="phone-day-empty">
+          No unavailability for {{ DAY_NAMES_FULL[selectedDayIdx] }}.
+        </div>
+        <div v-else class="phone-day-list">
+          <div
+            v-for="row in rowsForDay(selectedDayIdx)"
+            :key="row.id_employeeUnavailability"
+            class="phone-day-row"
+            :class="{ 'phone-day-row--imported': row.source === 'imported' }"
+            @click="row.source === 'manual' ? openEditModal(row) : null">
+            <div class="phone-day-row-main">
+              <div class="phone-day-row-time mono">{{ fmtTimeRange(row.startTime, row.endTime) }}</div>
+              <div class="phone-day-row-title">{{ blockTitle(row) }}</div>
+            </div>
+            <span v-if="row.source === 'imported'" class="phone-day-row-badge">Imported</span>
+            <button
+              v-if="row.source === 'manual'"
+              class="icon-action danger phone-day-row-delete"
+              title="Delete"
+              @click.stop="confirmDelete(row)">✕</button>
+          </div>
+        </div>
+        <button class="phone-fab" type="button" aria-label="Add unavailability" @click="openAddModalForSelectedDay">+</button>
+      </div>
+
+      <!-- ── Weekly grid (tablet/desktop only) ── -->
+      <div v-else class="grid-wrap">
         <div class="cal-header-row">
           <div class="time-gutter"></div>
           <div v-for="(d, i) in DAY_NAMES" :key="i" class="day-header">
@@ -52,7 +92,7 @@
           <div v-for="(d, colIdx) in DAY_NAMES" :key="colIdx"
             class="day-column"
             :class="{ 'is-dragging-col': drag.active && drag.dayIndex === colIdx }"
-            @mousedown.prevent="onColumnMouseDown($event, colIdx)">
+            @mousedown.prevent="isTouch ? null : onColumnMouseDown($event, colIdx)">
             <div v-for="h in HOURS" :key="h" class="hour-cell" :style="{ height: HOUR_PX + 'px' }"></div>
             <!-- Ghost block while the user drags to create -->
             <div v-if="drag.active && drag.dayIndex === colIdx" class="ghost-block" :style="ghostStyle">
@@ -83,7 +123,7 @@
         </p>
       </div>
 
-      <div v-else class="row-list">
+      <div v-else-if="!isPhone" class="row-list">
         <h3 class="row-list-title">All entries</h3>
         <div v-for="row in sortedRows" :key="row.id_employeeUnavailability" class="row-item">
           <span class="row-source" :class="'row-source--' + row.source">
@@ -192,6 +232,7 @@
 import { ref, computed, onMounted, watch } from "vue";
 import Utils from "../config/utils.js";
 import { useDepartment } from "../composables/useDepartment.js";
+import { useBreakpoint } from "../composables/useBreakpoint.js";
 import apiClient from "../services/services.js";
 import { getSettingValues } from "../services/departmentService.js";
 import { getActiveSemester } from "../services/semesterService.js";
@@ -211,6 +252,11 @@ const HOUR_PX        = 42;
 
 const currentUser = ref(Utils.getStore("user"));
 const { selectedDeptId, loadDepts } = useDepartment();
+const { isPhone, isTouch } = useBreakpoint();
+
+// On phone the grid is replaced by a single-day list + chip picker. Default
+// to today's weekday so the list opens to something useful.
+const selectedDayIdx = ref(new Date().getDay());
 
 const loading   = ref(false);
 const apiError  = ref("");
@@ -403,6 +449,12 @@ function defaultModalData() {
 }
 function openAddModal() {
   modal.value = { open: true, isEdit: false, saving: false, error: "", editId: null, data: defaultModalData() };
+}
+// Phone FAB pre-fills the day picker's current selection so users don't
+// have to repick what they're already looking at.
+function openAddModalForSelectedDay() {
+  openAddModal();
+  modal.value.data.dayOfWeek = DAY_NAMES_FULL[selectedDayIdx.value];
 }
 function openEditModal(row) {
   modal.value = {
@@ -758,4 +810,102 @@ async function syncClassSchedule() {
 
 .modal-enter-active, .modal-leave-active { transition: opacity 0.2s, transform 0.2s; }
 .modal-enter-from, .modal-leave-to { opacity: 0; transform: scale(0.96); }
+
+/* ── Phone-only single-day view ── */
+.phone-day-view {
+  display: flex; flex-direction: column;
+  margin-bottom: 24px;
+  position: relative;
+}
+
+.phone-day-chips {
+  display: flex; gap: 6px;
+  overflow-x: auto;
+  padding: 4px 2px 12px;
+  scrollbar-width: none;
+}
+.phone-day-chips::-webkit-scrollbar { display: none; }
+
+.phone-day-chip {
+  flex: 1 0 auto;
+  min-width: 56px;
+  background: var(--bg-surface);
+  border: 1px solid var(--bdr-subtle);
+  color: var(--tx-secondary);
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-family: inherit; font-size: 14px; font-weight: 600;
+  cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.phone-day-chip-num { font-size: 10px; color: var(--tx-faint); font-family: 'DM Mono', monospace; letter-spacing: 0.04em; }
+.phone-day-chip:hover { color: var(--tx-primary); }
+.phone-day-chip.active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.phone-day-chip.active .phone-day-chip-num { color: var(--accent); }
+
+.phone-day-empty {
+  background: var(--bg-surface);
+  border: 1px dashed var(--bdr-subtle);
+  border-radius: 10px;
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--tx-faint);
+  font-size: 14px;
+}
+
+.phone-day-list { display: flex; flex-direction: column; gap: 8px; }
+.phone-day-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--bdr-subtle);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  min-height: var(--tap-target-min);
+}
+.phone-day-row--imported {
+  border-left-color: #4A90A4;
+  cursor: default;
+}
+.phone-day-row-main { flex: 1; min-width: 0; }
+.phone-day-row-time { font-size: 12px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
+.phone-day-row-title { font-size: 14px; font-weight: 600; color: var(--tx-primary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phone-day-row-badge {
+  font-size: 10px; font-weight: 700;
+  padding: 3px 8px; border-radius: 100px;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  background: rgba(74, 144, 164, 0.2); color: #4A90A4;
+}
+.phone-day-row-delete { width: var(--tap-target-min); height: var(--tap-target-min); }
+
+.phone-fab {
+  position: fixed;
+  right: 18px;
+  bottom: 22px;
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  font-size: 28px; font-weight: 300; line-height: 1;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.35);
+  cursor: pointer;
+  z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+}
+.phone-fab:active { transform: scale(0.96); }
+
+@media (max-width: 599.98px) {
+  .content { padding: 18px 14px; }
+  .panel-header { gap: 10px; margin-bottom: 14px; }
+  .panel-title { font-size: 19px; }
+  .panel-sub { font-size: 13px; }
+  .header-actions .primary-btn { display: none; } /* phone uses the FAB instead */
+}
 </style>
