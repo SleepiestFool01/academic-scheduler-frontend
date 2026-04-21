@@ -64,7 +64,7 @@
               Open Editor
             </button>
             <button class="apply-btn" @click="openApply(tpl)">
-              Apply Template
+              Apply Schedule
             </button>
           </div>
         </div>
@@ -315,7 +315,7 @@
               :disabled="applyModal.applying || !applyModal.startDate || (isCustomPeriod && !applyModal.endDate)"
               @click="applyTemplate"
             >
-              {{ applyModal.applying ? 'Creating shifts…' : 'Apply Template' }}
+              {{ applyModal.applying ? 'Creating shifts…' : 'Apply Schedule' }}
             </button>
           </div>
         </div>
