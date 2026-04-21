@@ -147,7 +147,7 @@
               </div>
             </div>
             <div class="mobile-card-meta">
-              <span class="mono">{{ s.date }}</span>
+              <span class="mono">{{ formatDateShort(s.date) }}</span>
               <span class="mobile-card-sep">·</span>
               <span class="mono">{{ s.startLabel }} – {{ s.endLabel }}</span>
             </div>
@@ -181,7 +181,7 @@
                     {{ s.employee || 'Open' }}
                   </div>
                 </td>
-                <td class="mono">{{ s.date }}</td>
+                <td class="mono">{{ formatDateShort(s.date) }}</td>
                 <td class="mono">{{ s.startLabel }}</td>
                 <td class="mono">{{ s.endLabel }}</td>
                 <td class="muted small">{{ s.notes || '—' }}</td>
@@ -445,6 +445,7 @@
 import { ref, computed, onMounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import Utils from "../config/utils.js";
+import { formatDateShort } from "../utils/dateFormat.js";
 import { useDepartment } from "../composables/useDepartment.js";
 import { useBreakpoint } from "../composables/useBreakpoint.js";
 import DeptSwitcher from "../components/DeptSwitcher.vue";
@@ -1130,7 +1131,12 @@ async function runBulkSync() {
   font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0;
 }
 .muted { color: var(--tx-faint); }
-.mono  { font-family: 'DM Mono', monospace; font-size: 14px; }
+.mono {
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-size: 14px; font-weight: 500;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
 .small { font-size: 14px; }
 .role-badge {
   display: inline-block; padding: 2px 10px; border-radius: 100px;

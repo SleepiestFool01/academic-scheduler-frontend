@@ -34,6 +34,27 @@
         placeholder="Template name…"
       />
       <span v-if="saveStatus" class="save-status">{{ saveStatus }}</span>
+
+      <div class="header-chip-row">
+        <!-- Readiness chip -->
+        <div class="readiness-chip"
+          :class="readinessState.kind === 'ok' ? 'readiness-chip--ok' : 'readiness-chip--warn'"
+          :title="readinessState.issues.join('\n')">
+          <span class="readiness-dot"></span>
+          <span>{{ readinessState.label }}</span>
+        </div>
+        <!-- Applied instances chip -->
+        <button v-if="appliedInstancesCount > 0"
+          class="applied-chip"
+          @click="goToFirstAppliedWeek"
+          :title="`Jump to ${appliedInstancesCount} applied week${appliedInstancesCount === 1 ? '' : 's'} on the Dashboard`">
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+            <rect x="1" y="3" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M1 7h14" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+          Applied to {{ appliedInstancesCount }} week{{ appliedInstancesCount === 1 ? '' : 's' }} →
+        </button>
+      </div>
     </div>
 
     <!-- ── Error Banner ── -->
@@ -84,10 +105,44 @@
               :class="{ 'paste-target-header': isPasteMode }"
               @click="isPasteMode ? pasteToDay(i) : null">
               <span class="day-letter">{{ day }}</span>
+              <button
+                v-if="!isPasteMode && shiftsForDay(i).length > 0"
+                class="day-copy-btn"
+                :class="{ 'day-copy-btn--open': copyMenuOpen === i }"
+                title="Copy this day's shifts…"
+                @click.stop="copyMenuOpen = copyMenuOpen === i ? null : i">
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+                  <rect x="4" y="4" width="9" height="10" rx="1.5" stroke="currentColor" stroke-width="1.4"/>
+                  <path d="M3 11V3a1 1 0 0 1 1-1h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                </svg>
+              </button>
+              <div v-if="copyMenuOpen === i" class="day-copy-menu" @click.stop>
+                <div class="day-copy-menu-label">Copy {{ day }}'s shifts to…</div>
+                <button class="day-copy-menu-opt" @click="copyDayToWeekdays(i)">Weekdays (Mon–Fri)</button>
+                <button class="day-copy-menu-opt" @click="copyDayToEveryday(i)">Every day</button>
+                <div class="day-copy-menu-sep"></div>
+                <div class="day-copy-menu-label">Or pick a single day:</div>
+                <div class="day-copy-menu-days">
+                  <button v-for="(d, di) in DAY_NAMES" :key="di"
+                    v-show="di !== i"
+                    class="day-copy-menu-day"
+                    @click="copyDayToDay(i, di)">{{ d }}</button>
+                </div>
+              </div>
             </div>
           </div>
           <div class="cal-inner">
             <div class="time-column">
+              <div class="coverage-strip" :title="`Peak staffing: ${coverageMax} concurrent shifts`">
+                <div v-for="(count, i) in coverageByHour" :key="i"
+                  class="coverage-seg"
+                  :style="{
+                    top: (i * CELL_HEIGHT) + 'px',
+                    height: CELL_HEIGHT + 'px',
+                    opacity: count / coverageMax,
+                  }"
+                ></div>
+              </div>
               <div v-for="h in hours" :key="h" class="time-slot-label">{{ formatHour(h) }}</div>
             </div>
             <div
@@ -173,20 +228,18 @@
             <!-- Position (required) -->
             <div class="panel-field">
               <label class="panel-field-label">Position <span class="req-star">*</span></label>
-              <select class="panel-select" v-model="panelEdit.id_position">
-                <option value="">— Select position —</option>
-                <option v-for="pos in positions" :key="pos.id_position" :value="pos.id_position">
-                  {{ pos.name }}
-                </option>
-              </select>
+              <SelectPicker
+                :model-value="panelEdit.id_position"
+                :options="positions.map(p => ({ value: p.id_position, label: p.name }))"
+                placeholder="— Select position —"
+                @update:model-value="v => panelEdit.id_position = v"
+              />
               <p v-if="!panelEdit.id_position" class="panel-req-note">Required before applying template</p>
             </div>
 
-            <div class="panel-save-row">
-              <button class="panel-save-btn" :disabled="panelEdit.saving" @click="savePanelBasic">
-                {{ panelEdit.saving ? 'Saving…' : 'Save' }}
-              </button>
-              <span v-if="panelEdit.saved" class="panel-saved-flash">Saved ✓</span>
+            <div v-if="panelEdit.saving || panelEdit.saved || panelEdit.error" class="panel-autosave-row">
+              <span v-if="panelEdit.saving" class="panel-autosave-note">Saving…</span>
+              <span v-else-if="panelEdit.saved" class="panel-saved-flash">Saved ✓</span>
               <span v-if="panelEdit.error" class="panel-error-flash">{{ panelEdit.error }}</span>
             </div>
 
@@ -241,14 +294,53 @@
                   <button class="panel-remove-btn" @click="removePanelTaskList(row)" title="Remove">✕</button>
                 </div>
                 <div class="panel-add-row">
-                  <select class="panel-add-select" v-model="panel.addTaskListId">
-                    <option value="">Add task list…</option>
-                    <option v-for="tl in unassignedTaskLists" :key="tl.id_taskList" :value="tl.id_taskList">
-                      {{ tl.name }}
-                    </option>
-                  </select>
+                  <div class="panel-add-select-wrap">
+                    <SelectPicker
+                      :model-value="panel.addTaskListId || null"
+                      :options="unassignedTaskLists.map(tl => ({ value: tl.id_taskList, label: tl.name }))"
+                      placeholder="Add task list…"
+                      empty-text="All task lists attached"
+                      @update:model-value="v => panel.addTaskListId = v ?? ''"
+                    />
+                  </div>
                   <button class="panel-add-btn" :disabled="!panel.addTaskListId || panel.addingTaskList" @click="addPanelTaskList">
                     {{ panel.addingTaskList ? '…' : 'Add' }}
+                  </button>
+                </div>
+              </template>
+            </div>
+
+            <div class="panel-divider"></div>
+
+            <!-- Individual Tasks -->
+            <div class="panel-section">
+              <div class="panel-section-head">
+                <span class="panel-section-label">Tasks</span>
+                <span class="panel-optional-tag">optional</span>
+              </div>
+              <div v-if="panel.loadingTasks" class="panel-loading-sm">Loading…</div>
+              <template v-else>
+                <div v-if="panel.tasks.length === 0" class="panel-list-empty">No individual tasks attached</div>
+                <div v-for="row in panel.tasks" :key="row.id_templateShiftTask" class="panel-list-row">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="flex-shrink:0;opacity:.5">
+                    <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/>
+                    <path d="M5.5 8.2l2 2L11 6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                  <span class="panel-list-name">{{ row.name }}</span>
+                  <button class="panel-remove-btn" @click="removePanelTask(row)" title="Remove">✕</button>
+                </div>
+                <div class="panel-add-row">
+                  <div class="panel-add-select-wrap">
+                    <SelectPicker
+                      :model-value="panel.addTaskId || null"
+                      :options="unassignedTasks.map(t => ({ value: t.id_task, label: t.name }))"
+                      placeholder="Add task…"
+                      empty-text="All tasks attached"
+                      @update:model-value="v => panel.addTaskId = v ?? ''"
+                    />
+                  </div>
+                  <button class="panel-add-btn" :disabled="!panel.addTaskId || panel.addingTask" @click="addPanelTask">
+                    {{ panel.addingTask ? '…' : 'Add' }}
                   </button>
                 </div>
               </template>
@@ -369,6 +461,7 @@ import { useDepartment } from "../composables/useDepartment.js";
 import { useBreakpoint } from "../composables/useBreakpoint.js";
 import { usePreferences } from "../composables/usePreferences.js";
 import EmployeePicker from "../components/EmployeePicker.vue";
+import SelectPicker from "../components/SelectPicker.vue";
 import Utils from "../config/utils.js";
 import {
   getTemplate,
@@ -384,9 +477,10 @@ import {
   addTemplateShiftTaskList,
   removeTemplateShiftTaskList,
   getTemplateApplicationShifts,
+  listTemplateApplications,
 } from "../services/templateService.js";
 import { getPositions, getEmployees, getCalendarEntries, getSettingValues, getPositionEmployees } from "../services/departmentService.js";
-import { fetchTaskLists, assignTaskListToShift, getShiftTaskLists, removeShiftTaskList } from "../services/taskService.js";
+import { fetchTaskLists, fetchTasks, assignTaskListToShift, getShiftTaskLists, removeShiftTaskList, getPositionTaskLists, getTemplateShiftTasks, attachTaskToTemplateShift, removeTemplateShiftTask } from "../services/taskService.js";
 import { getUnavailability } from "../services/unavailabilityService.js";
 import { getActiveSemester } from "../services/semesterService.js";
 import { useUnavailabilityRefresh } from "../composables/useUnavailabilityRefresh.js";
@@ -419,6 +513,7 @@ const templateShifts   = ref([]);
 const positions        = ref([]);
 const allEmployees     = ref([]);
 const allTaskLists     = ref([]);
+const allTasks         = ref([]);
 // Map of id_position → array of id_employee assigned to that position
 const positionEmployeeIds = ref({});
 
@@ -638,12 +733,16 @@ const selectedShift = ref(null);
 const panel = ref({
   loadingEmployees: false,
   loadingTaskLists: false,
+  loadingTasks:     false,
   employees:        [],   // { id_templateShiftEmployee, id_employee, fName, lName }
   taskLists:        [],   // { id_templateShiftTaskList, id_taskList, name }
+  tasks:            [],   // { id_templateShiftTask, id_task, name }
   addEmpId:         "",
   addTaskListId:    "",
+  addTaskId:        "",
   addingEmp:        false,
   addingTaskList:   false,
+  addingTask:       false,
   syncStatus:       "",
 });
 
@@ -679,6 +778,11 @@ const unassignedTaskLists = computed(() => {
   return allTaskLists.value.filter(t => !assigned.has(t.id_taskList));
 });
 
+const unassignedTasks = computed(() => {
+  const assigned = new Set(panel.value.tasks.map(t => t.id_task));
+  return allTasks.value.filter(t => !assigned.has(t.id_task));
+});
+
 const ghostStyle = computed(() => {
   if (!drag.value.active) return {};
   const s = Math.min(drag.value.startHour, drag.value.currentHour);
@@ -706,16 +810,18 @@ async function loadAll() {
     const currentUser   = Utils.getStore("user");
     const id_department = selectedDeptId.value || currentUser?.id_department || null;
 
-    const [tpl, shifts, emps, tls] = await Promise.all([
+    const [tpl, shifts, emps, tls, tks] = await Promise.all([
       getTemplate(id.value),
       fetchTemplateShifts(id.value),
       getEmployees(id_department).catch(() => ({ data: [] })),
       fetchTaskLists(id_department).catch(() => []),
+      fetchTasks(id_department).catch(() => []),
     ]);
 
     templateName.value = tpl.name;
     templateShifts.value = shifts;
     allTaskLists.value   = Array.isArray(tls) ? tls : (tls.data || []);
+    allTasks.value       = Array.isArray(tks) ? tks : (tks.data || []);
 
     // Assign palette colors to employees (consistent with Dashboard)
     const empList = emps.data || emps || [];
@@ -801,6 +907,7 @@ async function loadAll() {
 
 onMounted(async () => {
   await loadAll();
+  loadTemplateApplications();
   if (calBody.value) calBody.value.scrollTop = 7 * CELL_HEIGHT;
 });
 
@@ -840,19 +947,24 @@ async function selectShift(shift) {
     ...panel.value,
     loadingEmployees: true,
     loadingTaskLists: true,
+    loadingTasks:     true,
     employees:        [],
     taskLists:        [],
+    tasks:            [],
     addEmpId:         "",
     addTaskListId:    "",
+    addTaskId:        "",
     addingEmp:        false,
     addingTaskList:   false,
+    addingTask:       false,
     syncStatus:       "",
   };
 
   try {
-    const [rawEmps, rawTls] = await Promise.all([
+    const [rawEmps, rawTls, rawTks] = await Promise.all([
       fetchTemplateShiftEmployees(shift.id_templateShift).catch(() => []),
       fetchTemplateShiftTaskLists(shift.id_templateShift).catch(() => []),
+      getTemplateShiftTasks(shift.id_templateShift).catch(() => []),
     ]);
 
     panel.value.employees = rawEmps.map(row => {
@@ -863,9 +975,14 @@ async function selectShift(shift) {
       const tl = allTaskLists.value.find(t => t.id_taskList === row.id_taskList);
       return { ...row, name: tl?.name || `Task List #${row.id_taskList}` };
     });
+    panel.value.tasks = rawTks.map(row => {
+      const t = allTasks.value.find(x => x.id_task === row.id_task);
+      return { ...row, name: t?.name || `Task #${row.id_task}` };
+    });
   } finally {
     panel.value.loadingEmployees = false;
     panel.value.loadingTaskLists = false;
+    panel.value.loadingTasks     = false;
   }
 }
 
@@ -887,11 +1004,13 @@ async function savePanelBasic() {
   panelEdit.value.saving = true;
   panelEdit.value.error  = "";
   panelEdit.value.saved  = false;
+  const oldPosition = selectedShift.value.id_position;
+  const newPosition = Number(panelEdit.value.id_position);
   pushUndo({ type: 'update', before: { ...selectedShift.value } });
   try {
     const payload = {
       label:       panelEdit.value.label,
-      id_position: Number(panelEdit.value.id_position),
+      id_position: newPosition,
       dayOfWeek:   selectedShift.value.dayOfWeek,
       startHour:   selectedShift.value.startHour,
       endHour:     selectedShift.value.endHour,
@@ -903,13 +1022,87 @@ async function savePanelBasic() {
       templateShifts.value[idx] = { ...templateShifts.value[idx], ...payload };
       selectedShift.value = templateShifts.value[idx];
     }
+    if (oldPosition !== newPosition) {
+      await autoSyncPositionTaskListsOnPanel(oldPosition, newPosition);
+    }
     panelEdit.value.saved = true;
     setTimeout(() => { panelEdit.value.saved = false; }, 2000);
   } catch (err) {
     undoStack.value.pop();
     panelEdit.value.error = err.response?.data?.message || err.message || "Save failed.";
+    setTimeout(() => { panelEdit.value.error = ""; }, 4000);
   } finally {
     panelEdit.value.saving = false;
+  }
+}
+
+// Auto-save when Position changes on the panel (no Save button). Skips the
+// tick when the panel is first populated (values match the selected shift)
+// and when the selection is cleared.
+watch(() => panelEdit.value.id_position, (next) => {
+  if (!selectedShift.value) return;
+  if (!next) return;
+  if (Number(next) === selectedShift.value.id_position) return;
+  savePanelBasic();
+});
+
+// Label changes are debounced — text typing shouldn't fire a request on
+// every keystroke.
+let _labelSaveTimer = null;
+watch(() => panelEdit.value.label, (next) => {
+  if (!selectedShift.value) return;
+  if ((next || "") === (selectedShift.value.label || "")) return;
+  if (_labelSaveTimer) clearTimeout(_labelSaveTimer);
+  _labelSaveTimer = setTimeout(() => {
+    if (!selectedShift.value) return;
+    savePanelBasic();
+  }, 600);
+});
+
+// When the panel's position changes, sync the attached task lists to match
+// the new position: remove task lists that were linked only to the old
+// position, add task lists linked to the new position that aren't already
+// attached. Manual attachments (not linked to either position) are preserved.
+async function autoSyncPositionTaskListsOnPanel(oldPosition, newPosition) {
+  if (!selectedShift.value) return;
+  const id_templateShift = selectedShift.value.id_templateShift;
+  let oldLinked = new Set();
+  let newLinked = [];
+  try {
+    if (oldPosition) {
+      const links = await getPositionTaskLists(oldPosition);
+      oldLinked = new Set(links.map(l => l.id_taskList));
+    }
+    newLinked = await getPositionTaskLists(newPosition);
+  } catch (_) { return; }
+  const newLinkedIds = new Set(newLinked.map(l => l.id_taskList));
+
+  // Remove: rows currently attached that came from old position only.
+  const toRemove = panel.value.taskLists.filter(row =>
+    oldLinked.has(row.id_taskList) && !newLinkedIds.has(row.id_taskList)
+  );
+  for (const row of toRemove) {
+    try {
+      await removeTemplateShiftTaskList(row.id_templateShiftTaskList);
+      panel.value.taskLists = panel.value.taskLists.filter(
+        t => t.id_templateShiftTaskList !== row.id_templateShiftTaskList
+      );
+      await syncRemoveTaskList(id_templateShift, row.id_taskList);
+    } catch (_) { /* skip failed */ }
+  }
+  // Add: task lists linked to the new position that aren't already attached.
+  const attachedIds = new Set(panel.value.taskLists.map(r => r.id_taskList));
+  for (const link of newLinked) {
+    if (attachedIds.has(link.id_taskList)) continue;
+    try {
+      const row = await addTemplateShiftTaskList({
+        id_templateShift,
+        id_taskList: link.id_taskList,
+      });
+      const tl = allTaskLists.value.find(t => t.id_taskList === link.id_taskList);
+      panel.value.taskLists.push({ ...row, name: tl?.name || `Task List #${link.id_taskList}` });
+      await syncAddTaskList(id_templateShift, link.id_taskList);
+    } catch (_) { /* skip duplicates */ }
   }
 }
 
@@ -992,6 +1185,33 @@ async function removePanelTaskList(row) {
   }
 }
 
+async function addPanelTask() {
+  const id_task = Number(panel.value.addTaskId);
+  if (!id_task) return;
+  panel.value.addingTask = true;
+  try {
+    const row = await attachTaskToTemplateShift(selectedShift.value.id_templateShift, id_task);
+    const t = allTasks.value.find(x => x.id_task === id_task);
+    panel.value.tasks.push({ ...row, name: t?.name || `Task #${id_task}` });
+    panel.value.addTaskId = "";
+  } catch (err) {
+    console.error("Add task failed:", err);
+  } finally {
+    panel.value.addingTask = false;
+  }
+}
+
+async function removePanelTask(row) {
+  try {
+    await removeTemplateShiftTask(row.id_templateShiftTask);
+    panel.value.tasks = panel.value.tasks.filter(
+      t => t.id_templateShiftTask !== row.id_templateShiftTask
+    );
+  } catch (err) {
+    console.error("Remove task failed:", err);
+  }
+}
+
 // ── Live sync: propagate changes to already-applied shifts ────────────────────
 async function syncAddEmployee(id_templateShift, id_employee) {
   try {
@@ -1070,6 +1290,125 @@ function shiftsForDay(dayOfWeek) {
   return templateShifts.value.filter(s => s.dayOfWeek === dayOfWeek);
 }
 
+// ── Copy-Day menu ────────────────────────────────────────────────────────────
+const copyMenuOpen = ref(null); // day index with an open menu, or null
+function onCopyMenuDocClick(e) {
+  if (copyMenuOpen.value === null) return;
+  if (!e.target.closest?.(".day-copy-menu") && !e.target.closest?.(".day-copy-btn")) {
+    copyMenuOpen.value = null;
+  }
+}
+onMounted(() => document.addEventListener("click", onCopyMenuDocClick));
+onUnmounted(() => document.removeEventListener("click", onCopyMenuDocClick));
+
+// Duplicate every shift from sourceDay → each of the targetDays. Re-attaches
+// each new shift's employee + position-linked task lists + individual tasks
+// so the copies are complete. Reuses the existing undo stack.
+async function copyDayToDays(sourceDay, targetDays) {
+  copyMenuOpen.value = null;
+  const source = shiftsForDay(sourceDay);
+  if (!source.length) return;
+  const createdBatch = [];
+  for (const day of targetDays) {
+    if (day === sourceDay) continue;
+    for (const s of source) {
+      try {
+        const created = await createTemplateShift({
+          id_template: id.value,
+          dayOfWeek:   day,
+          startHour:   s.startHour,
+          endHour:     s.endHour,
+          label:       s.label || "",
+          id_position: s.id_position,
+          notes:       s.notes || "",
+        });
+        templateShifts.value.push(created);
+        createdBatch.push(created);
+
+        // Copy first-assigned employee to the new shift (if present)
+        const emp = shiftEmployeeMap.value[s.id_templateShift];
+        if (emp?.id_employee) {
+          try {
+            await addTemplateShiftEmployee({ id_templateShift: created.id_templateShift, id_employee: emp.id_employee });
+            shiftEmployeeMap.value[created.id_templateShift] = emp;
+          } catch (_) { /* ignore */ }
+        }
+
+        await attachPositionTaskListsForTemplateShift(created.id_templateShift, Number(s.id_position));
+      } catch (err) { console.error("Copy shift failed:", err); }
+    }
+  }
+  if (createdBatch.length) pushUndo({ type: 'create', shifts: createdBatch });
+}
+function copyDayToDay(sourceDay, targetDay)    { return copyDayToDays(sourceDay, [targetDay]); }
+function copyDayToWeekdays(sourceDay)          { return copyDayToDays(sourceDay, [1, 2, 3, 4, 5]); }
+function copyDayToEveryday(sourceDay)          { return copyDayToDays(sourceDay, [0, 1, 2, 3, 4, 5, 6]); }
+
+// Coverage heatmap — peak concurrent shifts per hour across all 7 days.
+// Fuels the accent-colored strip on the right edge of the time gutter.
+const coverageByHour = computed(() => {
+  const counts = new Array(hours.length).fill(0);
+  for (let d = 0; d < 7; d++) {
+    const dayShifts = templateShifts.value.filter(s => s.dayOfWeek === d);
+    for (let i = 0; i < hours.length; i++) {
+      const h = hours[i];
+      const count = dayShifts.filter(s => s.startHour <= h && s.endHour > h).length;
+      if (count > counts[i]) counts[i] = count;
+    }
+  }
+  return counts;
+});
+const coverageMax = computed(() => Math.max(1, ...coverageByHour.value));
+
+// ── Readiness chip ────────────────────────────────────────────────────────────
+// A shift is "outside open hours" if its time range isn't fully within any of
+// the selected season's open intervals for that day. If no season is selected
+// we skip that check so we don't false-warn.
+function shiftOutsideHours(shift) {
+  const lines = hoursLinesForDayIdx(shift.dayOfWeek);
+  if (!lines.length) return false; // day has no defined open hours — don't flag
+  return !lines.some(l => {
+    const openH  = l.openPx  / CELL_HEIGHT + CAL_START_HOUR;
+    const closeH = l.closePx / CELL_HEIGHT + CAL_START_HOUR;
+    return shift.startHour >= openH && shift.endHour <= closeH;
+  });
+}
+// Applied-instances chip: how many calendar weeks this template has been
+// applied to. Counts only applications whose start date is today or later.
+const templateApplications = ref([]);
+async function loadTemplateApplications() {
+  try {
+    templateApplications.value = await listTemplateApplications(id.value);
+  } catch (_) { templateApplications.value = []; }
+}
+const appliedInstancesCount = computed(() => {
+  const todayKey = new Date().toISOString().slice(0, 10);
+  return templateApplications.value.filter(a => (a.startDate || "") >= todayKey).length;
+});
+function goToFirstAppliedWeek() {
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const upcoming = templateApplications.value
+    .filter(a => (a.startDate || "") >= todayKey)
+    .sort((a, b) => (a.startDate || "").localeCompare(b.startDate || ""));
+  if (!upcoming.length) return;
+  router.push({ path: "/dashboard", query: { week: upcoming[0].startDate } });
+}
+
+const readinessState = computed(() => {
+  if (templateShifts.value.length === 0) {
+    return { kind: "warn", label: "No shifts yet", issues: ["Drag on the grid to create your first shift."] };
+  }
+  const issues = [];
+  const missingPos  = templateShifts.value.filter(s => !s.id_position).length;
+  const outsideHrs  = templateShifts.value.filter(s => shiftOutsideHours(s)).length;
+  if (missingPos) issues.push(`${missingPos} shift${missingPos === 1 ? '' : 's'} missing position`);
+  if (outsideHrs) issues.push(`${outsideHrs} shift${outsideHrs === 1 ? '' : 's'} outside open hours`);
+  if (issues.length === 0) {
+    return { kind: "ok", label: "Ready to apply", issues: [] };
+  }
+  return { kind: "warn", label: `${issues.length} issue${issues.length === 1 ? '' : 's'}`, issues };
+});
+
 // ── Overlap layout ─────────────────────────────────────────────────────────────
 function computeOverlapLayout(dayShifts) {
   const result = {};
@@ -1103,11 +1442,25 @@ const templateShiftLayoutMap = computed(() => {
   return result;
 });
 
+// Stable palette for position colors — unlike the Dashboard (employee-colored),
+// the Template Editor paints shift blocks by *position* so role balance is
+// visible at a glance.
+const POSITION_PALETTE = [
+  "#B76E6E","#D08B6A","#C9A96E","#9DA66B",
+  "#7BA37D","#6FA39C","#7B9CC2","#8B91C2",
+  "#A088B8","#BE8AA8","#8F9299","#9C7B5F",
+];
+function getPositionColor(id_position) {
+  if (!id_position) return "#5c5c6e"; // grey for unassigned position
+  const idx = positions.value.findIndex(p => p.id_position === id_position);
+  const key = idx >= 0 ? idx : Number(id_position) || 0;
+  return POSITION_PALETTE[key % POSITION_PALETTE.length];
+}
+
 function shiftBlockStyle(shift) {
   const isSelected = selectedShift.value?.id_templateShift === shift.id_templateShift;
   const layout     = templateShiftLayoutMap.value[shift.id_templateShift] ?? { colIndex: 0, totalCols: 1 };
-  const emp        = shiftEmployeeMap.value[shift.id_templateShift];
-  const baseColor  = emp ? emp.color : "#FF1744";
+  const baseColor  = getPositionColor(shift.id_position);
   const GAP        = 3;
   const pct        = 100 / layout.totalCols;
   return {
@@ -1117,15 +1470,15 @@ function shiftBlockStyle(shift) {
     left:         `calc(${layout.colIndex * pct}% + ${GAP}px)`,
     width:        `calc(${pct}% - ${GAP * 2}px)`,
     right:        "unset",
-    background:   baseColor,
+    background:   `linear-gradient(180deg, ${baseColor} 0%, ${baseColor}d9 100%)`,
     borderRadius: "6px",
     padding:      "4px 6px",
     cursor:       "pointer",
     overflow:     "hidden",
     zIndex:       layout.colIndex + 2,
     boxShadow:    isSelected
-      ? `0 0 0 2px #fff, 0 2px 12px ${baseColor}66`
-      : `0 2px 12px ${baseColor}44`,
+      ? `0 0 0 2px #fff, 0 2px 12px ${baseColor}88`
+      : `0 2px 10px ${baseColor}55`,
   };
 }
 
@@ -1412,6 +1765,7 @@ async function pasteToDay(targetColIdx) {
           if (emp) shiftEmployeeMap.value[created.id_templateShift] = emp;
         } catch { /* non-critical */ }
       }
+      await attachPositionTaskListsForTemplateShift(created.id_templateShift, Number(item.id_position));
     } catch (err) { console.error("Paste shift failed:", err); }
   }
   if (pastedShifts.length > 0) pushUndo({ type: 'create', shifts: pastedShifts });
@@ -1433,6 +1787,21 @@ async function deleteSelectedShifts() {
       if (selectedShift.value?.id_templateShift === shiftId) selectedShift.value = null;
     } catch (err) { console.error("Delete shift failed:", shiftId, err); }
   }
+}
+
+// When a template-shift is created with a position, auto-attach every task
+// list linked to that position via PositionTaskList — mirrors the backend's
+// Dashboard shift-create behavior so templates feel consistent.
+async function attachPositionTaskListsForTemplateShift(id_templateShift, id_position) {
+  if (!id_position || !id_templateShift) return;
+  try {
+    const links = await getPositionTaskLists(id_position);
+    for (const link of links) {
+      try {
+        await addTemplateShiftTaskList({ id_templateShift, id_taskList: link.id_taskList });
+      } catch (_) { /* ignore individual failures — e.g. duplicate */ }
+    }
+  } catch (_) { /* non-critical — manager can still add manually */ }
 }
 
 async function confirmQuickCreate() {
@@ -1469,6 +1838,9 @@ async function confirmQuickCreate() {
         if (emp) shiftEmployeeMap.value[created.id_templateShift] = emp;
       } catch { /* non-critical — shift was still created */ }
     }
+
+    // Auto-attach task lists linked to the selected position
+    await attachPositionTaskListsForTemplateShift(created.id_templateShift, Number(quickCreate.value.id_position));
 
     quickCreate.value.visible = false;
   } catch (err) {
@@ -1540,6 +1912,128 @@ function fromTimeInput(t) {
   cursor: pointer; transition: color 0.15s; flex-shrink: 0;
 }
 .back-link:hover { color: var(--accent); }
+.header-chip-row {
+  display: flex; align-items: center; gap: 8px;
+  margin-left: auto;
+}
+.readiness-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px; font-weight: 700;
+  letter-spacing: -0.01em;
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  cursor: default;
+}
+.readiness-chip--ok {
+  background: rgba(34, 197, 94, 0.12);
+  color: rgba(34, 197, 94, 1);
+  border-color: rgba(34, 197, 94, 0.35);
+}
+.readiness-chip--warn {
+  background: rgba(245, 158, 11, 0.14);
+  color: rgba(245, 158, 11, 1);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+.readiness-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+}
+.applied-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px; font-weight: 600;
+  letter-spacing: -0.01em;
+  background: var(--accent-bg);
+  color: var(--accent);
+  border: 1px solid var(--accent-border);
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, color .12s;
+}
+.applied-chip:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+.day-copy-btn {
+  position: absolute; top: 4px; right: 4px;
+  width: 20px; height: 20px;
+  background: none; border: 1px solid transparent;
+  border-radius: 5px; cursor: pointer;
+  color: var(--tx-faint);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0;
+  transition: opacity .12s, color .12s, border-color .12s, background .12s;
+}
+.day-header:hover .day-copy-btn,
+.day-copy-btn--open { opacity: 1; }
+.day-copy-btn:hover,
+.day-copy-btn--open {
+  color: var(--accent);
+  border-color: var(--bdr-medium);
+  background: var(--bg-surface);
+}
+.day-copy-menu {
+  position: absolute; top: calc(100% + 4px); right: 0;
+  background: var(--bg-modal);
+  border: 1px solid var(--bdr-medium);
+  border-radius: 10px;
+  padding: 8px;
+  width: 210px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.45), 0 4px 10px rgba(0,0,0,0.25);
+  z-index: 100;
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  display: flex; flex-direction: column; gap: 4px;
+  text-align: left;
+}
+.day-copy-menu-label {
+  font-size: 10px; font-weight: 700;
+  color: var(--tx-faint);
+  text-transform: uppercase; letter-spacing: .06em;
+  font-family: 'DM Mono', monospace;
+  padding: 4px 6px 2px;
+}
+.day-copy-menu-opt {
+  background: none; border: none; padding: 7px 8px;
+  border-radius: 6px; cursor: pointer;
+  color: var(--tx-primary);
+  font-family: inherit; font-size: 13px; font-weight: 500;
+  text-align: left;
+  transition: background .1s, color .1s;
+}
+.day-copy-menu-opt:hover { background: var(--bg-hover); color: var(--accent); }
+.day-copy-menu-sep { height: 1px; background: var(--bdr-subtle); margin: 4px 0; }
+.day-copy-menu-days {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px;
+  padding: 0 4px 2px;
+}
+.day-copy-menu-day {
+  background: var(--bg-surface); border: 1px solid var(--bdr-subtle);
+  color: var(--tx-secondary);
+  border-radius: 5px; padding: 5px 0;
+  font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 700;
+  cursor: pointer;
+  transition: background .1s, color .1s, border-color .1s;
+}
+.day-copy-menu-day:hover { background: var(--accent-bg); color: var(--accent); border-color: var(--accent-border); }
+
+.time-column { position: relative; }
+.coverage-strip {
+  position: absolute; top: 0; right: 0;
+  width: 3px; height: 100%;
+  pointer-events: none;
+  z-index: 2;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.coverage-seg {
+  position: absolute; left: 0; right: 0;
+  background: var(--accent);
+  transition: opacity .2s ease;
+}
 .template-name-input {
   background: var(--bg-input); border: 1px solid var(--bdr-medium);
   color: var(--tx-primary); padding: 6px 12px; border-radius: 6px;
@@ -1741,6 +2235,7 @@ function fromTimeInput(t) {
   flex: 1; text-align: center; padding: 14px 4px;
   display: flex; align-items: center; justify-content: center;
   border-left: 1px solid var(--bdr-subtle);
+  position: relative;
 }
 .day-letter { font-size: 14px; color: var(--tx-faint); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
 .cal-body { flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; }
@@ -1803,6 +2298,12 @@ function fromTimeInput(t) {
 .panel-input::placeholder { color: var(--tx-faded); }
 .panel-req-note { font-size: 13px; color: var(--tx-faint); font-style: italic; }
 .panel-save-row { display: flex; align-items: center; gap: 10px; }
+.panel-autosave-row {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 16px;
+  margin-top: -4px;
+}
+.panel-autosave-note { font-size: 12px; color: var(--tx-faint); font-style: italic; }
 .panel-save-btn {
   background: var(--accent); color: #fff; border: none;
   border-radius: 7px; padding: 7px 20px; font-size: 15px; font-weight: 600;
@@ -1828,6 +2329,7 @@ function fromTimeInput(t) {
 .panel-remove-btn { background: none; border: none; color: var(--tx-faint); font-size: 13px; cursor: pointer; padding: 2px 4px; border-radius: 3px; transition: color .15s; flex-shrink: 0; }
 .panel-remove-btn:hover { color: var(--accent); }
 .panel-add-row { display: flex; gap: 6px; align-items: center; }
+.panel-add-select-wrap { flex: 1; min-width: 0; }
 .panel-add-select {
   flex: 1; background: var(--bg-modal); border: 1px solid var(--bdr-faint); border-radius: 7px;
   padding: 6px 8px; color: var(--tx-primary); font-size: 14px;

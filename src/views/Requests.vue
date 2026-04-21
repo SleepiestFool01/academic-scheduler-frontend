@@ -62,13 +62,13 @@
               <div class="request-dates">
                 <div class="date-block">
                   <span class="date-label">From</span>
-                  <span class="date-val mono">{{ req.startDate }}</span>
+                  <span class="date-val mono">{{ formatDateShort(req.startDate) }}</span>
                   <span class="time-val mono">{{ fmtTime(req.startTime) }}</span>
                 </div>
                 <div class="date-arrow">→</div>
                 <div class="date-block">
                   <span class="date-label">To</span>
-                  <span class="date-val mono">{{ req.endDate }}</span>
+                  <span class="date-val mono">{{ formatDateShort(req.endDate) }}</span>
                   <span class="time-val mono">{{ fmtTime(req.endTime) }}</span>
                 </div>
               </div>
@@ -171,14 +171,14 @@
               <span class="field-label">End date</span>
               <DatePicker v-model="requestForm.endDate" :min="requestForm.startDate" placeholder="Select end date" />
             </div>
-            <label class="field-block">
+            <div class="field-block" :class="{ 'field-block--disabled': requestForm.fullDay }">
               <span class="field-label">Start time</span>
-              <input v-model="requestForm.startTime" class="field-input" type="time" :disabled="requestForm.fullDay" />
-            </label>
-            <label class="field-block">
+              <TimePicker v-model="requestForm.startTime" placeholder="Start time" :disabled="requestForm.fullDay" />
+            </div>
+            <div class="field-block" :class="{ 'field-block--disabled': requestForm.fullDay }">
               <span class="field-label">End time</span>
-              <input v-model="requestForm.endTime" class="field-input" type="time" :disabled="requestForm.fullDay" />
-            </label>
+              <TimePicker v-model="requestForm.endTime" placeholder="End time" :disabled="requestForm.fullDay" />
+            </div>
           </div>
 
           <div v-if="requestForm.error" class="form-error">{{ requestForm.error }}</div>
@@ -211,13 +211,13 @@
             <div class="request-dates">
               <div class="date-block">
                 <span class="date-label">From</span>
-                <span class="date-val mono">{{ req.startDate }}</span>
+                <span class="date-val mono">{{ formatDateShort(req.startDate) }}</span>
                 <span class="time-val mono">{{ fmtTime(req.startTime) }}</span>
               </div>
               <div class="date-arrow">→</div>
               <div class="date-block">
                 <span class="date-label">To</span>
-                <span class="date-val mono">{{ req.endDate }}</span>
+                <span class="date-val mono">{{ formatDateShort(req.endDate) }}</span>
                 <span class="time-val mono">{{ fmtTime(req.endTime) }}</span>
               </div>
             </div>
@@ -274,6 +274,8 @@ import { useNotifications } from "../composables/useNotifications.js";
 import apiClient from "../services/services.js";
 import { timeStrToHour, fmtHour } from "../services/employeeManagementService.js";
 import DatePicker from "../components/DatePicker.vue";
+import TimePicker from "../components/TimePicker.vue";
+import { formatDateShort } from "../utils/dateFormat.js";
 import {
   getDepartmentAccessRequests,
   updateDepartmentAccessRequest,
@@ -674,7 +676,12 @@ async function executeDeptDelete() {
 .date-val { font-size: 15px; color: var(--tx-primary); }
 .time-val { font-size: 13px; color: var(--tx-muted); }
 .date-arrow { font-size: 18px; color: var(--tx-ghost); }
-.mono { font-family: 'DM Mono', monospace; }
+.mono {
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
 
 .request-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .status-badge { display: inline-block; padding: 3px 12px; border-radius: 100px; font-size: 13px; font-weight: 600; text-transform: capitalize; }

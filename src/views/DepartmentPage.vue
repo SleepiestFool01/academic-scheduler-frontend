@@ -143,6 +143,52 @@
             <div class="panel-header">
               <h2 class="panel-title">Overview</h2>
             </div>
+
+            <!-- ── "Right Now" live pulse bar ── -->
+            <div class="right-now-bar">
+              <div class="rn-header">
+                <div class="rn-live">
+                  <span class="rn-live-dot"></span>
+                  <span class="rn-live-label">Right now</span>
+                </div>
+                <div class="rn-count-block">
+                  <div class="rn-count">{{ activeShiftsNow.length }}</div>
+                  <div class="rn-count-label">
+                    {{ activeShiftsNow.length === 1 ? 'employee on shift' : 'employees on shift' }}
+                  </div>
+                </div>
+                <div v-if="nextShift" class="rn-next">
+                  <span class="rn-next-label">Next shift in</span>
+                  <span class="rn-next-value">{{ nextShiftInLabel }}</span>
+                  <span class="rn-next-who">{{ nextShift.employee || 'Open' }}</span>
+                </div>
+                <div v-else-if="todayShifts.length === 0" class="rn-next rn-next--muted">
+                  <span class="rn-next-label">No shifts today</span>
+                </div>
+                <div v-else class="rn-next rn-next--muted">
+                  <span class="rn-next-label">All shifts for today complete</span>
+                </div>
+              </div>
+
+              <div v-if="todayShifts.length > 0" class="rn-timeline">
+                <div v-for="s in todayShifts" :key="s.id"
+                  class="rn-shift"
+                  :class="{
+                    'rn-shift--active': s.id_employee && s.startHour <= rightNowHour && s.endHour > rightNowHour,
+                    'rn-shift--open':   !s.id_employee,
+                  }"
+                  :style="overviewShiftStyle(s)"
+                  :title="`${s.employee || 'Open'} · ${s.startLabel}–${s.endLabel}${s.positionName ? ' · ' + s.positionName : ''}`">
+                </div>
+                <div class="rn-now-line" :style="{ left: timelinePct(rightNowHour) + '%' }">
+                  <div class="rn-now-dot"></div>
+                </div>
+                <div class="rn-axis">
+                  <span v-for="mark in [timelineBounds.start, Math.round((timelineBounds.start + timelineBounds.end) / 2), timelineBounds.end]" :key="mark" class="rn-axis-tick">{{ mark < 12 ? (mark || 12) + 'am' : mark === 12 ? '12pm' : (mark - 12) + 'pm' }}</span>
+                </div>
+              </div>
+            </div>
+
             <div class="overview-grid">
               <div class="overview-card">
                 <div class="ov-label">Employees</div>
@@ -495,7 +541,7 @@
                     <span class="semester-name">{{ s.name }}</span>
                     <span v-if="isSemesterActive(s)" class="semester-active-badge">Active</span>
                   </div>
-                  <div class="semester-dates mono">{{ s.startDate }} → {{ s.endDate }}</div>
+                  <div class="semester-dates mono">{{ formatDateShort(s.startDate) }} → {{ formatDateShort(s.endDate) }}</div>
                 </div>
                 <div class="action-btns">
                   <button class="icon-action" title="Edit" @click="openEditSemester(s)">✎</button>
@@ -934,7 +980,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import Utils from "../config/utils.js";
 import { useDepartment } from "../composables/useDepartment.js";
@@ -982,10 +1028,12 @@ import {
   pickActiveSemester,
 } from "../services/semesterService.js";
 import { parseSemestersFromText } from "../utils/parseSemestersFromText.js";
+import { formatDateShort } from "../utils/dateFormat.js";
 // `pdfExtract.js` pulls in pdfjs-dist (~450KB). Deferred via dynamic
 // import below so the PDF library only loads if the user actually
 // clicks "Upload calendar PDF".
 import apiClient from "../services/services.js";
+import { fetchShiftsWithAssignments } from "../services/schedulingService.js";
 
 const router      = useRouter();
 const route       = useRoute();
@@ -1024,6 +1072,14 @@ const calendarEntries = ref([]);
 const events          = ref([]);
 const semesters        = ref([]);
 const deptManagerLinks = ref([]);
+
+// ── Live "Right Now" overview strip ──────────────────────────────────────────
+// Today's shifts, joined with employee + position so we can render a mini
+// timeline + live active count. Ticks every 30s so the active state stays
+// honest without burning battery.
+const todayShifts = ref([]);
+const nowTick     = ref(Date.now());
+let _nowInterval  = null;
 
 // Pending access requests from this manager
 const myPendingRequests = ref([]);
@@ -1199,6 +1255,91 @@ async function loadDeptData(id) {
     loading.value = false;
   }
   await Promise.all([loadBufferTime(id), loadActiveSeason(id)]);
+  loadTodayShifts(id);
+}
+
+// ── Right Now pulse bar computeds ───────────────────────────────────────────
+// Stable palette per position — mirrors the Template Editor so blocks
+// read the same across the app.
+const POSITION_PALETTE = [
+  "#B76E6E","#D08B6A","#C9A96E","#9DA66B",
+  "#7BA37D","#6FA39C","#7B9CC2","#8B91C2",
+  "#A088B8","#BE8AA8","#8F9299","#9C7B5F",
+];
+function getPositionColorForOverview(id_position) {
+  if (!id_position) return "#5c5c6e";
+  const idx = positions.value.findIndex(p => p.id_position === id_position);
+  const key = idx >= 0 ? idx : Number(id_position) || 0;
+  return POSITION_PALETTE[key % POSITION_PALETTE.length];
+}
+
+// Current hour (0-24 fractional), reactive via nowTick.
+const rightNowHour = computed(() => {
+  const _ = nowTick.value;
+  const d = new Date();
+  return d.getHours() + d.getMinutes() / 60;
+});
+
+// Fraction of the business day (24h) the current time represents. Used to
+// position the "now" marker on the timeline.
+const timelineBounds = computed(() => {
+  if (!todayShifts.value.length) return { start: 6, end: 22 };
+  const start = Math.min(6, ...todayShifts.value.map(s => Math.floor(s.startHour)));
+  const end   = Math.max(22, ...todayShifts.value.map(s => Math.ceil(s.endHour)));
+  return { start, end };
+});
+function timelinePct(hour) {
+  const { start, end } = timelineBounds.value;
+  const span = end - start;
+  return ((hour - start) / span) * 100;
+}
+
+const activeShiftsNow = computed(() => {
+  const now = rightNowHour.value;
+  return todayShifts.value.filter(s =>
+    s.id_employee && s.startHour <= now && s.endHour > now
+  );
+});
+const nextShift = computed(() => {
+  const now = rightNowHour.value;
+  const upcoming = todayShifts.value
+    .filter(s => s.id_employee && s.startHour > now)
+    .sort((a, b) => a.startHour - b.startHour);
+  return upcoming[0] || null;
+});
+const nextShiftInLabel = computed(() => {
+  const s = nextShift.value;
+  if (!s) return "";
+  const diffMin = Math.max(0, Math.round((s.startHour - rightNowHour.value) * 60));
+  if (diffMin < 60) return `${diffMin}m`;
+  const h = Math.floor(diffMin / 60);
+  const m = diffMin % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+});
+
+function overviewShiftStyle(shift) {
+  const color = getPositionColorForOverview(shift.id_position);
+  const startPct = Math.max(0, timelinePct(shift.startHour));
+  const endPct   = Math.min(100, timelinePct(shift.endHour));
+  const widthPct = Math.max(1, endPct - startPct);
+  return {
+    left:  `${startPct}%`,
+    width: `${widthPct}%`,
+    background: `linear-gradient(180deg, ${color} 0%, ${color}d9 100%)`,
+    boxShadow: `0 1px 4px ${color}55`,
+  };
+}
+
+async function loadTodayShifts(id) {
+  try {
+    const empMap = {};
+    for (const e of (employees.value || [])) empMap[e.id_employee] = e;
+    const posMap = {};
+    for (const p of (positions.value || [])) posMap[p.id_position] = p;
+    const all = await fetchShiftsWithAssignments(empMap, posMap, id);
+    const todayKey = new Date().toISOString().slice(0, 10);
+    todayShifts.value = (all || []).filter(s => s.date === todayKey);
+  } catch (_) { todayShifts.value = []; }
 }
 
 // Which semester contains today? Used to tag the card with an "Active"
@@ -1364,6 +1505,11 @@ function maybeOpenCreateFromQuery() {
 onMounted(async () => {
   await initLoad();
   maybeOpenCreateFromQuery();
+  _nowInterval = setInterval(() => { nowTick.value = Date.now(); }, 30_000);
+});
+
+onBeforeUnmount(() => {
+  if (_nowInterval) clearInterval(_nowInterval);
 });
 
 watch(() => route.query.create, () => maybeOpenCreateFromQuery());
@@ -2181,6 +2327,122 @@ async function saveBufferTime() {
   background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 12px;
 }
 
+/* ── Right Now pulse bar ── */
+.right-now-bar {
+  background: linear-gradient(135deg, var(--bg-modal) 0%, var(--bg-surface) 100%);
+  border: 1px solid var(--bdr-subtle);
+  border-radius: 14px;
+  padding: 18px 22px 20px;
+  margin-bottom: 18px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.10);
+}
+.rn-header {
+  display: flex; align-items: center; gap: 28px; flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.rn-live {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 10px; border-radius: 999px;
+  background: rgba(34, 197, 94, 0.14);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  color: rgb(34, 197, 94);
+  font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .08em;
+}
+.rn-live-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: rgb(34, 197, 94);
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55);
+  animation: rn-pulse 1.8s ease-in-out infinite;
+}
+@keyframes rn-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55); transform: scale(1); }
+  50%      { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); transform: scale(1.15); }
+}
+.rn-count-block { display: flex; align-items: baseline; gap: 10px; }
+.rn-count {
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-size: 44px; font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--tx-heading);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.rn-count-label {
+  font-size: 14px; color: var(--tx-secondary);
+  letter-spacing: -0.01em;
+  max-width: 110px;
+  line-height: 1.15;
+}
+.rn-next {
+  margin-left: auto;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+  font-family: 'Satoshi', 'Inter', sans-serif;
+}
+.rn-next-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .08em;
+  color: var(--tx-faint);
+}
+.rn-next-value {
+  font-size: 20px; font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.rn-next-who { font-size: 12px; color: var(--tx-secondary); }
+.rn-next--muted .rn-next-label { color: var(--tx-muted); }
+
+.rn-timeline {
+  position: relative;
+  height: 28px;
+  background: var(--bg-surface);
+  border-radius: 6px;
+  border: 1px solid var(--bdr-subtle);
+  margin-bottom: 22px;
+  overflow: visible;
+}
+.rn-shift {
+  position: absolute; top: 3px; bottom: 3px;
+  border-radius: 4px;
+  transition: filter .15s, transform .15s;
+  cursor: help;
+}
+.rn-shift:hover { filter: brightness(1.12); transform: translateY(-1px); }
+.rn-shift--active {
+  animation: rn-shift-pulse 2.4s ease-in-out infinite;
+}
+.rn-shift--open {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 1.5px dashed rgba(240, 230, 211, 0.5);
+}
+@keyframes rn-shift-pulse {
+  0%, 100% { filter: brightness(1); }
+  50%      { filter: brightness(1.14); }
+}
+.rn-now-line {
+  position: absolute; top: -4px; bottom: -4px;
+  width: 2px; background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  z-index: 2; pointer-events: none;
+}
+.rn-now-dot {
+  position: absolute; top: -4px; left: -4px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.22), 0 0 10px var(--accent);
+  animation: rn-pulse 1.8s ease-in-out infinite;
+}
+.rn-axis {
+  position: absolute; left: 0; right: 0; top: calc(100% + 4px);
+  display: flex; justify-content: space-between;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; color: var(--tx-faint);
+  pointer-events: none;
+}
+
 /* ── Overview ── */
 .overview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
 .overview-wide-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
@@ -2359,7 +2621,12 @@ async function saveBufferTime() {
 .search-input { background: var(--bg-input); border: 1px solid var(--bdr-subtle); border-radius: 8px; padding: 8px 14px; color: var(--tx-primary); font-family: inherit; font-size: 15px; outline: none; width: 220px; }
 .search-input:focus { border-color: var(--accent); }
 .day-badge { display: inline-block; padding: 2px 10px; border-radius: 100px; font-size: 13px; font-weight: 600; background: var(--bg-active); color: var(--tx-secondary); }
-.mono { font-family: 'DM Mono', monospace; font-size: 14px; }
+.mono {
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-size: 14px; font-weight: 500;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
 
 /* ── Events ── */
 .events-list { display: flex; flex-direction: column; gap: 12px; }

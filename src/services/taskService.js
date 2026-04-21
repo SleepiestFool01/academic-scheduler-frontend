@@ -76,6 +76,17 @@ export async function getTaskListPositions(id_taskList) {
 }
 
 /**
+ * Get all PositionTaskList entries for a given position.
+ * Used to auto-attach position-linked task lists when a position is chosen
+ * on shift creation.
+ * Returns: [{ id_positionTaskList, id_position, id_taskList }]
+ */
+export async function getPositionTaskLists(id_position) {
+  const { data } = await apiClient.get(`/position-task-lists?id_position=${id_position}`);
+  return data;
+}
+
+/**
  * Link a task list to a position.
  */
 export async function addPositionTaskList(id_position, id_taskList) {
@@ -99,4 +110,36 @@ export async function updateTaskComplete(id_shiftTaskListStatus, isCompleted) {
     { isCompleted }
   );
   return data;
+}
+
+// ── Individual tasks attached to a shift (ShiftTask bridge) ─────────────────
+
+export async function getShiftTasks(id_shift) {
+  const { data } = await apiClient.get(`/shift-tasks?id_shift=${id_shift}`);
+  return data; // [{ id_shiftTask, id_shift, id_task, isCompleted }]
+}
+export async function attachTaskToShift(id_shift, id_task) {
+  const { data } = await apiClient.post("/shift-tasks", { id_shift, id_task });
+  return data;
+}
+export async function removeShiftTask(id_shiftTask) {
+  await apiClient.delete(`/shift-tasks/${id_shiftTask}`);
+}
+export async function updateShiftTaskComplete(id_shiftTask, isCompleted) {
+  const { data } = await apiClient.put(`/shift-tasks/${id_shiftTask}`, { isCompleted });
+  return data;
+}
+
+// ── Individual tasks attached to a template shift (TemplateShiftTask) ───────
+
+export async function getTemplateShiftTasks(id_templateShift) {
+  const { data } = await apiClient.get(`/template-shift-tasks?id_templateShift=${id_templateShift}`);
+  return data; // [{ id_templateShiftTask, id_templateShift, id_task }]
+}
+export async function attachTaskToTemplateShift(id_templateShift, id_task) {
+  const { data } = await apiClient.post("/template-shift-tasks", { id_templateShift, id_task });
+  return data;
+}
+export async function removeTemplateShiftTask(id_templateShiftTask) {
+  await apiClient.delete(`/template-shift-tasks/${id_templateShiftTask}`);
 }

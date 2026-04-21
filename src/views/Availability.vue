@@ -711,7 +711,12 @@ async function syncClassSchedule() {
 .row-label { color: var(--tx-primary); font-weight: 500; }
 .row-scope { color: var(--tx-faint); font-size: 12px; }
 .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
-.mono { font-family: 'DM Mono', monospace; }
+.mono {
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
 
 .icon-action {
   background: var(--bdr-subtle); border: none; color: var(--tx-muted);

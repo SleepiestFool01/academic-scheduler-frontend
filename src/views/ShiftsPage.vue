@@ -452,7 +452,12 @@ function shortDate(d) { const [,m,dd]  = d.split("-").map(Number); return `${m}/
 .col-time { font-size: 15px; color: var(--tx-primary); font-weight: 500; }
 .col-notes { font-size: 14px; color: var(--tx-faint); }
 
-.mono { font-family: 'DM Mono', monospace; }
+.mono {
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
 
 .pos-badge {
   display: inline-block; padding: 2px 9px;

@@ -143,8 +143,17 @@
                   <div class="dpc-days">
                     <span v-for="p in pickerStartPad" :key="'p'+p" class="dpc-cell dpc-empty"></span>
                     <span v-for="day in pickerDaysInMonth" :key="day" class="dpc-cell"
-                      :class="{ 'dpc-selected': isPickerDaySelected(day), 'dpc-today': isPickerDayToday(day) }"
+                      :class="{
+                        'dpc-selected':    isPickerDaySelected(day),
+                        'dpc-today':       isPickerDayToday(day),
+                        'dpc-cell--busy':  isPickerDayBusy(day),
+                        'dpc-cell--open':  isPickerDayInEmptyWeek(day),
+                      }"
                       @click="selectPickerDay(day)">{{ day }}</span>
+                  </div>
+                  <div class="dpc-legend">
+                    <span class="dpc-legend-dot dpc-legend-dot--open"></span>Empty week
+                    <span class="dpc-legend-dot dpc-legend-dot--busy"></span>Has shifts
                   </div>
                 </div>
               </Transition>
@@ -177,8 +186,17 @@
                     <div class="dpc-days">
                       <span v-for="p in pickerStartPad" :key="'p'+p" class="dpc-cell dpc-empty"></span>
                       <span v-for="day in pickerDaysInMonth" :key="day" class="dpc-cell"
-                        :class="{ 'dpc-selected': isPickerDaySelected(day), 'dpc-today': isPickerDayToday(day) }"
+                        :class="{
+                          'dpc-selected':    isPickerDaySelected(day),
+                          'dpc-today':       isPickerDayToday(day),
+                          'dpc-cell--busy':  isPickerDayBusy(day),
+                          'dpc-cell--open':  isPickerDayInEmptyWeek(day),
+                        }"
                         @click="selectPickerDay(day)">{{ day }}</span>
+                    </div>
+                    <div class="dpc-legend">
+                      <span class="dpc-legend-dot dpc-legend-dot--open"></span>Empty week
+                      <span class="dpc-legend-dot dpc-legend-dot--busy"></span>Has shifts
                     </div>
                   </div>
                 </Transition>
@@ -211,11 +229,17 @@
                       <span v-for="p in pickerStartPad" :key="'p'+p" class="dpc-cell dpc-empty"></span>
                       <span v-for="day in pickerDaysInMonth" :key="day" class="dpc-cell"
                         :class="{
-                          'dpc-selected': isPickerDaySelected(day),
-                          'dpc-today':    isPickerDayToday(day),
-                          'dpc-disabled': isPickerDayBeforeStart(day)
+                          'dpc-selected':    isPickerDaySelected(day),
+                          'dpc-today':       isPickerDayToday(day),
+                          'dpc-disabled':    isPickerDayBeforeStart(day),
+                          'dpc-cell--busy':  isPickerDayBusy(day),
+                          'dpc-cell--open':  isPickerDayInEmptyWeek(day),
                         }"
                         @click="!isPickerDayBeforeStart(day) && selectPickerDay(day)">{{ day }}</span>
+                    </div>
+                    <div class="dpc-legend">
+                      <span class="dpc-legend-dot dpc-legend-dot--open"></span>Empty week
+                      <span class="dpc-legend-dot dpc-legend-dot--busy"></span>Has shifts
                     </div>
                   </div>
                 </Transition>
@@ -279,6 +303,7 @@ import {
   createTemplateApplication, createTemplateApplicationShift,
 } from "../services/templateService.js";
 import apiClient from "../services/services.js";
+import { getTemplateShiftTasks } from "../services/taskService.js";
 
 const PERIOD_OPTIONS = [
   { label: "1 Week",  value: "1w",  days: 7  },
@@ -500,15 +525,17 @@ async function applyTemplate() {
       end.setDate(start.getDate() + (opt?.days ?? 14) - 1);
     }
 
-    // 2. Fetch template shifts + their employees and task lists
+    // 2. Fetch template shifts + their employees, task lists, individual tasks
     const tShifts = await fetchTemplateShifts(applyModal.value.template.id_template);
     await Promise.all(tShifts.map(async ts => {
-      const [emps, tls] = await Promise.all([
+      const [emps, tls, tks] = await Promise.all([
         fetchTemplateShiftEmployees(ts.id_templateShift).catch(() => []),
         fetchTemplateShiftTaskLists(ts.id_templateShift).catch(() => []),
+        getTemplateShiftTasks(ts.id_templateShift).catch(() => []),
       ]);
       ts._employees = emps;
       ts._taskLists = tls;
+      ts._tasks     = tks;
     }));
 
     // 3. Create application record (best-effort — backend may not have endpoint yet)
@@ -559,6 +586,14 @@ async function applyTemplate() {
           }).catch(() => {});
         }
 
+        // Attach individual tasks (if any)
+        for (const tk of (ts._tasks || [])) {
+          await apiClient.post("/shift-tasks", {
+            id_shift: newShift.id_shift,
+            id_task:  tk.id_task,
+          }).catch(() => {});
+        }
+
         // Link shift to application so future edits can sync
         if (application) {
           await createTemplateApplicationShift({
@@ -589,6 +624,26 @@ const datePicker = ref({
   viewMonth: new Date().getMonth(), // 0-11
 });
 
+// Existing shifts for the department, keyed by YYYY-MM-DD. Fetched lazily
+// on first picker-open so we can highlight empty weeks / busy days in the
+// calendar grid.
+const existingShiftDates = ref(new Set());
+let _shiftsFetched = false;
+async function loadExistingShiftDates() {
+  if (_shiftsFetched) return;
+  _shiftsFetched = true;
+  try {
+    const deptId = selectedDeptId.value;
+    const qs = deptId ? `?id_department=${deptId}` : "";
+    const { data } = await apiClient.get(`/shifts${qs}`);
+    const set = new Set();
+    for (const s of (data || [])) {
+      if (s.date) set.add(String(s.date).slice(0, 10));
+    }
+    existingShiftDates.value = set;
+  } catch (_) { /* non-critical — hints just won't appear */ }
+}
+
 function openPicker(field, currentValue) {
   // Toggle if already open on the same field
   if (datePicker.value.open && datePicker.value.field === field) {
@@ -602,6 +657,7 @@ function openPicker(field, currentValue) {
     viewYear: base.getFullYear(),
     viewMonth: base.getMonth(),
   };
+  loadExistingShiftDates();
 }
 
 function closePicker() {
@@ -647,6 +703,28 @@ function isPickerDaySelected(day) {
   if (!value) return false;
   const iso = `${datePicker.value.viewYear}-${pad2(datePicker.value.viewMonth + 1)}-${pad2(day)}`;
   return value === iso;
+}
+
+function isoForPickerDay(day) {
+  return `${datePicker.value.viewYear}-${pad2(datePicker.value.viewMonth + 1)}-${pad2(day)}`;
+}
+function isPickerDayBusy(day) {
+  return existingShiftDates.value.has(isoForPickerDay(day));
+}
+// True when the calendar week (Sun-Sat) containing this day has no shifts
+// anywhere on it. Used to tint a whole row of the picker grid.
+function isPickerDayInEmptyWeek(day) {
+  if (!existingShiftDates.value.size) return false;
+  const d = new Date(datePicker.value.viewYear, datePicker.value.viewMonth, day);
+  const sunday = new Date(d);
+  sunday.setDate(d.getDate() - d.getDay());
+  for (let i = 0; i < 7; i++) {
+    const cur = new Date(sunday);
+    cur.setDate(sunday.getDate() + i);
+    const iso = `${cur.getFullYear()}-${pad2(cur.getMonth() + 1)}-${pad2(cur.getDate())}`;
+    if (existingShiftDates.value.has(iso)) return false;
+  }
+  return true;
 }
 
 function isPickerDayToday(day) {
@@ -1077,6 +1155,7 @@ watch(() => applyModal.value.open, (v) => { if (!v) closePicker(); });
 }
 .dpc-cell {
   aspect-ratio: 1;
+  position: relative;
   display: flex; align-items: center; justify-content: center;
   font-size: 14px;
   color: var(--tx-primary);
@@ -1086,6 +1165,38 @@ watch(() => applyModal.value.open, (v) => { if (!v) closePicker(); });
   transition: background .12s, color .12s, border-color .12s;
   user-select: none;
 }
+/* Day has existing shifts — small dot under the number */
+.dpc-cell--busy:not(.dpc-selected)::after {
+  content: "";
+  position: absolute; bottom: 3px; left: 50%;
+  transform: translateX(-50%);
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--accent);
+  opacity: .75;
+}
+/* Day is in a week with no shifts anywhere — subtle green tint on the whole
+   row of cells gives a scannable "available week" hint. */
+.dpc-cell--open:not(.dpc-empty):not(.dpc-selected):not(.dpc-disabled) {
+  background: rgba(34, 197, 94, 0.10);
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.28);
+}
+.dpc-cell--open:not(.dpc-empty):not(.dpc-selected):not(.dpc-disabled):hover {
+  background: rgba(34, 197, 94, 0.20);
+}
+.dpc-legend {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 6px; padding: 6px 2px 0;
+  border-top: 1px solid var(--bdr-subtle);
+  font-size: 11px;
+  color: var(--tx-faint);
+  font-family: 'DM Mono', monospace;
+}
+.dpc-legend-dot {
+  width: 8px; height: 8px; border-radius: 2px;
+  margin-left: 2px;
+}
+.dpc-legend-dot--open { background: rgba(34, 197, 94, 0.28); box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.55); border-radius: 3px; }
+.dpc-legend-dot--busy { border-radius: 50%; background: var(--accent); opacity: .75; }
 .dpc-cell:hover:not(.dpc-empty):not(.dpc-disabled) {
   background: var(--bg-hover);
   color: var(--tx-heading);

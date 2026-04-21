@@ -141,6 +141,8 @@
     </div>
 
     <CommandPalette />
+    <ShortcutCheatsheet />
+    <ToastHost />
   </div>
 </template>
 
@@ -157,6 +159,8 @@ import { usePreferences } from "../composables/usePreferences.js";
 import DeptSwitcher from "../components/DeptSwitcher.vue";
 import NotificationBell from "../components/NotificationBell.vue";
 import CommandPalette from "../components/CommandPalette.vue";
+import ToastHost from "../components/ToastHost.vue";
+import ShortcutCheatsheet from "../components/ShortcutCheatsheet.vue";
 
 const router = useRouter();
 const route  = useRoute();

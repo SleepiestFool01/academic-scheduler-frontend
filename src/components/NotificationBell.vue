@@ -57,7 +57,7 @@
                   <div class="emp-avatar" :style="{ background: colorFor(t.id_employee) }">{{ initials(t._employee) }}</div>
                   <div class="bell-item-text">
                     <p class="bell-item-title">{{ nameOf(t._employee) }}</p>
-                    <p class="bell-item-sub">{{ t.startDate }} → {{ t.endDate }}</p>
+                    <p class="bell-item-sub">{{ formatDateShort(t.startDate) }} → {{ formatDateShort(t.endDate) }}</p>
                   </div>
                 </div>
                 <div class="bell-item-actions" @click.stop>
@@ -100,6 +100,7 @@ import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useNotifications } from "../composables/useNotifications.js";
 import { getAllDepartments } from "../services/departmentService.js";
+import { formatDateShort } from "../utils/dateFormat.js";
 
 const router = useRouter();
 const {
