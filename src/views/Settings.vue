@@ -478,4 +478,13 @@ onMounted(async () => {
 .save-success {
   margin-top: 14px; font-size: 13px; color: #4ade80;
 }
+
+/* Mobile: tighten the settings card padding and let the page header wrap. */
+@media (max-width: 599.98px) {
+  .content { padding: 20px 14px 40px; }
+  .page-header { flex-wrap: wrap; }
+  .page-heading { font-size: 22px; }
+  .settings-card { padding: 18px 16px; }
+  .account-row { flex-wrap: wrap; }
+}
 </style>

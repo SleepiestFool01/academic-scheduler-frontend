@@ -17,7 +17,7 @@
 
     <div class="layout">
 
-      <!-- ── Sidebar ── (hidden on phone — its content lives in the agenda + drawer) -->
+      <!-- ── Sidebar ── (fully hidden on phone — calendar takes the full viewport) -->
       <aside v-if="!isPhone" class="sidebar">
         <div class="mini-cal-header">
           <button class="cal-nav-btn" @click="navigate(-1)">‹</button>
@@ -32,8 +32,8 @@
             @click="jumpToDay(day)">{{ day }}</div>
         </div>
 
-        <!-- ══ MANAGER SIDEBAR ══ -->
-        <div v-if="isManager" class="sidebar-section">
+        <!-- ══ MANAGER SIDEBAR ══ (hidden on phone per mobile design) -->
+        <div v-if="isManager && !isPhone" class="sidebar-section">
           <div class="sidebar-sec-header clickable" @click="router.push('/tradeboard')">
             <span class="sidebar-sec-title">Tradeboard</span>
             <span v-if="managerTradeboardItems.length" class="sidebar-sec-count">{{ managerTradeboardItems.length }}</span>
@@ -58,7 +58,7 @@
           </div>
         </div>
 
-        <div v-if="isManager" class="sidebar-section">
+        <div v-if="isManager && !isPhone" class="sidebar-section">
           <div class="sidebar-sec-header clickable" @click="router.push('/requests')">
             <span class="sidebar-sec-title">Requests</span>
             <span v-if="managerRequestItems.length" class="sidebar-sec-count">{{ managerRequestItems.length }}</span>
@@ -78,7 +78,7 @@
           </div>
         </div>
 
-        <div v-if="isManager" class="sidebar-section">
+        <div v-if="isManager && !isPhone" class="sidebar-section">
           <div class="sidebar-sec-header">
             <span class="sidebar-sec-title">Open Shifts</span>
             <span class="sidebar-sec-sub">this week</span>
@@ -94,7 +94,7 @@
           </div>
         </div>
 
-        <div v-if="isManager" class="sidebar-section">
+        <div v-if="isManager && !isPhone" class="sidebar-section">
           <div class="sidebar-sec-header">
             <span class="sidebar-sec-title">Today's Employees</span>
             <span v-if="todaysEmployees.length" class="sidebar-sec-count">{{ todaysEmployees.length }}</span>
@@ -103,7 +103,7 @@
           <div v-if="todaysEmployees.length === 0" class="sidebar-empty">No shifts today</div>
         </div>
 
-        <div v-if="isManager" class="sidebar-section">
+        <div v-if="isManager && !isPhone" class="sidebar-section">
           <div class="sidebar-sec-header">
             <span class="sidebar-sec-title">Weekly Hours</span>
             <span v-if="weeklyTotalHours" class="sidebar-sec-count">{{ weeklyTotalHours }}h</span>
@@ -123,8 +123,8 @@
 
         <!-- ══ EMPLOYEE SIDEBAR ══ -->
 
-        <!-- 1. My Shifts Today -->
-        <div v-if="!isManager" class="sidebar-section">
+        <!-- 1. My Shifts Today (hidden on phone per mobile design) -->
+        <div v-if="!isManager && !isPhone" class="sidebar-section">
           <div class="sidebar-sec-header">
             <span class="sidebar-sec-title">My Shifts Today</span>
             <span v-if="myTodayShifts.length" class="sidebar-sec-count">{{ myTodayShifts.length }}</span>
@@ -136,8 +136,8 @@
           </div>
         </div>
 
-        <!-- 2. Tasks -->
-        <div v-if="!isManager" class="sidebar-section">
+        <!-- 2. Tasks (hidden on phone per mobile design) -->
+        <div v-if="!isManager && !isPhone" class="sidebar-section">
           <div class="sidebar-sec-header">
             <span class="sidebar-sec-title">Tasks</span>
             <span v-if="myShiftTasksTotal > 0" class="sidebar-sec-count">{{ myShiftTasksDone }}/{{ myShiftTasksTotal }}</span>
@@ -165,8 +165,8 @@
           </template>
         </div>
 
-        <!-- 3. Tradeboard -->
-        <div v-if="!isManager" class="sidebar-section">
+        <!-- 3. Tradeboard (hidden on phone per mobile design) -->
+        <div v-if="!isManager && !isPhone" class="sidebar-section">
           <div class="sidebar-sec-header clickable" @click="router.push('/tradeboard')">
             <span class="sidebar-sec-title">Tradeboard</span>
             <span v-if="tradeboardOpenShifts.length" class="sidebar-sec-count">{{ tradeboardOpenShifts.length }}</span>
@@ -181,8 +181,8 @@
           </div>
         </div>
 
-        <!-- 4. Requests -->
-        <div v-if="!isManager" class="sidebar-section">
+        <!-- 4. Requests (hidden on phone per mobile design) -->
+        <div v-if="!isManager && !isPhone" class="sidebar-section">
           <div class="sidebar-sec-header clickable" @click="router.push('/requests')">
             <span class="sidebar-sec-title">My Requests</span>
             <span v-if="myRequestsUnified.length" class="sidebar-sec-count">{{ myRequestsUnified.length }}</span>
@@ -4095,12 +4095,15 @@ onMounted(async () => {
   await loadAll();
   // Apply calendar display prefs as initial view. Only override the mount
   // default (no user interaction yet), so prefs don't yank the view while
-  // someone's navigating.
+  // someone's navigating. Phones always start on Day — Week/Month at 390px
+  // is too cramped to be the landing view regardless of the saved pref.
   try {
     await prefsReady();
-    const pref = userPrefs.calendarDisplay?.defaultView;
-    if (pref === "day" || pref === "week" || pref === "month") {
-      calView.value = pref.charAt(0).toUpperCase() + pref.slice(1);
+    if (!isPhone.value) {
+      const pref = userPrefs.calendarDisplay?.defaultView;
+      if (pref === "day" || pref === "week" || pref === "month") {
+        calView.value = pref.charAt(0).toUpperCase() + pref.slice(1);
+      }
     }
   } catch (_) { /* non-fatal */ }
   loadTemplatesForDropdown();
@@ -5534,9 +5537,11 @@ function fitToView() {
   .cal-toolbar {
     flex-wrap: wrap;
     padding: 8px 10px;
-    gap: 8px;
+    gap: 6px 8px;
   }
-  .cal-nav-group { flex: 1 1 auto; }
+  /* Row 1: full-width nav (‹ date › Today). Forcing 100% basis avoids the
+     toolbar collapsing into 3 awkwardly-sized rows at 390px. */
+  .cal-nav-group { flex: 1 1 100%; }
   .cal-range-label {
     font-size: 13px;
     flex: 1;
@@ -5545,17 +5550,18 @@ function fitToView() {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* Row 2 layout (using CSS `order` so DOM order stays manager-friendly):
-     view dropdown + fit on the LEFT, templates in the MIDDLE, add-shift
-     on the RIGHT. Two `margin-left: auto` stops distribute slack space
-     between the left cluster / templates / add-shift so templates floats
-     near the center regardless of which items are present. */
-  .cal-toolbar { gap: 6px 8px; }
+  /* Row 2: view dropdown + Fit on the LEFT, Apply Schedule in the MIDDLE,
+     Add Shift on the RIGHT. `order` places items independent of DOM order;
+     two `margin-left: auto` stops distribute slack between clusters. */
   .cal-toolbar .cal-nav-group      { order: 1; }
   .cal-toolbar .view-dropdown-wrap { order: 2; }
   .cal-toolbar .zoom-group         { order: 3; }
   .cal-toolbar .tpl-dropdown-wrap  { order: 4; margin-left: auto; }
-  .cal-toolbar .add-shift-btn      { order: 5; margin-left: auto; padding: 8px 14px; font-size: 14px; }
+  .cal-toolbar .add-split-btn      { order: 5; margin-left: auto; }
+  /* Shrink the split "Add Shift" button so it fits alongside view + fit + apply. */
+  .add-split-main   { padding: 7px 10px 7px 10px; font-size: 13px; gap: 4px; }
+  .add-split-toggle { width: 22px; }
+  .add-split-plus   { font-size: 14px; }
 
   .tpl-dropdown-btn { padding: 8px 10px; font-size: 13px; min-height: var(--tap-target-min); }
   .tpl-dropdown-btn span { display: none; }
@@ -5602,6 +5608,7 @@ function fitToView() {
   .month-event-pill { font-size: 9px; padding: 1px 3px; gap: 2px; min-width: 0; }
   .month-event-name { font-size: 9px; min-width: 0; }
   .month-dow { font-size: 11px; padding: 6px 0; }
+
 }
 
 /* Tablet — narrower sidebar so the calendar gets more width. */

@@ -473,4 +473,18 @@ function shortDate(d) { const [,m,dd]  = d.split("-").map(Number); return `${m}/
   animation: pulse 1.6s ease-in-out infinite;
 }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+/* Mobile: the 4-column shift row (day / time / position / notes) is ~430px
+   wide minimum; at 390px it collapses badly. Stack the cells vertically and
+   tighten padding so everything reads cleanly on a phone. */
+@media (max-width: 599.98px) {
+  .content { padding: 16px 14px 32px; gap: 24px; }
+  .section-header { flex-wrap: wrap; gap: 4px; }
+  .shift-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+    padding: 12px 14px;
+  }
+  .col-day, .col-time, .col-pos, .col-notes { font-size: 14px; }
+}
 </style>

@@ -1438,4 +1438,15 @@ watch(() => applyModal.value.open, (v) => { if (!v) closePicker(); });
   opacity: 0;
   transform: scale(.96) translateY(-4px);
 }
+
+/* Mobile: reduce content padding and let the search input grow to fill the
+   row next to the "+ New Template" button. Card grid already uses
+   auto-fill/minmax(300px,1fr) so cards drop to one-per-row naturally. */
+@media (max-width: 599.98px) {
+  .content { padding: 20px 14px 40px; }
+  .panel-title { font-size: 20px; }
+  .panel-sub { font-size: 14px; }
+  .search-input { width: 100%; flex: 1 1 140px; }
+  .panel-header-actions { width: 100%; }
+}
 </style>

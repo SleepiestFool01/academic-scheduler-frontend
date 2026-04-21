@@ -430,6 +430,20 @@ onBeforeUnmount(() => {
   flex-direction: column;
 }
 
+/* Mobile: let the content area scroll vertically. Desktop keeps `overflow:
+   hidden` so Dashboard's fixed-grid layout and other desktop panes render
+   exactly as before. On phones, pages like Templates/Manage/Tradeboard are
+   taller than the ~784px usable height and were being clipped silently.
+   Dashboard is unaffected — its `.app` sets its own `overflow: hidden` and
+   sizes to fill the container, so no inner overflow reaches this scroll. */
+@media (max-width: 599.98px) {
+  .layout-content {
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
 /* ── Profile panel ── */
 .profile-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.45);
