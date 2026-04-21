@@ -1114,4 +1114,16 @@ async function executeDelete() {
 .emp-task-label { font-size: 16px; color: var(--tx-primary); flex: 1; line-height: 1.4; }
 .emp-task-label.done { color: var(--tx-faint); text-decoration: line-through; text-decoration-color: var(--tx-ghost); }
 .emp-done-badge { font-size: 12px; font-weight: 600; color: var(--ok-text); background: var(--ok-bg); border-radius: 10px; padding: 2px 8px; border: 1px solid rgba(34,197,94,0.25); flex-shrink: 0; }
+
+/* Mobile: the 4-column "All Tasks" manager table doesn't have a card
+   alternative, so let it scroll horizontally rather than clip. The page
+   header cluster also needs to wrap tightly on narrow viewports. */
+@media (max-width: 599.98px) {
+  .content { padding: 20px 14px 40px; }
+  .page-header { flex-wrap: wrap; gap: 10px; }
+  .page-heading { font-size: 22px; }
+  .sub-tabs { flex-wrap: wrap; }
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .data-table { min-width: 520px; }
+}
 </style>
