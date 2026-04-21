@@ -367,6 +367,7 @@ import { useRouter, useRoute } from "vue-router";
 import { useTheme } from "../composables/useTheme.js";
 import { useDepartment } from "../composables/useDepartment.js";
 import { useBreakpoint } from "../composables/useBreakpoint.js";
+import { usePreferences } from "../composables/usePreferences.js";
 import EmployeePicker from "../components/EmployeePicker.vue";
 import Utils from "../config/utils.js";
 import {
@@ -1478,19 +1479,17 @@ async function confirmQuickCreate() {
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
+const { fmtHour, preferences: userPrefs } = usePreferences();
+
+// Hour-axis label on the calendar time gutter. 12h mode shows "12 AM / 6 AM /
+// 12 PM"; 24h mode shows zero-padded "00 / 06 / 12".
 function formatHour(h) {
+  if (userPrefs.calendarDisplay?.timeFormat === "24h") {
+    return String(h).padStart(2, "0");
+  }
   if (h === 0)  return "12 AM";
   if (h === 12) return "12 PM";
   return h < 12 ? `${h} AM` : `${h - 12} PM`;
-}
-
-function fmtHour(h) {
-  const total  = Math.round(h * 60);
-  const hr     = Math.floor(total / 60);
-  const min    = total % 60;
-  const suffix = hr >= 12 ? "pm" : "am";
-  const disp   = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
-  return min === 0 ? `${disp}${suffix}` : `${disp}:${String(min).padStart(2, "0")}${suffix}`;
 }
 
 function toTimeInput(h) {

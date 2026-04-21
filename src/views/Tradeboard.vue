@@ -453,9 +453,11 @@ import { useDepartment } from "../composables/useDepartment.js";
 import { useNotifications } from "../composables/useNotifications.js";
 import { useTheme } from "../composables/useTheme.js";
 import { useBreakpoint } from "../composables/useBreakpoint.js";
+import { usePreferences } from "../composables/usePreferences.js";
 
 const { dismiss: dismissNotification, lastActionAt: notifActionAt } = useNotifications();
 const { isPhone } = useBreakpoint();
+const { preferences: userPrefs } = usePreferences();
 import DeptSwitcher from "../components/DeptSwitcher.vue";
 import apiClient from "../services/services.js";
 import { timeStrToHour, fmtHour } from "../services/employeeManagementService.js";
@@ -664,8 +666,13 @@ const myClaims = computed(() =>
 );
 const myPosts = computed(() => {
   const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  // Respect the "Hide declined trades" preference: when on, omit any of my
+  // posts that were denied so my recent-posts list only surfaces active +
+  // successful swaps. Default is on.
+  const hideDeclined = userPrefs.tradeboardPrefs?.hideDeclined !== false;
   return swapRequests.value.filter(r => {
     if (r.id_employeeRequester !== currentUser.value.id_employee) return false;
+    if (hideDeclined && r.status === "Denied") return false;
     const ts = new Date(r.updatedAt || r.createdAt || 0).getTime();
     return ts >= cutoff;
   });

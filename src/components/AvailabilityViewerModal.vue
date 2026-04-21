@@ -50,6 +50,7 @@
 import { ref, computed, watch } from "vue";
 import { getUnavailability } from "../services/unavailabilityService.js";
 import { useUnavailabilityRefresh } from "../composables/useUnavailabilityRefresh.js";
+import { usePreferences } from "../composables/usePreferences.js";
 
 const props = defineProps({
   open:     { type: Boolean, default: false },
@@ -71,13 +72,7 @@ const employeeName = computed(() => {
   return e ? `${e.fName || ""} ${e.lName || ""}`.trim() || `Employee #${e.id_employee}` : "";
 });
 
-function fmtHour(h) {
-  const hr = Math.floor(h);
-  const min = Math.round((h - hr) * 60);
-  const suffix = hr >= 12 ? "pm" : "am";
-  const disp = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
-  return min === 0 ? `${disp}${suffix}` : `${disp}:${String(min).padStart(2,"0")}${suffix}`;
-}
+const { fmtHour } = usePreferences();
 function timeStrToHour(t) {
   if (!t) return 0;
   const [h, m] = t.split(":").map(Number);

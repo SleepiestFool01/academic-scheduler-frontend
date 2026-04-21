@@ -881,6 +881,7 @@ import AuthServices from "../services/authServices.js";
 import { useTheme } from "../composables/useTheme.js";
 import { useDepartment } from "../composables/useDepartment.js";
 import { useBreakpoint } from "../composables/useBreakpoint.js";
+import { usePreferences } from "../composables/usePreferences.js";
 import DeptSwitcher from "../components/DeptSwitcher.vue";
 import EmployeePicker from "../components/EmployeePicker.vue";
 import UnavailabilityConflictModal from "../components/UnavailabilityConflictModal.vue";
@@ -1269,6 +1270,7 @@ const currentTimeHour = ref(new Date().getHours() + new Date().getMinutes() / 60
 const currentUser = ref(Utils.getStore("user") || { fName: "?", lName: "?" });
 
 const { myDepts, selectedDeptId, loadDepts } = useDepartment();
+const { preferences: userPrefs, ready: prefsReady, fmtHour } = usePreferences();
 const userInitials = computed(() => {
   const u = currentUser.value;
   return `${u.fName?.[0] ?? ""}${u.lName?.[0] ?? ""}`.toUpperCase() || "??";
@@ -1933,7 +1935,13 @@ function isMonthSelected(day) {
 }
 
 // ── Formatting ─────────────────────────────────────────────────────────────────
+// Hour-axis label on the calendar time gutter. 12h mode shows "12 AM / 6 AM /
+// 12 PM"; 24h mode shows zero-padded "00 / 06 / 12". Both drop ":00" since
+// this only renders whole-hour ticks.
 function formatHour(h) {
+  if (userPrefs.calendarDisplay?.timeFormat === "24h") {
+    return String(h).padStart(2, "0");
+  }
   if (h === 0)  return "12 AM";
   if (h === 12) return "12 PM";
   return h < 12 ? `${h} AM` : `${h - 12} PM`;
@@ -1995,14 +2003,6 @@ function eventsForMonthDay(day) {
   const d   = monthViewDate.value;
   const key = dateToKey(new Date(d.getFullYear(), d.getMonth(), day));
   return deptEvents.value.filter(ev => ev.start_time && new Date(ev.start_time).toISOString().slice(0, 10) === key);
-}
-function fmtHour(h) {
-  const total  = Math.round(h * 60);
-  const hr     = Math.floor(total / 60);
-  const min    = total % 60;
-  const suffix = hr >= 12 ? "pm" : "am";
-  const disp   = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
-  return min === 0 ? `${disp}${suffix}` : `${disp}:${String(min).padStart(2,"0")}${suffix}`;
 }
 function toTimeInput(h) {
   const total = Math.round(h * 60);
@@ -2413,7 +2413,17 @@ async function deleteShift(id) {
 }
 function openBlankModal() {
   editingShiftId.value = null;
-  newShift.value = { employee: "", id_employee: null, id_position: positions.value[0]?.id_position ?? null, dayIndex: 0, startTime: "09:00", endTime: "17:00", notes: "" };
+  // Seed end time from the manager's "Default shift duration" preference
+  // (minutes) so creating new shifts respects per-dept defaults. Falls back
+  // to 480 min (8h → 09:00–17:00) when no pref is set.
+  const startHHMM = "09:00";
+  const durationMin = Number(userPrefs.managerPrefs?.defaultShiftMinutes);
+  const safeDuration = Number.isFinite(durationMin) && durationMin > 0 ? durationMin : 480;
+  const [sh, sm] = startHHMM.split(":").map(Number);
+  const endTotal = Math.min(24 * 60 - 1, sh * 60 + sm + safeDuration);
+  const eh = String(Math.floor(endTotal / 60)).padStart(2, "0");
+  const em = String(endTotal % 60).padStart(2, "0");
+  newShift.value = { employee: "", id_employee: null, id_position: positions.value[0]?.id_position ?? null, dayIndex: 0, startTime: startHHMM, endTime: `${eh}:${em}`, notes: "" };
   showAddModal.value = true;
 }
 async function addShift() {
@@ -3235,6 +3245,16 @@ onMounted(async () => {
   // departments via the employeeDepartment junction and need the switcher.
   await loadDepts(currentUser.value);
   await loadAll();
+  // Apply calendar display prefs as initial view. Only override the mount
+  // default (no user interaction yet), so prefs don't yank the view while
+  // someone's navigating.
+  try {
+    await prefsReady();
+    const pref = userPrefs.calendarDisplay?.defaultView;
+    if (pref === "day" || pref === "week" || pref === "month") {
+      calView.value = pref.charAt(0).toUpperCase() + pref.slice(1);
+    }
+  } catch (_) { /* non-fatal */ }
   loadTemplatesForDropdown();
   window.addEventListener("click", onDocClickForTemplate);
   if (calBody.value) calBody.value.scrollTop = 7 * cellHeight.value; // scroll to 7am

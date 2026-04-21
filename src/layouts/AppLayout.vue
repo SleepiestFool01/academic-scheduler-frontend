@@ -103,7 +103,14 @@
             <span class="profile-role-badge" :class="currentUser?.role?.toLowerCase()">{{ currentUser?.role }}</span>
           </div>
           <div class="profile-divider"></div>
-          <button class="logout-btn" @click="logout">
+          <button class="profile-action-btn" @click="goToSettings">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Settings
+          </button>
+          <button class="profile-action-btn" @click="logout">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
               <polyline points="16,17 21,12 16,7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -130,6 +137,7 @@ import { useTheme } from "../composables/useTheme.js";
 import { useDepartment } from "../composables/useDepartment.js";
 import { useNotifications } from "../composables/useNotifications.js";
 import { useBreakpoint } from "../composables/useBreakpoint.js";
+import { usePreferences } from "../composables/usePreferences.js";
 import DeptSwitcher from "../components/DeptSwitcher.vue";
 import NotificationBell from "../components/NotificationBell.vue";
 
@@ -139,6 +147,7 @@ const { isDark, toggleTheme } = useTheme();
 const { myDepts, loadDepts } = useDepartment();
 const { countsByRoute, startPolling, stopPolling } = useNotifications();
 const { isTouch } = useBreakpoint();
+const { preferences: userPrefs, ready: prefsReady } = usePreferences();
 
 const currentUser = ref(Utils.getStore("user") || { fName: "?", lName: "?" });
 const profileOpen = ref(false);
@@ -186,6 +195,11 @@ function isActive(tab) {
   return route.path === tab.route || route.path.startsWith(tab.route + "/");
 }
 
+function goToSettings() {
+  profileOpen.value = false;
+  router.push("/settings");
+}
+
 async function logout() {
   try {
     const user = Utils.getStore("user");
@@ -216,6 +230,11 @@ async function maybeAutoSync() {
   const user = currentUser.value;
   if (!user || !user.id_employee) return;
   if (user.role !== "Employee") return;
+  // Respect the user's per-department auto-sync preference. Wait for the
+  // prefs to arrive first so we don't fall back to the (true) default and
+  // fire a sync the user intentionally disabled.
+  await prefsReady();
+  if (userPrefs.availabilityPrefs?.autoSyncClassSchedule === false) return;
   // Heuristic pre-check: we don't know the semester yet, but we can skip
   // the network call if we've synced ANYTHING recently (last 6 hours).
   // The backend is the real source of truth and will rate-limit if we're
@@ -402,12 +421,13 @@ onBeforeUnmount(() => {
 .profile-role-badge.admin    { background: rgba(240,230,211,0.1); color: #F0E6D3; border: 1px solid rgba(240,230,211,0.2); }
 .profile-role-badge.employee { background: var(--bg-active); color: var(--tx-secondary); border: 1px solid var(--bdr-subtle); }
 .profile-divider { height: 1px; background: var(--bdr-subtle); }
-.logout-btn {
+.profile-action-btn {
   display: flex; align-items: center; gap: 10px; background: none; border: 1px solid var(--bdr-medium);
   color: var(--tx-muted); padding: 10px 16px; border-radius: 8px; cursor: pointer;
   font-family: 'Satoshi', sans-serif; font-size: 14px; transition: color 0.15s, border-color 0.15s;
 }
-.logout-btn:hover { color: var(--accent); border-color: var(--accent); }
+.profile-action-btn:hover { color: var(--accent); border-color: var(--accent); }
+.profile-action-btn + .profile-action-btn { margin-top: 8px; }
 
 .slide-right-enter-active, .slide-right-leave-active { transition: opacity 0.25s, transform 0.25s; }
 .slide-right-enter-from .profile-panel, .slide-right-leave-to .profile-panel { transform: translateX(100%); }

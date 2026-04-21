@@ -13,6 +13,7 @@
  */
 
 import apiClient from "./services.js";
+import { fmtHour as _fmtHour } from "../composables/usePreferences.js";
 
 // ── Route prefix constants — matched to app/routes/index.js ──────────────────
 const EMPLOYEES    = "/employees";         // router.use("/employees", EmployeeRoutes)
@@ -41,19 +42,10 @@ function timeStrToHour(t) {
   return h + m / 60;
 }
 
-/**
- * Format a fractional hour → display label ("9:30am")
- */
-export function fmtHour(h) {
-  const total  = Math.round(h * 60);
-  const hr     = Math.floor(total / 60);
-  const min    = total % 60;
-  const suffix = hr >= 12 ? "pm" : "am";
-  const disp   = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
-  return min === 0
-    ? `${disp}${suffix}`
-    : `${disp}:${String(min).padStart(2, "0")}${suffix}`;
-}
+// Format a fractional hour → display label, honoring the user's timeFormat
+// preference. Re-exports the composable's singleton so every call site —
+// including service-level label pre-computation — flows from one source.
+export const fmtHour = _fmtHour;
 
 /**
  * Day-of-week integer → Shift.day ENUM value
