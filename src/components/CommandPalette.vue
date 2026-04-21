@@ -94,6 +94,7 @@ const allItems = computed(() => {
     { id: "nav-tradeboard", label: "Tradeboard",  group: "Navigation", icon: ICONS.inbox,     action: () => router.push("/tradeboard") },
     { id: "nav-tasks",      label: "Tasks",       group: "Navigation", icon: ICONS.check,     action: () => router.push("/tasks") },
     { id: "nav-shifts",     label: "Shifts",      group: "Navigation", icon: ICONS.calendar,  action: () => router.push("/shifts") },
+    { id: "nav-time",       label: "Time",        group: "Navigation", icon: ICONS.calendar,  action: () => router.push("/time") },
     { id: "nav-requests",   label: "Requests",    group: "Navigation", icon: ICONS.inbox,     action: () => router.push("/requests") },
     ...(!isManager.value ? [
       { id: "nav-availability", label: "Availability", group: "Navigation", icon: ICONS.calendar, action: () => router.push("/availability") },
