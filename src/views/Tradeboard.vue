@@ -893,7 +893,12 @@ async function updateStatus(r, status) {
 .data-table tr:hover td { background: var(--bg-hover); }
 .empty-row { text-align: center; color: var(--tx-ghost); font-style: italic; padding: 32px 0 !important; }
 
-.mono { font-family: 'DM Mono', monospace; font-size: 14px; }
+.mono {
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-size: 14px; font-weight: 500;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
 
 /* ── Employee cells ── */
 .emp-cell { display: flex; align-items: center; gap: 8px; }

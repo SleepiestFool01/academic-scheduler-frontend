@@ -77,6 +77,10 @@ export async function createTemplateApplication(payload) {
   const res = await apiClient.post(`/template-applications`, payload);
   return res.data;
 }
+export async function listTemplateApplications(id_template) {
+  const res = await apiClient.get(`/template-applications?id_template=${id_template}`);
+  return res.data;
+}
 export async function getTemplateApplicationShifts(id_templateShift) {
   const res = await apiClient.get(`/template-application-shifts?id_templateShift=${id_templateShift}`);
   return res.data;

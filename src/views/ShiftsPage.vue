@@ -29,7 +29,9 @@
           <p class="empty-text">No past shifts this week.</p>
         </div>
         <div v-else class="groups-list">
-          <div v-for="group in groupByEmployee(pastShifts)" :key="group.employeeId" class="group-card group-card--past">
+          <div v-for="group in groupByEmployee(pastShifts)" :key="group.employeeId"
+            class="group-card group-card--past"
+            :class="{ 'group-card--open': group.employeeId === 'unassigned' }">
             <div class="group-header">
               <div class="emp-avatar" :style="{ background: avatarColor(group.employeeId) }">{{ group.initials }}</div>
               <span class="group-name">{{ group.employeeName }}</span>
@@ -62,7 +64,9 @@
           <p class="empty-text">No shifts scheduled for today.</p>
         </div>
         <div v-else class="groups-list">
-          <div v-for="group in groupByEmployee(currentShifts)" :key="group.employeeId" class="group-card">
+          <div v-for="group in groupByEmployee(currentShifts)" :key="group.employeeId"
+            class="group-card"
+            :class="{ 'group-card--open': group.employeeId === 'unassigned' }">
             <div class="group-header">
               <div class="emp-avatar" :style="{ background: avatarColor(group.employeeId) }">{{ group.initials }}</div>
               <span class="group-name">{{ group.employeeName }}</span>
@@ -99,7 +103,9 @@
           <p class="empty-text">No upcoming shifts this week.</p>
         </div>
         <div v-else class="groups-list">
-          <div v-for="group in groupByEmployee(upcomingShifts)" :key="group.employeeId" class="group-card">
+          <div v-for="group in groupByEmployee(upcomingShifts)" :key="group.employeeId"
+            class="group-card"
+            :class="{ 'group-card--open': group.employeeId === 'unassigned' }">
             <div class="group-header">
               <div class="emp-avatar" :style="{ background: avatarColor(group.employeeId) }">{{ group.initials }}</div>
               <span class="group-name">{{ group.employeeName }}</span>
@@ -238,7 +244,7 @@ function groupByEmployee(shifts) {
   const map = new Map();
   for (const s of shifts) {
     const key  = s.id_employee ?? "unassigned";
-    const name = s.employee   || "Unassigned";
+    const name = s.employee   || "Open";
     if (!map.has(key)) {
       const parts    = name.split(" ");
       const initials = parts.length >= 2
@@ -377,6 +383,31 @@ function shortDate(d) { const [,m,dd]  = d.split("-").map(Number); return `${m}/
 }
 .group-card--past { opacity: 0.6; }
 
+.group-card--open {
+  background: transparent;
+  border: 1.5px dashed rgba(240, 230, 211, 0.45);
+}
+.group-card--open .group-header {
+  background: rgba(240, 230, 211, 0.04);
+  border-bottom-color: rgba(240, 230, 211, 0.2);
+}
+.group-card--open .group-name { font-style: italic; color: var(--tx-secondary); }
+.group-card--open .emp-avatar {
+  background: transparent !important;
+  border: 1.5px dashed rgba(240, 230, 211, 0.5);
+  color: rgba(240, 230, 211, 0.7);
+}
+
+[data-theme="light"] .group-card--open { border-color: rgba(0, 0, 0, 0.35); }
+[data-theme="light"] .group-card--open .group-header {
+  background: rgba(0, 0, 0, 0.02);
+  border-bottom-color: rgba(0, 0, 0, 0.12);
+}
+[data-theme="light"] .group-card--open .emp-avatar {
+  border-color: rgba(0, 0, 0, 0.4);
+  color: rgba(0, 0, 0, 0.55);
+}
+
 .group-header {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 16px;
@@ -421,7 +452,12 @@ function shortDate(d) { const [,m,dd]  = d.split("-").map(Number); return `${m}/
 .col-time { font-size: 15px; color: var(--tx-primary); font-weight: 500; }
 .col-notes { font-size: 14px; color: var(--tx-faint); }
 
-.mono { font-family: 'DM Mono', monospace; }
+.mono {
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
 
 .pos-badge {
   display: inline-block; padding: 2px 9px;

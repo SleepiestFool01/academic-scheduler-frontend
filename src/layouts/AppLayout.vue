@@ -101,8 +101,22 @@
             <h2 class="profile-name">{{ currentUser?.fName }} {{ currentUser?.lName }}</h2>
             <p class="profile-email">{{ currentUser?.email }}</p>
             <span class="profile-role-badge" :class="currentUser?.role?.toLowerCase()">{{ currentUser?.role }}</span>
+            <div v-if="currentDeptName" class="profile-dept">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                <path d="M3 21V9l9-6 9 6v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M9 21v-8h6v8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>{{ currentDeptName }}</span>
+            </div>
           </div>
           <div class="profile-divider"></div>
+          <button v-if="isManager" class="profile-action-btn" @click="goCreateDepartment">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            Add New Department
+          </button>
           <button class="profile-action-btn" @click="goToSettings">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
               <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
@@ -125,6 +139,10 @@
     <div class="layout-content">
       <router-view />
     </div>
+
+    <CommandPalette />
+    <ShortcutCheatsheet />
+    <ToastHost />
   </div>
 </template>
 
@@ -140,11 +158,17 @@ import { useBreakpoint } from "../composables/useBreakpoint.js";
 import { usePreferences } from "../composables/usePreferences.js";
 import DeptSwitcher from "../components/DeptSwitcher.vue";
 import NotificationBell from "../components/NotificationBell.vue";
+import CommandPalette from "../components/CommandPalette.vue";
+import ToastHost from "../components/ToastHost.vue";
+import ShortcutCheatsheet from "../components/ShortcutCheatsheet.vue";
 
 const router = useRouter();
 const route  = useRoute();
 const { isDark, toggleTheme } = useTheme();
-const { myDepts, loadDepts } = useDepartment();
+const { myDepts, selectedDeptId, loadDepts } = useDepartment();
+const currentDeptName = computed(() =>
+  myDepts.value.find(d => d.id_department === selectedDeptId.value)?.name || ""
+);
 const { countsByRoute, startPolling, stopPolling } = useNotifications();
 const { isTouch } = useBreakpoint();
 const { preferences: userPrefs, ready: prefsReady } = usePreferences();
@@ -193,6 +217,11 @@ const tabs = computed(() => {
 
 function isActive(tab) {
   return route.path === tab.route || route.path.startsWith(tab.route + "/");
+}
+
+function goCreateDepartment() {
+  profileOpen.value = false;
+  router.push({ path: "/department", query: { create: "1" } });
 }
 
 function goToSettings() {
@@ -420,12 +449,20 @@ onBeforeUnmount(() => {
 .profile-role-badge.manager  { background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent-border); }
 .profile-role-badge.admin    { background: rgba(240,230,211,0.1); color: #F0E6D3; border: 1px solid rgba(240,230,211,0.2); }
 .profile-role-badge.employee { background: var(--bg-active); color: var(--tx-secondary); border: 1px solid var(--bdr-subtle); }
+.profile-dept {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 6px;
+  font-size: 13px; color: var(--tx-secondary);
+  font-family: 'DM Mono', monospace;
+}
+.profile-dept svg { color: var(--tx-muted); flex-shrink: 0; }
 .profile-divider { height: 1px; background: var(--bdr-subtle); }
 .profile-action-btn {
   display: flex; align-items: center; gap: 10px; background: none; border: 1px solid var(--bdr-medium);
   color: var(--tx-muted); padding: 10px 16px; border-radius: 8px; cursor: pointer;
   font-family: 'Satoshi', sans-serif; font-size: 14px; transition: color 0.15s, border-color 0.15s;
 }
+.logout-btn:hover { color: var(--accent); border-color: var(--accent); }
 .profile-action-btn:hover { color: var(--accent); border-color: var(--accent); }
 .profile-action-btn + .profile-action-btn { margin-top: 8px; }
 
