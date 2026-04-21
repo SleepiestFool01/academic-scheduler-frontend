@@ -32,6 +32,7 @@ const router = createRouter({
         { path: "templates/:id",   component: () => import("./views/TemplateEditor.vue") },
         { path: "shifts",          component: () => import("./views/ShiftsPage.vue") },
         { path: "settings",        component: () => import("./views/Settings.vue") },
+        { path: "profile",         component: () => import("./views/ProfilePage.vue") },
       ],
     },
 

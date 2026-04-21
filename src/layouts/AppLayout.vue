@@ -110,6 +110,13 @@
             </div>
           </div>
           <div class="profile-divider"></div>
+          <button class="profile-action-btn" @click="goProfile">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="7.5" r="5" stroke="currentColor" stroke-width="2"/>
+              <path d="M4 21a8 8 0 0 1 16 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            Profile
+          </button>
           <button v-if="isManager" class="profile-action-btn" @click="goCreateDepartment">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
               <line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -217,6 +224,11 @@ const tabs = computed(() => {
 
 function isActive(tab) {
   return route.path === tab.route || route.path.startsWith(tab.route + "/");
+}
+
+function goProfile() {
+  profileOpen.value = false;
+  router.push("/profile");
 }
 
 function goCreateDepartment() {
