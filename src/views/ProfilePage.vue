@@ -1,30 +1,5 @@
 <template>
   <div class="page-root">
-    <div class="topnav">
-      <div class="nav-left">
-        <button class="back-btn" @click="router.push('/dashboard')">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          Dashboard
-        </button>
-        <div class="nav-logo">
-          <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
-            <rect x="2" y="4" width="11" height="7" rx="2" fill="#FF1744"/>
-            <rect x="15" y="4" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-            <rect x="2" y="14" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-            <rect x="15" y="14" width="11" height="7" rx="2" fill="#F0E6D3"/>
-          </svg>
-        </div>
-        <h1 class="page-title">Profile</h1>
-      </div>
-      <div class="nav-right">
-        <button class="primary-btn" @click="openEditProfile(currentUser)">
-          Edit Profile
-        </button>
-      </div>
-    </div>
-
     <div v-if="loading" class="loading-overlay">
       <div class="loading-spinner"></div>
       <span class="loading-text">Loading...</span>
@@ -44,6 +19,7 @@
         <h2 class="profile-name">{{ currentUser?.fName }} {{ currentUser?.lName }}</h2>
         <p class="profile-email">{{ currentUser?.email }}</p>
         <span class="profile-role-badge" :class="currentUser?.role?.toLowerCase()">{{ currentUser?.role }}</span>
+        <button class="edit-profile-btn" @click="openEditProfile(currentUser)">Edit Profile</button>
         <p class="profile-bio">{{ currentUser?.bio }}</p>
       </div>
     </div>
@@ -151,16 +127,24 @@ async function saveModal() {
 
 .page-root { font-family: 'DM Sans', sans-serif; display: flex; flex-direction: column; height: 100vh; background: var(--bg-page); color: var(--tx-primary); overflow: hidden; }
 
-.topnav { display: flex; align-items: center; gap: 16px; padding: 0 24px; height: 56px; background: var(--bg-surface); border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0; }
-.nav-left { display: flex; align-items: center; gap: 12px; flex: 1; }
-.nav-right { margin-left: auto; }
-.back-btn { display: flex; align-items: center; gap: 6px; background: none; border: none; color: var(--tx-muted); font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer; transition: color 0.15s; }
-.back-btn:hover { color: var(--accent); }
-.page-title { font-size: 16px; font-weight: 600; color: var(--tx-heading); }
-.primary-btn { background: var(--accent); border: none; color: #fff; padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
-.primary-btn:hover { background: var(--accent-hover); }
+.content { flex: 1; overflow-y: auto; padding: 48px 36px; display: flex; flex-direction: column; align-items: center; }
 
-.content { flex: 1; overflow-y: auto; padding: 32px 36px; display: flex; flex-direction: column; align-items: center; }
+.edit-profile-btn {
+  display: flex; align-items: center; justify-content: center;
+  margin: 16px auto 0;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-family: 'Satoshi', 'DM Sans', sans-serif;
+  font-size: 14px; font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.12s;
+}
+.edit-profile-btn:hover  { background: var(--accent-hover); transform: translateY(-1px); }
+.edit-profile-btn:active { transform: translateY(0); }
 
 .avatar-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
 
