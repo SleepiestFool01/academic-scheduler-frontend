@@ -101,12 +101,13 @@ onMounted(() => {
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&family=Playfair+Display:ital,wght@1,700&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,600,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Playfair+Display:ital,wght@1,700&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 .role-root {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Satoshi', sans-serif;
   min-height: 100vh;
   background: #08060a;
   color: #e2e8f0;
@@ -173,7 +174,7 @@ onMounted(() => {
 }
 .brand-name {
   font-family: 'DM Mono', monospace;
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 500;
   letter-spacing: 0.08em;
   color: #94a3b8;
@@ -197,7 +198,7 @@ onMounted(() => {
 }
 .eyebrow {
   font-family: 'DM Mono', monospace;
-  font-size: 11px;
+  font-size: 13px;
   letter-spacing: 0.2em;
   color: #FF1744;
   text-transform: uppercase;
@@ -214,7 +215,7 @@ onMounted(() => {
 }
 .dot { color: #F0E6D3; }
 .subline {
-  font-size: 14px;
+  font-size: 16px;
   color: #475569;
   line-height: 1.7;
   font-weight: 300;
@@ -241,7 +242,7 @@ onMounted(() => {
   text-align: left;
   transition: background 0.2s, border-color 0.2s, transform 0.15s;
   backdrop-filter: blur(12px);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Satoshi', sans-serif;
 }
 .role-card:hover {
   background: rgba(30, 12, 18, 0.9);
@@ -266,20 +267,20 @@ onMounted(() => {
 
 .card-body { flex: 1; }
 .card-title {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   color: #f1f5f9;
   margin-bottom: 4px;
   letter-spacing: -0.01em;
 }
 .card-desc {
-  font-size: 13px;
+  font-size: 15px;
   color: #475569;
   font-weight: 300;
 }
 
 .card-arrow {
-  font-size: 18px;
+  font-size: 20px;
   color: #2d3748;
   transition: color 0.2s, transform 0.2s;
 }
@@ -287,7 +288,7 @@ onMounted(() => {
 /* ── Error ── */
 .error-msg {
   margin-top: 20px;
-  font-size: 13px;
+  font-size: 15px;
   color: #EF4444;
   text-align: center;
 }

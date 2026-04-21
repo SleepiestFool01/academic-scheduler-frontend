@@ -1,35 +1,5 @@
 <template>
   <div class="mgmt-root">
-    <!-- ── Top nav ── -->
-    <div class="topnav">
-      <div class="nav-left">
-        <button class="back-btn" @click="router.push('/dashboard')">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          Dashboard
-        </button>
-        <div class="nav-logo">
-          <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
-            <rect x="2" y="4" width="11" height="7" rx="2" fill="#FF1744"/>
-            <rect x="15" y="4" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-            <rect x="2" y="14" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-            <rect x="15" y="14" width="11" height="7" rx="2" fill="#F0E6D3"/>
-          </svg>
-        </div>
-      </div>
-      <div class="nav-tabs">
-        <button v-for="tab in ['Employees', 'Shifts']" :key="tab"
-          class="nav-tab" :class="{ active: activeTab === tab }"
-          @click="activeTab = tab">{{ tab }}</button>
-      </div>
-      <div class="nav-right">
-        <button class="primary-btn" @click="openCreateModal">
-          + Add {{ activeTab === 'Employees' ? 'Employee' : 'Shift' }}
-        </button>
-      </div>
-    </div>
-
     <!-- ── Loading / error ── -->
     <div v-if="loading" class="loading-overlay">
       <div class="loading-spinner"></div>
@@ -50,10 +20,51 @@
             <h2 class="panel-title">Employees</h2>
             <p class="panel-sub">{{ employees.length }} total members</p>
           </div>
-          <input v-model="empSearch" class="search-input" placeholder="Search by name or email…" />
+          <div class="panel-header-actions">
+            <input v-model="empSearch" class="search-input" placeholder="Search by name or email…" />
+            <button class="secondary-btn" :disabled="bulkSync.running" @click="openBulkSyncConfirm">
+              {{ bulkSync.running ? 'Syncing…' : 'Sync class schedules' }}
+            </button>
+          </div>
         </div>
 
-        <div class="table-wrap">
+        <!-- Phone: stacked cards -->
+        <div v-if="isPhone" class="mobile-cards">
+          <div v-if="filteredEmployees.length === 0" class="mobile-empty">No employees found.</div>
+          <div v-for="emp in filteredEmployees" :key="emp.id_employee" class="mobile-card">
+            <div class="mobile-card-top">
+              <div class="emp-avatar" :style="{ background: empColor(emp) }">{{ initials(emp) }}</div>
+              <div class="mobile-card-title-block">
+                <div class="mobile-card-title">{{ emp.fName }} {{ emp.lName }}</div>
+                <div class="mobile-card-sub">{{ emp.email }}</div>
+              </div>
+              <span class="role-badge" :class="emp.role?.toLowerCase()">{{ emp.role }}</span>
+            </div>
+            <div class="mobile-card-actions">
+              <button class="icon-action" title="Edit" @click="openEditEmployee(emp)">✎</button>
+              <button class="icon-action" title="Manage Positions" @click="openManagePositions(emp)">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="5" r="2.5" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </button>
+              <button class="icon-action" title="View availability" @click="openAvailabilityViewer(emp)">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M5 1v3M11 1v3M2 6.5h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </button>
+              <button class="icon-action danger" title="Remove from department" @click="confirmRemoveFromDept(emp)">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 8h10M13 5l-3 3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tablet/desktop: data table -->
+        <div v-else class="table-wrap">
           <table class="data-table">
             <thead>
               <tr>
@@ -86,7 +97,17 @@
                         <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                       </svg>
                     </button>
-                    <button class="icon-action danger" title="Delete" @click="confirmDelete('employee', emp)">✕</button>
+                    <button class="icon-action" title="View availability" @click="openAvailabilityViewer(emp)">
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                        <rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
+                        <path d="M5 1v3M11 1v3M2 6.5h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                      </svg>
+                    </button>
+                    <button class="icon-action danger" title="Remove from department" @click="confirmRemoveFromDept(emp)">
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                        <path d="M3 8h10M13 5l-3 3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -108,7 +129,34 @@
           <input v-model="shiftSearch" class="search-input" placeholder="Search by employee or date…" />
         </div>
 
-        <div class="table-wrap">
+        <!-- Phone: stacked cards -->
+        <div v-if="isPhone" class="mobile-cards">
+          <div v-if="filteredShifts.length === 0" class="mobile-empty">No shifts found.</div>
+          <div v-for="s in filteredShifts" :key="s.id_shiftAssignment ?? s.id_shift"
+            class="mobile-card"
+            :class="{ 'mobile-card--open': !s.id_employee }">
+            <div class="mobile-card-top">
+              <div class="emp-avatar" :style="{ background: empColorById(s.id_employee) }">{{ initialsById(s.id_employee) }}</div>
+              <div class="mobile-card-title-block">
+                <div class="mobile-card-title">{{ s.employee || 'Open' }}</div>
+                <div class="mobile-card-sub">{{ s.positionName || '—' }}</div>
+              </div>
+              <div class="mobile-card-actions-inline">
+                <button class="icon-action" title="Edit" @click="openEditShift(s)">✎</button>
+                <button class="icon-action danger" title="Delete" @click="confirmDelete('shift', s)">✕</button>
+              </div>
+            </div>
+            <div class="mobile-card-meta">
+              <span class="mono">{{ formatDateShort(s.date) }}</span>
+              <span class="mobile-card-sep">·</span>
+              <span class="mono">{{ s.startLabel }} – {{ s.endLabel }}</span>
+            </div>
+            <div v-if="s.notes" class="mobile-card-notes">{{ s.notes }}</div>
+          </div>
+        </div>
+
+        <!-- Tablet/desktop: data table -->
+        <div v-else class="table-wrap">
           <table class="data-table">
             <thead>
               <tr>
@@ -122,17 +170,18 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="s in filteredShifts" :key="s.id_shiftAssignment ?? s.id_shift">
+              <tr v-for="s in filteredShifts" :key="s.id_shiftAssignment ?? s.id_shift"
+                :class="{ 'data-row--open': !s.id_employee }">
                 <td class="muted small">{{ s.positionName || '—' }}</td>
                 <td>
                   <div class="emp-name-cell">
                     <div class="emp-avatar" :style="{ background: empColorById(s.id_employee) }">
                       {{ initialsById(s.id_employee) }}
                     </div>
-                    {{ s.employee || 'Unassigned' }}
+                    {{ s.employee || 'Open' }}
                   </div>
                 </td>
-                <td class="mono">{{ s.date }}</td>
+                <td class="mono">{{ formatDateShort(s.date) }}</td>
                 <td class="mono">{{ s.startLabel }}</td>
                 <td class="mono">{{ s.endLabel }}</td>
                 <td class="muted small">{{ s.notes || '—' }}</td>
@@ -315,13 +364,96 @@
         </div>
       </div>
     </Transition>
+
+    <!-- ── Remove from department confirmation ── -->
+    <Transition name="modal">
+      <div v-if="removeFromDeptConfirm.open" class="modal-overlay" @click.self="removeFromDeptConfirm.open = false">
+        <div class="modal modal-sm">
+          <h3 class="modal-title">Remove from department?</h3>
+          <p class="modal-body-text">
+            <strong>{{ removeFromDeptConfirm.label }}</strong> will lose access to
+            <strong>{{ removeFromDeptConfirm.deptName }}</strong>. Their account and
+            history in other departments will be preserved.
+          </p>
+          <div class="modal-actions">
+            <button class="cancel-btn" @click="removeFromDeptConfirm.open = false">Cancel</button>
+            <button class="confirm-btn danger" :disabled="removeFromDeptConfirm.saving" @click="executeRemoveFromDept">
+              {{ removeFromDeptConfirm.saving ? 'Removing…' : 'Remove' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- ── Availability viewer (manager reference while scheduling) ── -->
+    <AvailabilityViewerModal
+      :open="availabilityViewer.open"
+      :employee="availabilityViewer.employee"
+      @close="closeAvailabilityViewer" />
+
+    <!-- ── Soft-conflict confirmation for class-schedule overlaps ── -->
+    <UnavailabilityConflictModal
+      :open="conflictPrompt.open"
+      :subject="conflictPrompt.subject"
+      @confirm="onConflictConfirm"
+      @cancel="onConflictCancel" />
+
+    <!-- ── Bulk class-schedule sync: confirm ── -->
+    <Transition name="modal">
+      <div v-if="bulkSync.confirmOpen" class="modal-overlay" @click.self="bulkSync.confirmOpen = false">
+        <div class="modal modal-sm">
+          <h3 class="modal-title">Sync everyone's class schedules?</h3>
+          <p class="modal-body-text">
+            This will pull each employee's schedule from stingray for the current semester
+            and replace any previously imported class times. Manual unavailability entries won't be touched.
+          </p>
+          <div class="modal-actions">
+            <button class="cancel-btn" @click="bulkSync.confirmOpen = false">Cancel</button>
+            <button class="confirm-btn" @click="runBulkSync">Sync</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- ── Bulk sync: results ── -->
+    <Transition name="modal">
+      <div v-if="bulkSync.resultsOpen" class="modal-overlay" @click.self="bulkSync.resultsOpen = false">
+        <div class="modal">
+          <h3 class="modal-title">Class schedules synced</h3>
+          <p class="modal-body-text">
+            Semester: <strong>{{ bulkSync.result?.semester || '—' }}</strong>.
+            {{ bulkSync.result?.succeeded?.length || 0 }} succeeded,
+            {{ bulkSync.result?.failed?.length || 0 }} failed.
+          </p>
+          <div v-if="bulkSync.result?.failed?.length" class="bulk-sync-failed">
+            <div class="bulk-sync-failed-title">Failed</div>
+            <div v-for="f in bulkSync.result.failed" :key="f.id_employee" class="bulk-sync-failed-row">
+              <span class="bulk-sync-failed-name">{{ f.name }}</span>
+              <span class="bulk-sync-failed-error">{{ f.error }}</span>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button class="confirm-btn" @click="bulkSync.resultsOpen = false">Done</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import Utils from "../config/utils.js";
+import { formatDateShort } from "../utils/dateFormat.js";
+import { useDepartment } from "../composables/useDepartment.js";
+import { useBreakpoint } from "../composables/useBreakpoint.js";
+import DeptSwitcher from "../components/DeptSwitcher.vue";
+import AvailabilityViewerModal from "../components/AvailabilityViewerModal.vue";
+import UnavailabilityConflictModal from "../components/UnavailabilityConflictModal.vue";
+import apiClient from "../services/services.js";
+import { importUnavailabilityForDepartment } from "../services/unavailabilityService.js";
+import { bumpUnavailabilityRefresh } from "../composables/useUnavailabilityRefresh.js";
 import {
   employeeService,
   shiftService,
@@ -333,6 +465,7 @@ import {
   getEmployeePositions,
   assignPositionEmployee,
   removePositionEmployee,
+  removeEmployeeFromDepartment,
 } from "../services/departmentService.js";
 
 const router      = useRouter();
@@ -376,10 +509,10 @@ async function loadAll() {
   loading.value  = true;
   apiError.value = "";
   try {
-    const deptId = currentUser.value?.id_department;
+    const deptId = selectedDeptId.value || currentUser.value?.id_department;
     const [empRes, shiftRes, assignRes, posRes] = await Promise.all([
-      employeeService.getAll(),
-      shiftService.getAll(),
+      employeeService.getAll(deptId),
+      shiftService.getAll(deptId),
       shiftService.getAssignments(),
       deptId ? getPositions(deptId) : Promise.resolve({ data: [] }),
     ]);
@@ -454,7 +587,19 @@ async function loadAll() {
   }
 }
 
-onMounted(loadAll);
+const { selectedDeptId, myDepts, loadDepts } = useDepartment();
+const { isPhone } = useBreakpoint();
+watch(selectedDeptId, loadAll);
+onMounted(() => {
+  if (!myDepts.value.length) loadDepts(currentUser.value);
+  loadAll();
+});
+
+const DEPT_TABS   = ["Overview", "Positions", "Employees", "Hours", "Events", "Settings"];
+const userInitials = computed(() => {
+  const u = currentUser.value;
+  return `${u?.fName?.[0] ?? ""}${u?.lName?.[0] ?? ""}`.toUpperCase() || "??";
+});
 
 // ── Filters ───────────────────────────────────────────────────────────────────
 const filteredEmployees = computed(() => {
@@ -515,6 +660,42 @@ function openEditShift(s) {
 
 function closeModal() { modal.value.open = false; }
 
+// ── Unavailability conflict confirmation (soft block, overridable) ──────────
+const conflictPrompt = ref({ open: false, subject: "", _resolve: null });
+function confirmConflict(subject) {
+  return new Promise((resolve) => {
+    conflictPrompt.value = { open: true, subject, _resolve: resolve };
+  });
+}
+function onConflictConfirm() {
+  const r = conflictPrompt.value._resolve;
+  conflictPrompt.value.open = false;
+  r?.(true);
+}
+function onConflictCancel() {
+  const r = conflictPrompt.value._resolve;
+  conflictPrompt.value.open = false;
+  r?.(false);
+}
+
+// Retry wrapper: try the assignment, and if the backend 409s with an
+// overridable unavailability conflict, confirm with the user and retry
+// with force=true. Returns the assignment, or null if cancelled, or
+// throws for anything non-overridable.
+async function assignWithConfirm(id_shift, id_employee, date, subject) {
+  try {
+    return await shiftService.createAssignment(id_shift, id_employee, date);
+  } catch (err) {
+    const body = err.response?.data;
+    if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY") {
+      const ok = await confirmConflict(subject);
+      if (!ok) return null;
+      return await shiftService.createAssignment(id_shift, id_employee, date, true);
+    }
+    throw err;
+  }
+}
+
 async function saveModal() {
   modal.value.saving = true;
   modal.value.error  = "";
@@ -568,28 +749,62 @@ async function saveModal() {
             await shiftService.deleteAssignment(editId.id_shiftAssignment);
             updated = { ...updated, id_shiftAssignment: null, id_employee: null, employee: "" };
           } else if (!prevEmpId && nextEmpId) {
-            const assignment = await shiftService.createAssignment(editId.id_shift, nextEmpId, data.date);
+            const assignment = await assignWithConfirm(editId.id_shift, nextEmpId, data.date, employeeName || "This employee");
+            if (!assignment) { modal.value.saving = false; return; }
             updated = { ...updated, id_shiftAssignment: assignment.id_shiftAssignment, id_employee: nextEmpId, employee: employeeName };
           } else if (prevEmpId && nextEmpId && prevEmpId !== nextEmpId) {
             await shiftService.deleteAssignment(editId.id_shiftAssignment);
-            const assignment = await shiftService.createAssignment(editId.id_shift, nextEmpId, data.date);
+            const assignment = await assignWithConfirm(editId.id_shift, nextEmpId, data.date, employeeName || "This employee");
+            if (!assignment) {
+              // User cancelled — restore the prior assignee so the shift
+              // isn't left hanging unassigned.
+              try { await shiftService.createAssignment(editId.id_shift, prevEmpId, data.date, true); } catch (_) {}
+              modal.value.saving = false;
+              return;
+            }
             updated = { ...updated, id_shiftAssignment: assignment.id_shiftAssignment, id_employee: nextEmpId, employee: employeeName };
           }
           shifts.value[idx] = updated;
         }
       } else {
-        const { shift, assignment } = await shiftService.createAndAssign({
-          id_employee:  data.id_employee ? Number(data.id_employee) : null,
+        const id_employee = data.id_employee ? Number(data.id_employee) : null;
+        const args = {
+          id_employee,
           date:         data.date,
           startHour, endHour,
           notes:        data.notes,
           positionName,
           id_position:  data.id_position,
-        });
+          id_department: selectedDeptId.value || null,
+        };
+        let result;
+        try {
+          result = await shiftService.createAndAssign(args);
+        } catch (err) {
+          const body = err.response?.data;
+          if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY" && err.pendingAssignment) {
+            const ok = await confirmConflict(employeeName || "This employee");
+            if (ok) {
+              // Shift already persisted — retry just the assignment with force.
+              const assignment = await shiftService.createAssignment(
+                err.pendingAssignment.id_shift, err.pendingAssignment.id_employee, err.pendingAssignment.date, true,
+              );
+              result = { shift: err.orphanShift, assignment };
+            } else {
+              // Cancelled — clean up the orphan shift and bail.
+              try { await apiClient.delete(`/shifts/${err.orphanShift.id_shift}`); } catch (_) {}
+              modal.value.saving = false;
+              return;
+            }
+          } else {
+            throw err;
+          }
+        }
+        const { shift, assignment } = result;
         shifts.value.push({
           id_shiftAssignment: assignment?.id_shiftAssignment || null,
           id_shift:    shift.id_shift,
-          id_employee: data.id_employee ? Number(data.id_employee) : null,
+          id_employee,
           employee:    employeeName,
           date:        data.date,
           startLabel:  fmtHour(startHour),
@@ -606,7 +821,7 @@ async function saveModal() {
 
     closeModal();
   } catch (err) {
-    modal.value.error = err.message || "Save failed.";
+    modal.value.error = err.response?.data?.message || err.message || "Save failed.";
   } finally {
     modal.value.saving = false;
   }
@@ -691,17 +906,95 @@ async function executeDelete() {
     deleteConfirm.value.saving = false;
   }
 }
+
+// ── Remove from department (preserves the employee record) ───────────────────
+const removeFromDeptConfirm = ref({ open: false, item: null, label: "", deptName: "", saving: false });
+
+function confirmRemoveFromDept(emp) {
+  const dept = myDepts.value.find(d => Number(d.id_department) === Number(selectedDeptId.value));
+  removeFromDeptConfirm.value = {
+    open: true,
+    item: emp,
+    label: `${emp.fName} ${emp.lName}`,
+    deptName: dept?.name || "this department",
+    saving: false,
+  };
+}
+
+async function executeRemoveFromDept() {
+  const { item } = removeFromDeptConfirm.value;
+  const deptId = selectedDeptId.value;
+  if (!item || !deptId) {
+    removeFromDeptConfirm.value.open = false;
+    return;
+  }
+  removeFromDeptConfirm.value.saving = true;
+  try {
+    await removeEmployeeFromDepartment(item.id_employee, deptId);
+    employees.value = employees.value.filter(e => e.id_employee !== item.id_employee);
+    removeFromDeptConfirm.value.open = false;
+  } catch (err) {
+    apiError.value = "Remove failed: " + (err.message || "Unknown error");
+    removeFromDeptConfirm.value.open = false;
+  } finally {
+    removeFromDeptConfirm.value.saving = false;
+  }
+}
+
+// ── Availability viewer ───────────────────────────────────────────────────────
+const availabilityViewer = ref({ open: false, employee: null });
+
+function openAvailabilityViewer(emp) {
+  availabilityViewer.value = { open: true, employee: emp };
+}
+function closeAvailabilityViewer() {
+  availabilityViewer.value.open = false;
+}
+
+// ── Bulk class-schedule sync (manager-only) ─────────────────────────────────
+const bulkSync = ref({
+  confirmOpen:  false,
+  resultsOpen:  false,
+  running:      false,
+  result:       null,   // { semester, succeeded: [...], failed: [...] }
+});
+
+function openBulkSyncConfirm() {
+  if (!selectedDeptId.value) {
+    apiError.value = "No department selected — pick one before syncing.";
+    return;
+  }
+  bulkSync.value = { confirmOpen: true, resultsOpen: false, running: false, result: null };
+}
+
+async function runBulkSync() {
+  if (!selectedDeptId.value) return;
+  bulkSync.value.confirmOpen = false;
+  bulkSync.value.running = true;
+  try {
+    const res = await importUnavailabilityForDepartment(selectedDeptId.value);
+    bulkSync.value.result = res.data || { semester: "", succeeded: [], failed: [] };
+    bulkSync.value.resultsOpen = true;
+    // Tell Dashboard / TemplateEditor / open viewer modals to re-fetch.
+    bumpUnavailabilityRefresh();
+  } catch (err) {
+    apiError.value = "Sync failed: " + (err.response?.data?.message || err.message || "Unknown error");
+  } finally {
+    bulkSync.value.running = false;
+  }
+}
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,600,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 .mgmt-root {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Satoshi', sans-serif;
   display: flex; flex-direction: column;
-  height: 100vh; background: var(--bg-page); color: var(--tx-primary); overflow: hidden;
+  flex: 1; background: var(--bg-page); color: var(--tx-primary); overflow: hidden;
 }
 
 .topnav {
@@ -710,26 +1003,34 @@ async function executeDelete() {
   background: var(--bg-surface); border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0;
 }
 .nav-left  { display: flex; align-items: center; gap: 16px; }
-.nav-right { margin-left: auto; }
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.nav-divider { width: 1px; height: 20px; background: var(--bdr-subtle); }
+.avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: #FF1744; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 600; overflow: hidden; flex-shrink: 0;
+}
+.avatar-img { width: 100%; height: 100%; object-fit: cover; }
 .back-btn {
   display: flex; align-items: center; gap: 6px;
   background: none; border: none; color: var(--tx-muted);
-  font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer; transition: color 0.15s;
+  font-family: 'Satoshi', sans-serif; font-size: 15px; cursor: pointer; transition: color 0.15s;
 }
 .back-btn:hover { color: var(--accent); }
 .nav-logo { display: flex; align-items: center; }
 .nav-tabs { display: flex; gap: 2px; }
 .nav-tab {
   padding: 6px 18px; background: transparent; border: none;
-  color: var(--tx-muted); font-family: 'DM Sans', sans-serif; font-size: 13px;
+  color: var(--tx-muted); font-family: 'Satoshi', sans-serif; font-size: 15px;
   cursor: pointer; border-radius: 6px; transition: background 0.15s, color 0.15s;
 }
 .nav-tab:hover  { background: var(--bdr-subtle); color: var(--tx-secondary); }
 .nav-tab.active { background: var(--bg-active); color: var(--accent); font-weight: 600; }
 .primary-btn {
   background: var(--accent); border: none; color: #fff;
-  padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
-  cursor: pointer; font-family: 'DM Sans', sans-serif; transition: background 0.15s, transform 0.12s;
+  padding: 7px 16px; border-radius: 8px; font-size: 15px; font-weight: 600;
+  cursor: pointer; font-family: 'Satoshi', sans-serif; transition: background 0.15s, transform 0.12s;
 }
 .primary-btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
 
@@ -743,14 +1044,14 @@ async function executeDelete() {
   border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.loading-text { font-size: 13px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
+.loading-text { font-size: 15px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
 .error-banner {
   background: var(--err-bg); border-bottom: 1px solid var(--err-border);
-  color: var(--err-text); font-size: 12px; padding: 8px 20px; display: flex; align-items: center; gap: 10px;
+  color: var(--err-text); font-size: 14px; padding: 8px 20px; display: flex; align-items: center; gap: 10px;
 }
 .retry-btn {
   background: none; border: 1px solid var(--err-text); color: var(--err-text);
-  padding: 2px 10px; border-radius: 4px; cursor: pointer; font-size: 11px;
+  padding: 2px 10px; border-radius: 4px; cursor: pointer; font-size: 13px;
 }
 .retry-btn:hover { background: var(--err-text); color: #fff; }
 
@@ -762,21 +1063,49 @@ async function executeDelete() {
   display: flex; align-items: flex-start; justify-content: space-between;
   margin-bottom: 24px; flex-wrap: wrap; gap: 16px;
 }
-.panel-title { font-size: 22px; font-weight: 700; color: var(--tx-heading); margin-bottom: 4px; }
-.panel-sub   { font-size: 13px; color: var(--tx-faint); }
+.panel-title { font-size: 24px; font-weight: 700; color: var(--tx-heading); margin-bottom: 4px; }
+.panel-sub   { font-size: 15px; color: var(--tx-faint); }
 .search-input {
   background: var(--bg-surface); border: 1px solid var(--bdr-medium); color: var(--tx-primary);
-  padding: 8px 14px; border-radius: 8px; font-size: 13px;
-  font-family: 'DM Sans', sans-serif; outline: none; width: 260px; transition: border-color 0.15s;
+  padding: 8px 14px; border-radius: 8px; font-size: 15px;
+  font-family: 'Satoshi', sans-serif; outline: none; width: 260px; transition: border-color 0.15s;
 }
 .search-input:focus { border-color: var(--accent); }
 .search-input::placeholder { color: var(--tx-ghost); }
 
+.panel-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.secondary-btn {
+  background: var(--bg-surface); border: 1px solid var(--bdr-medium);
+  color: var(--tx-secondary); padding: 8px 14px; border-radius: 8px;
+  cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 600;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.secondary-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.secondary-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* Bulk-sync results modal */
+.bulk-sync-failed {
+  background: var(--bg-surface); border: 1px solid var(--bdr-subtle);
+  border-radius: 8px; padding: 10px 14px; margin-bottom: 16px;
+  max-height: 200px; overflow-y: auto;
+}
+.bulk-sync-failed-title {
+  font-size: 11px; font-weight: 700; color: var(--tx-muted);
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;
+}
+.bulk-sync-failed-row {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 5px 0; font-size: 13px; border-bottom: 1px solid var(--bdr-subtle);
+}
+.bulk-sync-failed-row:last-child { border-bottom: none; }
+.bulk-sync-failed-name { color: var(--tx-primary); font-weight: 500; flex-shrink: 0; }
+.bulk-sync-failed-error { color: var(--err-text); font-size: 12px; text-align: right; }
+
 .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--bdr-subtle); }
-.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 15px; }
 .data-table thead { background: var(--bg-surface); }
 .data-table th {
-  text-align: left; padding: 12px 16px; font-size: 11px; font-weight: 600;
+  text-align: left; padding: 12px 16px; font-size: 13px; font-weight: 600;
   color: var(--tx-faint); text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 1px solid var(--bdr-subtle);
 }
 .data-table td {
@@ -784,18 +1113,34 @@ async function executeDelete() {
 }
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tr:hover td { background: var(--bg-input); }
+.data-table tr.data-row--open td { font-style: italic; color: var(--tx-secondary); }
+.data-table tr.data-row--open .emp-avatar {
+  background: transparent !important;
+  border: 1.5px dashed rgba(240, 230, 211, 0.5);
+  color: rgba(240, 230, 211, 0.7);
+  font-style: normal;
+}
+[data-theme="light"] .data-table tr.data-row--open .emp-avatar {
+  border-color: rgba(0, 0, 0, 0.4);
+  color: rgba(0, 0, 0, 0.55);
+}
 .emp-name-cell { display: flex; align-items: center; gap: 10px; color: var(--tx-primary); font-weight: 500; }
 .emp-avatar {
   width: 30px; height: 30px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 10px; font-weight: 700; color: #fff; flex-shrink: 0;
+  font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0;
 }
 .muted { color: var(--tx-faint); }
-.mono  { font-family: 'DM Mono', monospace; font-size: 12px; }
-.small { font-size: 12px; }
+.mono {
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-size: 14px; font-weight: 500;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.small { font-size: 14px; }
 .role-badge {
   display: inline-block; padding: 2px 10px; border-radius: 100px;
-  font-size: 11px; font-weight: 600; background: var(--bdr-subtle); color: var(--tx-muted);
+  font-size: 13px; font-weight: 600; background: var(--bdr-subtle); color: var(--tx-muted);
 }
 .role-badge.employee { background: rgba(255,23,68,0.1);   color: #FF4569; }
 .role-badge.manager  { background: rgba(240,230,211,0.1);  color: #c8903a; }
@@ -803,7 +1148,7 @@ async function executeDelete() {
 .action-btns { display: flex; gap: 6px; }
 .icon-action {
   background: var(--bdr-subtle); border: none; color: var(--tx-muted);
-  width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 15px;
   display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s;
 }
 .icon-action:hover        { background: var(--bg-active); color: var(--accent); }
@@ -819,36 +1164,36 @@ async function executeDelete() {
   border-radius: 14px; padding: 28px; width: 400px; box-shadow: 0 20px 60px rgba(0,0,0,0.4);
 }
 .modal-sm { width: 320px; }
-.modal-title { font-size: 18px; font-weight: 700; color: var(--tx-primary); margin-bottom: 20px; }
-.modal-body-text { font-size: 14px; color: var(--tx-muted); margin-bottom: 20px; }
+.modal-title { font-size: 20px; font-weight: 700; color: var(--tx-primary); margin-bottom: 20px; }
+.modal-body-text { font-size: 16px; color: var(--tx-muted); margin-bottom: 20px; }
 .form-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
 .form-row   { display: flex; gap: 12px; }
 .form-row .form-group { flex: 1; }
 .form-group label {
-  font-size: 10px; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;
+  font-size: 12px; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;
 }
 .optional { font-weight: 400; text-transform: none; font-style: italic; letter-spacing: 0; }
 .form-group input,
 .form-group select {
   background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary);
-  padding: 8px 10px; border-radius: 8px; font-size: 13px;
-  font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; width: 100%;
+  padding: 8px 10px; border-radius: 8px; font-size: 15px;
+  font-family: 'Satoshi', sans-serif; outline: none; transition: border-color 0.15s; width: 100%;
 }
 .form-group input:focus,
 .form-group select:focus { border-color: var(--accent); }
 .form-group select option { background: var(--bg-modal); }
-.modal-error { font-size: 12px; color: var(--err-text); margin-bottom: 12px; }
+.modal-error { font-size: 14px; color: var(--err-text); margin-bottom: 12px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 .cancel-btn {
   background: none; border: 1px solid var(--bdr-medium); color: var(--tx-muted);
   padding: 8px 18px; border-radius: 8px; cursor: pointer;
-  font-family: 'DM Sans', sans-serif; font-size: 13px; transition: border-color 0.15s;
+  font-family: 'Satoshi', sans-serif; font-size: 15px; transition: border-color 0.15s;
 }
 .cancel-btn:hover { border-color: var(--bdr-subtle); color: var(--tx-secondary); }
 .confirm-btn {
   background: var(--accent); border: none; color: #fff;
   padding: 8px 18px; border-radius: 8px; cursor: pointer;
-  font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600; transition: background 0.15s;
+  font-family: 'Satoshi', sans-serif; font-size: 15px; font-weight: 600; transition: background 0.15s;
 }
 .confirm-btn:hover    { background: var(--accent-hover); }
 .confirm-btn:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -860,21 +1205,21 @@ async function executeDelete() {
 .modal-lg { width: 480px; }
 .pos-modal-loading { display: flex; justify-content: center; padding: 20px 0; }
 .loading-spinner.sm { width: 22px; height: 22px; border-width: 2px; }
-.pos-empty { font-size: 13px; color: var(--tx-ghost); font-style: italic; padding: 12px 0; }
+.pos-empty { font-size: 15px; color: var(--tx-ghost); font-style: italic; padding: 12px 0; }
 .assigned-pos-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
 .assigned-pos-row {
   display: flex; align-items: center; gap: 10px;
   background: var(--bg-input); border: 1px solid var(--bdr-subtle);
   border-radius: 8px; padding: 8px 12px;
 }
-.pos-tag { font-size: 13px; font-weight: 600; color: var(--tx-primary); flex: 1; }
-.pos-tag-pay { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--tx-faint); }
-.icon-action.sm { width: 22px; height: 22px; font-size: 11px; }
+.pos-tag { font-size: 15px; font-weight: 600; color: var(--tx-primary); flex: 1; }
+.pos-tag-pay { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--tx-faint); }
+.icon-action.sm { width: 22px; height: 22px; font-size: 13px; }
 .add-pos-row { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
 .pos-select {
   flex: 1; background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary);
-  padding: 8px 10px; border-radius: 8px; font-size: 13px;
-  font-family: 'DM Sans', sans-serif; outline: none;
+  padding: 8px 10px; border-radius: 8px; font-size: 15px;
+  font-family: 'Satoshi', sans-serif; outline: none;
 }
 .pos-select:focus { border-color: var(--accent); }
 .pos-select option { background: var(--bg-modal); }
@@ -885,5 +1230,70 @@ async function executeDelete() {
 .color-swatch.active { border-color: var(--tx-primary); transform: scale(1.2); }
 .color-native { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--bdr-medium); cursor: pointer; padding: 0; background: none; flex-shrink: 0; }
 .color-preview { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-.color-hex { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--tx-muted); }
+.color-hex { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--tx-muted); }
+
+/* ── Phone card list (replaces the Employees/Shifts tables) ── */
+.mobile-cards { display: flex; flex-direction: column; gap: 10px; }
+.mobile-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--bdr-subtle);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.mobile-card--open {
+  background: transparent;
+  border: 1.5px dashed rgba(240, 230, 211, 0.45);
+}
+.mobile-card--open .mobile-card-title { font-style: italic; color: var(--tx-secondary); }
+.mobile-card--open .emp-avatar {
+  background: transparent !important;
+  border: 1.5px dashed rgba(240, 230, 211, 0.5);
+  color: rgba(240, 230, 211, 0.7);
+}
+
+[data-theme="light"] .mobile-card--open { border-color: rgba(0, 0, 0, 0.35); }
+[data-theme="light"] .mobile-card--open .emp-avatar {
+  border-color: rgba(0, 0, 0, 0.4);
+  color: rgba(0, 0, 0, 0.55);
+}
+.mobile-card-top {
+  display: flex; align-items: center; gap: 10px;
+}
+.mobile-card-title-block { flex: 1; min-width: 0; }
+.mobile-card-title {
+  font-size: 15px; font-weight: 600; color: var(--tx-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mobile-card-sub {
+  font-size: 12px; color: var(--tx-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mobile-card-actions {
+  display: flex; gap: 6px; justify-content: flex-end;
+  padding-top: 8px; border-top: 1px solid var(--bdr-subtle);
+}
+.mobile-card-actions-inline { display: flex; gap: 4px; flex-shrink: 0; }
+.mobile-card-meta {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 13px; color: var(--tx-secondary);
+}
+.mobile-card-sep { color: var(--tx-faint); }
+.mobile-card-notes {
+  font-size: 12px; color: var(--tx-faint);
+  padding-top: 6px; border-top: 1px solid var(--bdr-subtle);
+  line-height: 1.4;
+}
+.mobile-empty {
+  padding: 20px 16px; text-align: center;
+  font-size: 14px; color: var(--tx-faint);
+  background: var(--bg-surface); border: 1px dashed var(--bdr-subtle); border-radius: 10px;
+}
+
+/* Phone-only layout tweaks for the employee page. */
+@media (max-width: 599.98px) {
+  .panel-header { gap: 10px; }
+  .panel-header-actions { width: 100%; flex-direction: column; align-items: stretch; }
+  .panel-header-actions .search-input { width: 100%; }
+}
 </style>

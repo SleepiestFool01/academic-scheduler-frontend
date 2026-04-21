@@ -1,48 +1,46 @@
 <template>
   <div class="dept-root">
 
-    <!-- ── Access denied ── -->
-    <div v-if="!isManager" class="full-center">
-      <div class="centered-box">
-        <span class="big-icon">🔒</span>
-        <h2>Access Restricted</h2>
-        <p>The Department page is only available to Managers and Admins.</p>
-        <button class="primary-btn" @click="router.push('/dashboard')">Back to Dashboard</button>
+    <!-- ════════════════════════════════════════
+         EMPLOYEE VIEW — read-only list of departments + request access
+    ════════════════════════════════════════ -->
+    <template v-if="!isManager">
+      <div class="emp-content">
+        <div class="emp-header-row">
+          <div>
+            <h2 class="emp-section-title">Departments You Belong To</h2>
+            <p class="emp-section-sub">{{ myDepts.length }} department{{ myDepts.length !== 1 ? 's' : '' }}</p>
+          </div>
+          <button v-if="myDepts.length > 0" class="primary-btn" @click="openRequestModal">+ Request Access</button>
+        </div>
+
+        <div v-if="myDepts.length === 0" class="emp-empty">
+          You haven't been added to a department yet. Wait for a manager to add you —
+          once you're in a department, you can request access to additional ones from this page.
+        </div>
+        <div v-else class="emp-dept-grid">
+          <div v-for="d in myDepts" :key="d.id_department" class="emp-dept-card">
+            <div class="emp-dept-color"></div>
+            <div class="emp-dept-body">
+              <div class="emp-dept-name">{{ d.name }}</div>
+              <div v-if="d.description" class="emp-dept-desc">{{ d.description }}</div>
+            </div>
+            <span v-if="d.id_department === currentUser.id_department" class="emp-dept-pill">Primary</span>
+          </div>
+        </div>
+
+        <div v-if="myPendingRequests.length > 0" class="emp-requests-section">
+          <h2 class="emp-section-title">Your Pending Requests</h2>
+          <div v-for="req in myPendingRequests" :key="req.id_departmentAccessRequest" class="emp-request-row">
+            <span class="emp-request-dept">{{ deptNameById(req.id_department) }}</span>
+            <span class="emp-request-status">Pending</span>
+            <button class="emp-cancel-btn" title="Cancel request" @click="cancelAccessRequest(req)">✕</button>
+          </div>
+        </div>
       </div>
-    </div>
+    </template>
 
     <template v-else>
-
-      <!-- ── Top nav ── -->
-      <div class="topnav">
-        <div class="nav-left">
-          <button class="back-btn" @click="router.push('/dashboard')">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            Dashboard
-          </button>
-          <div class="nav-logo">
-            <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
-              <rect x="2" y="4" width="11" height="7" rx="2" fill="#FF1744"/>
-              <rect x="15" y="4" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-              <rect x="2" y="14" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-              <rect x="15" y="14" width="11" height="7" rx="2" fill="#F0E6D3"/>
-            </svg>
-          </div>
-        </div>
-        <div v-if="!noDeptsYet" class="nav-tabs">
-          <button v-for="tab in TABS" :key="tab" class="nav-tab"
-            :class="{ active: activeTab === tab }"
-            @click="activeTab = tab">{{ tab }}</button>
-        </div>
-        <div class="nav-right">
-          <div v-if="currentUser" class="avatar" :title="`${currentUser.fName} ${currentUser.lName}`">
-            <img v-if="currentUser.picture" :src="currentUser.picture" class="avatar-img" referrerpolicy="no-referrer" />
-            <span v-else>{{ userInitials }}</span>
-          </div>
-        </div>
-      </div>
 
       <!-- ── Init loading ── -->
       <div v-if="initLoading" class="loading-overlay">
@@ -80,6 +78,13 @@
            DEPARTMENT CONTENT
       ════════════════════════════════════════ -->
       <template v-else>
+        <!-- ── Sub-navigation tabs ── -->
+        <div class="dept-sub-nav">
+          <button v-for="tab in TABS" :key="tab" class="dept-sub-tab"
+            :class="{ active: activeTab === tab }"
+            @click="activeTab = tab">{{ tab }}</button>
+        </div>
+
         <!-- ── Error ── -->
         <div v-if="apiError" class="error-banner">
           {{ apiError }}
@@ -88,48 +93,39 @@
 
         <!-- ── Department header ── -->
         <div class="dept-header">
-          <!-- Department selector (multiple depts) -->
-          <div class="dept-selector-row" v-if="myDepts.length > 1">
-            <span class="dept-selector-label">Department:</span>
-            <select v-model="selectedDeptId" class="dept-selector" @change="onDeptChange">
-              <option v-for="d in myDepts" :key="d.id_department" :value="d.id_department">
-                {{ d.name }}
-              </option>
-            </select>
-          </div>
-
-          <div class="dept-name-row">
-            <div class="dept-color-dot"></div>
-            <template v-if="!editingName">
-              <h1 class="dept-name">{{ department.name || 'Unnamed Department' }}</h1>
-              <button class="inline-edit-btn" @click="startEditName" title="Edit name">✎</button>
-            </template>
-            <template v-else>
-              <input v-model="nameEdit" class="inline-input" @keyup.enter="saveName" @keyup.escape="cancelEditName" autofocus />
-              <button class="save-inline-btn" @click="saveName" :disabled="savingName">✓</button>
-              <button class="cancel-inline-btn" @click="cancelEditName">✕</button>
-            </template>
-          </div>
-
-          <div class="dept-desc-row">
-            <template v-if="!editingDesc">
-              <p class="dept-desc">{{ department.description || 'No description' }}</p>
-              <button class="inline-edit-btn" @click="startEditDesc" title="Edit description">✎</button>
-            </template>
-            <template v-else>
-              <input v-model="descEdit" class="inline-input wide" @keyup.enter="saveDesc" @keyup.escape="cancelEditDesc" autofocus />
-              <button class="save-inline-btn" @click="saveDesc" :disabled="savingDesc">✓</button>
-              <button class="cancel-inline-btn" @click="cancelEditDesc">✕</button>
-            </template>
-          </div>
-
-          <div class="dept-header-bottom">
-            <div class="dept-chips">
-              <span class="dept-chip">{{ employees.length }} Employees</span>
-              <span class="dept-chip">{{ positions.length }} Positions</span>
+          <div class="dept-header-main">
+            <div class="dept-name-row">
+              <div class="dept-color-dot"></div>
+              <template v-if="!editingName">
+                <h1 class="dept-name">{{ department.name || 'Unnamed Department' }}</h1>
+                <button class="inline-edit-btn" @click="startEditName" title="Edit name">✎</button>
+              </template>
+              <template v-else>
+                <input v-model="nameEdit" class="inline-input" @keyup.enter="saveName" @keyup.escape="cancelEditName" autofocus />
+                <button class="save-inline-btn" @click="saveName" :disabled="savingName">✓</button>
+                <button class="cancel-inline-btn" @click="cancelEditName">✕</button>
+              </template>
             </div>
+
+            <div class="dept-desc-row">
+              <template v-if="!editingDesc">
+                <p class="dept-desc">{{ department.description || 'No description' }}</p>
+                <button class="inline-edit-btn" @click="startEditDesc" title="Edit description">✎</button>
+              </template>
+              <template v-else>
+                <input v-model="descEdit" class="inline-input wide" @keyup.enter="saveDesc" @keyup.escape="cancelEditDesc" autofocus />
+                <button class="save-inline-btn" @click="saveDesc" :disabled="savingDesc">✓</button>
+                <button class="cancel-inline-btn" @click="cancelEditDesc">✕</button>
+              </template>
+            </div>
+          </div>
+
+          <div class="dept-header-actions">
             <button class="request-access-btn" @click="openRequestModal" title="Request access to manage another department">
-              + Request Another Department
+              + Request Department
+            </button>
+            <button class="new-dept-btn" @click="openCreateDeptModal" title="Create a new department">
+              + New Department
             </button>
           </div>
         </div>
@@ -147,15 +143,53 @@
             <div class="panel-header">
               <h2 class="panel-title">Overview</h2>
             </div>
+
+            <!-- ── "Right Now" live pulse bar ── -->
+            <div class="right-now-bar">
+              <div class="rn-header">
+                <div class="rn-live">
+                  <span class="rn-live-dot"></span>
+                  <span class="rn-live-label">Right now</span>
+                </div>
+                <div class="rn-count-block">
+                  <div class="rn-count">{{ activeShiftsNow.length }}</div>
+                  <div class="rn-count-label">
+                    {{ activeShiftsNow.length === 1 ? 'employee on shift' : 'employees on shift' }}
+                  </div>
+                </div>
+                <div v-if="nextShift" class="rn-next">
+                  <span class="rn-next-label">Next shift in</span>
+                  <span class="rn-next-value">{{ nextShiftInLabel }}</span>
+                  <span class="rn-next-who">{{ nextShift.employee || 'Open' }}</span>
+                </div>
+                <div v-else-if="todayShifts.length === 0" class="rn-next rn-next--muted">
+                  <span class="rn-next-label">No shifts today</span>
+                </div>
+                <div v-else class="rn-next rn-next--muted">
+                  <span class="rn-next-label">All shifts for today complete</span>
+                </div>
+              </div>
+
+              <div v-if="todayShifts.length > 0" class="rn-timeline">
+                <div v-for="s in todayShifts" :key="s.id"
+                  class="rn-shift"
+                  :class="{
+                    'rn-shift--active': s.id_employee && s.startHour <= rightNowHour && s.endHour > rightNowHour,
+                    'rn-shift--open':   !s.id_employee,
+                  }"
+                  :style="overviewShiftStyle(s)"
+                  :title="`${s.employee || 'Open'} · ${s.startLabel}–${s.endLabel}${s.positionName ? ' · ' + s.positionName : ''}`">
+                </div>
+                <div class="rn-now-line" :style="{ left: timelinePct(rightNowHour) + '%' }">
+                  <div class="rn-now-dot"></div>
+                </div>
+                <div class="rn-axis">
+                  <span v-for="mark in [timelineBounds.start, Math.round((timelineBounds.start + timelineBounds.end) / 2), timelineBounds.end]" :key="mark" class="rn-axis-tick">{{ mark < 12 ? (mark || 12) + 'am' : mark === 12 ? '12pm' : (mark - 12) + 'pm' }}</span>
+                </div>
+              </div>
+            </div>
+
             <div class="overview-grid">
-              <div class="overview-card">
-                <div class="ov-label">Department Name</div>
-                <div class="ov-value">{{ department.name || '—' }}</div>
-              </div>
-              <div class="overview-card">
-                <div class="ov-label">Description</div>
-                <div class="ov-value">{{ department.description || '—' }}</div>
-              </div>
               <div class="overview-card">
                 <div class="ov-label">Employees</div>
                 <div class="ov-value ov-big">{{ employees.length }}</div>
@@ -165,12 +199,125 @@
                 <div class="ov-value ov-big">{{ positions.length }}</div>
               </div>
               <div class="overview-card">
-                <div class="ov-label">Hours of Operation</div>
-                <div class="ov-value ov-big">{{ calendarEntries.length }}</div>
+                <div class="ov-label">Open Today</div>
+                <template v-if="!activeSeason">
+                  <div class="ov-value ov-faint">No active season</div>
+                </template>
+                <template v-else-if="todayEntry">
+                  <div class="ov-open-badge">Open</div>
+                  <div class="ov-today-hours">{{ fmtTime(todayEntry.startTime) }} – {{ fmtTime(todayEntry.endTime) }}</div>
+                </template>
+                <template v-else>
+                  <div class="ov-closed-badge">Closed</div>
+                </template>
               </div>
+            </div>
+
+            <div class="overview-wide-grid">
+              <!-- Hours of Operation -->
               <div class="overview-card">
-                <div class="ov-label">Upcoming Events</div>
-                <div class="ov-value ov-big">{{ events.length }}</div>
+                <div class="ov-label">
+                  Hours of Operation
+                  <span v-if="activeSeason" class="ov-season-badge">{{ activeSeason }}</span>
+                  <span v-else class="ov-no-season">No active season</span>
+                </div>
+                <div v-if="activeSeason" class="ov-hours-list">
+                  <div v-for="day in DAYS" :key="day" class="ov-hours-row">
+                    <span class="ov-hours-day">{{ day.slice(0, 3) }}</span>
+                    <span v-if="getEntryForSeasonDay(activeSeason, day)" class="ov-hours-time">
+                      {{ fmtTime(getEntryForSeasonDay(activeSeason, day).startTime) }} – {{ fmtTime(getEntryForSeasonDay(activeSeason, day).endTime) }}
+                    </span>
+                    <span v-else class="ov-hours-closed">Closed</span>
+                  </div>
+                </div>
+                <div v-else class="ov-empty-hint">Go to Hours to configure and activate a season.</div>
+              </div>
+
+              <!-- Upcoming Events + Next Event highlight -->
+              <div class="overview-card">
+                <div class="ov-label">
+                  Upcoming Events
+                  <span class="ov-count-badge">{{ upcomingEvents.length }}</span>
+                </div>
+                <div v-if="upcomingEvents.length === 0" class="ov-empty-hint">No upcoming events scheduled.</div>
+                <template v-else>
+                  <!-- Next Event highlight -->
+                  <div class="ov-next-event" v-if="nextEvent">
+                    <div class="ov-next-label">Next Up</div>
+                    <div class="ov-next-body">
+                      <div class="ov-event-date">
+                        <span class="ov-event-month">{{ eventMonth(nextEvent.start_time) }}</span>
+                        <span class="ov-event-day">{{ eventDay(nextEvent.start_time) }}</span>
+                      </div>
+                      <div class="ov-event-info">
+                        <span class="ov-event-title ov-next-title">{{ nextEvent.title }}</span>
+                        <span v-if="nextEvent.start_time" class="ov-event-time">{{ eventStartTime(nextEvent) }}</span>
+                        <span v-if="nextEvent.location" class="ov-event-time">📍 {{ nextEvent.location }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- Full list -->
+                  <div v-if="upcomingEvents.length > 1" class="ov-events-list ov-events-rest">
+                    <div v-for="ev in upcomingEvents.slice(1)" :key="ev.id_event" class="ov-event-row">
+                      <div class="ov-event-date ov-event-date-sm">
+                        <span class="ov-event-month">{{ eventMonth(ev.start_time) }}</span>
+                        <span class="ov-event-day">{{ eventDay(ev.start_time) }}</span>
+                      </div>
+                      <div class="ov-event-info">
+                        <span class="ov-event-title">{{ ev.title }}</span>
+                        <span v-if="ev.start_time" class="ov-event-time">{{ eventStartTime(ev) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Department configuration: buffer time + manager management -->
+            <div class="settings-section">
+              <div class="setting-row">
+                <div class="setting-info">
+                  <div class="setting-label">Student Buffer Time</div>
+                  <div class="setting-desc">Minutes of buffer time to add between student employee shifts.</div>
+                </div>
+                <div class="setting-control">
+                  <input v-model.number="bufferTime" type="number" min="0" max="60" class="setting-input" placeholder="0" />
+                  <span class="setting-unit">min</span>
+                  <button class="primary-btn" @click="saveBufferTime" :disabled="savingBuffer">
+                    {{ savingBuffer ? 'Saving…' : 'Save' }}
+                  </button>
+                </div>
+              </div>
+              <p v-if="bufferSaved"  class="save-success">Settings saved.</p>
+              <p v-if="bufferError"  class="save-error">{{ bufferError }}</p>
+            </div>
+
+            <!-- Managers -->
+            <div class="settings-section">
+              <div class="setting-row mgr-setting-row">
+                <div class="setting-info">
+                  <div class="setting-label">Managers</div>
+                  <div class="setting-desc">Employees who can manage this department.</div>
+                </div>
+                <div class="mgr-setting-body">
+                  <div v-for="link in deptManagerLinks" :key="link.id_managerDepartment" class="mgr-setting-item">
+                    <span class="mgr-setting-name">{{ managerName(link.id_employee) }}</span>
+                    <span v-if="link.id_employee === currentUser.id_employee" class="mgr-you-badge">You</span>
+                    <button v-else class="icon-action danger" title="Remove" @click="removeManager(link)">✕</button>
+                  </div>
+                  <div class="mgr-add-row">
+                    <select v-model="addManagerId" class="mgr-select">
+                      <option value="">— Add a manager —</option>
+                      <option v-for="emp in assignableManagers" :key="emp.id_employee" :value="emp.id_employee">
+                        {{ emp.fName }} {{ emp.lName }}
+                      </option>
+                    </select>
+                    <button class="primary-btn" :disabled="!addManagerId || addingManager" @click="addManager">
+                      {{ addingManager ? 'Adding…' : 'Add' }}
+                    </button>
+                  </div>
+                  <p v-if="managerError" class="save-error">{{ managerError }}</p>
+                </div>
               </div>
             </div>
 
@@ -215,39 +362,108 @@
             </div>
           </div>
 
+          <!-- ════ EMPLOYEES TAB ════ -->
+          <div v-else-if="activeTab === 'Employees'" class="tab-panel">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">Employees</h2>
+                <p class="panel-sub">{{ employees.length }} member{{ employees.length !== 1 ? 's' : '' }}</p>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;">
+                <input v-model="empSearch" class="search-input" placeholder="Search by name or email…" />
+                <button class="primary-btn" @click="openCreateEmployee">+ Add Employee</button>
+              </div>
+            </div>
+            <div v-if="employees.length === 0" class="empty-state">No employees yet. Add one to get started.</div>
+
+            <!-- Phone: stacked card list (no horizontal scroll) -->
+            <div v-else-if="isPhone" class="dept-emp-cards">
+              <div v-if="filteredEmployees.length === 0" class="dept-emp-empty">No employees match your search.</div>
+              <div v-for="emp in filteredEmployees" :key="emp.id_employee" class="dept-emp-card">
+                <div class="emp-avatar" :style="{ background: empColor(emp) }">{{ empInitials(emp) }}</div>
+                <div class="dept-emp-body">
+                  <div class="dept-emp-name">{{ emp.fName }} {{ emp.lName }}</div>
+                  <div class="dept-emp-email">{{ emp.email }}</div>
+                  <span class="role-badge" :class="emp.role?.toLowerCase()">{{ emp.role }}</span>
+                </div>
+                <div class="dept-emp-actions">
+                  <button class="icon-action" title="Edit" @click="openEditEmployee(emp)">✎</button>
+                  <button class="icon-action danger" title="Remove" @click="confirmDeleteEmployee(emp)">✕</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tablet/desktop: table -->
+            <div v-else class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="emp in filteredEmployees" :key="emp.id_employee">
+                    <td>
+                      <div class="emp-name-cell">
+                        <div class="emp-avatar" :style="{ background: empColor(emp) }">{{ empInitials(emp) }}</div>
+                        {{ emp.fName }} {{ emp.lName }}
+                      </div>
+                    </td>
+                    <td class="muted">{{ emp.email }}</td>
+                    <td><span class="role-badge" :class="emp.role?.toLowerCase()">{{ emp.role }}</span></td>
+                    <td>
+                      <div class="action-btns">
+                        <button class="icon-action" title="Edit" @click="openEditEmployee(emp)">✎</button>
+                        <button class="icon-action danger" title="Remove" @click="confirmDeleteEmployee(emp)">✕</button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr v-if="filteredEmployees.length === 0">
+                    <td colspan="4" class="empty-row">No employees match your search.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- ════ HOURS TAB ════ -->
           <div v-else-if="activeTab === 'Hours'" class="tab-panel">
             <div class="panel-header">
               <div>
                 <h2 class="panel-title">Hours of Operation</h2>
-                <p class="panel-sub">{{ calendarEntries.length }} entr{{ calendarEntries.length !== 1 ? 'ies' : 'y' }}</p>
+                <p class="panel-sub">
+                  {{ groupedBySeasons.length }} season{{ groupedBySeasons.length !== 1 ? 's' : '' }}
+                  <span v-if="activeSeason" class="active-season-badge">{{ activeSeason }} active</span>
+                </p>
               </div>
-              <button class="primary-btn" @click="openCreateHours">+ Add Hours</button>
+              <button class="primary-btn" @click="openCreateSeason">+ Create Season</button>
             </div>
-            <div v-if="calendarEntries.length === 0" class="empty-state">No hours configured yet.</div>
-            <div v-else class="table-wrap">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Name</th><th>Day</th><th>Season</th><th>Open</th><th>Close</th><th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="entry in calendarEntries" :key="entry.id_hours_of_operation">
-                    <td>{{ entry.name || '—' }}</td>
-                    <td><span class="day-badge">{{ entry.dayOfWeek }}</span></td>
-                    <td>{{ entry.season || '—' }}</td>
-                    <td class="mono">{{ fmtTime(entry.startTime) }}</td>
-                    <td class="mono">{{ fmtTime(entry.endTime) }}</td>
-                    <td>
-                      <div class="action-btns">
-                        <button class="icon-action" @click="openEditHours(entry)">✎</button>
-                        <button class="icon-action danger" @click="confirmDeleteHours(entry)">✕</button>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            <div v-if="groupedBySeasons.length === 0" class="empty-state">No seasons configured yet. Create a season to set your hours of operation.</div>
+            <div v-else class="seasons-grid">
+              <div v-for="group in groupedBySeasons" :key="group.name" class="season-card"
+                :class="{ 'season-card--active': group.name === activeSeason }">
+                <div class="season-card-header">
+                  <div class="season-name-row">
+                    <span class="season-name">{{ group.name }}</span>
+                    <span v-if="group.name === activeSeason" class="active-chip">Active</span>
+                  </div>
+                  <div class="action-btns">
+                    <button class="icon-action" title="Edit Hours" @click="openSeasonHoursModal(group.name)">✎</button>
+                    <button class="icon-action danger" title="Delete Season" @click="confirmDeleteSeason(group.name)">✕</button>
+                  </div>
+                </div>
+                <div class="season-days">
+                  <div v-for="day in DAYS" :key="day" class="season-day-row">
+                    <span class="season-day-label">{{ day.slice(0, 3) }}</span>
+                    <span v-if="getEntryForSeasonDay(group.name, day)" class="season-day-hours mono">
+                      {{ fmtTime(getEntryForSeasonDay(group.name, day).startTime) }} – {{ fmtTime(getEntryForSeasonDay(group.name, day).endTime) }}
+                    </span>
+                    <span v-else class="season-day-closed">Closed</span>
+                  </div>
+                </div>
+                <div class="season-card-footer">
+                  <button v-if="group.name !== activeSeason" class="set-active-btn" @click="setActiveSeason(group.name)">Set Active</button>
+                  <button v-else class="set-active-btn active-set" @click="setActiveSeason('')">Deactivate</button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -287,27 +503,51 @@
             </div>
           </div>
 
-          <!-- ════ SETTINGS TAB ════ -->
-          <div v-else-if="activeTab === 'Settings'" class="tab-panel">
+          <!-- ════ SEMESTERS TAB ════ -->
+          <div v-else-if="activeTab === 'Semesters'" class="tab-panel">
             <div class="panel-header">
-              <h2 class="panel-title">Settings</h2>
+              <div>
+                <h2 class="panel-title">Semesters</h2>
+                <p class="panel-sub">
+                  Academic term bounds used to match student class schedules against shift times.
+                  The semester whose date range contains today is considered "active".
+                </p>
+              </div>
+              <div class="panel-header-actions">
+                <!-- Hidden file input drives the upload. The label-as-button
+                     pattern keeps styling consistent with the sibling buttons. -->
+                <input
+                  ref="semesterPdfInput"
+                  type="file"
+                  accept="application/pdf"
+                  style="display:none"
+                  @change="onSemesterPdfChange" />
+                <button class="secondary-btn" :disabled="pdfImport.parsing" @click="semesterPdfInput?.click()">
+                  {{ pdfImport.parsing ? 'Reading…' : 'Upload calendar PDF' }}
+                </button>
+                <button class="primary-btn" @click="openCreateSemester">+ Add Semester</button>
+              </div>
             </div>
-            <div class="settings-section">
-              <div class="setting-row">
-                <div class="setting-info">
-                  <div class="setting-label">Student Buffer Time</div>
-                  <div class="setting-desc">Minutes of buffer time to add between student employee shifts.</div>
+
+            <div v-if="semesters.length === 0" class="empty-state">
+              No semesters configured yet. Add one to enable class-schedule conflict detection.
+            </div>
+            <div v-else class="semesters-list">
+              <div v-for="s in semesters" :key="s.id_semester"
+                class="semester-card"
+                :class="{ 'semester-card--active': isSemesterActive(s) }">
+                <div class="semester-card-main">
+                  <div class="semester-card-head">
+                    <span class="semester-name">{{ s.name }}</span>
+                    <span v-if="isSemesterActive(s)" class="semester-active-badge">Active</span>
+                  </div>
+                  <div class="semester-dates mono">{{ formatDateShort(s.startDate) }} → {{ formatDateShort(s.endDate) }}</div>
                 </div>
-                <div class="setting-control">
-                  <input v-model.number="bufferTime" type="number" min="0" max="60" class="setting-input" placeholder="0" />
-                  <span class="setting-unit">min</span>
-                  <button class="primary-btn" @click="saveBufferTime" :disabled="savingBuffer">
-                    {{ savingBuffer ? 'Saving…' : 'Save' }}
-                  </button>
+                <div class="action-btns">
+                  <button class="icon-action" title="Edit" @click="openEditSemester(s)">✎</button>
+                  <button class="icon-action danger" title="Delete" @click="confirmDeleteSemester(s)">✕</button>
                 </div>
               </div>
-              <p v-if="bufferSaved"  class="save-success">Settings saved.</p>
-              <p v-if="bufferError"  class="save-error">{{ bufferError }}</p>
             </div>
           </div>
 
@@ -315,31 +555,30 @@
       </template>
 
       <!-- ══════════════════════════════════════
-           REQUEST ANOTHER DEPARTMENT MODAL
+           CREATE NEW DEPARTMENT MODAL
       ══════════════════════════════════════ -->
       <Transition name="modal">
-        <div v-if="requestModal.open" class="modal-overlay" @click.self="requestModal.open = false">
+        <div v-if="createDeptModal.open" class="modal-overlay" @click.self="createDeptModal.open = false">
           <div class="modal">
-            <h3 class="modal-title">Request Department Access</h3>
-            <p class="modal-desc">Select a department you'd like to manage. An Admin will review your request.</p>
+            <h3 class="modal-title">Create New Department</h3>
+            <p class="modal-desc">
+              Add a new department you'll manage.
+              <span v-if="!isAdmin">You'll be added as a manager automatically.</span>
+              <span v-else>As an Admin you'll automatically have access to it.</span>
+            </p>
             <div class="form-group">
-              <label>Department</label>
-              <select v-model="requestModal.id_department">
-                <option value="">— Select a department —</option>
-                <option v-for="d in availableDepts" :key="d.id_department" :value="d.id_department">
-                  {{ d.name }}
-                </option>
-              </select>
+              <label>Department Name <span class="req">*</span></label>
+              <input v-model="createDeptModal.name" type="text" placeholder="e.g. Fitness Center" />
             </div>
             <div class="form-group">
-              <label>Message <span class="optional">(optional)</span></label>
-              <input v-model="requestModal.message" type="text" placeholder="Why do you need access?" />
+              <label>Description <span class="optional">(optional)</span></label>
+              <input v-model="createDeptModal.description" type="text" placeholder="Brief description…" />
             </div>
-            <p v-if="requestModal.error" class="modal-error">{{ requestModal.error }}</p>
+            <p v-if="createDeptModal.error" class="modal-error">{{ createDeptModal.error }}</p>
             <div class="modal-actions">
-              <button class="cancel-btn" @click="requestModal.open = false">Cancel</button>
-              <button class="confirm-btn" :disabled="requestModal.saving" @click="submitRequest">
-                {{ requestModal.saving ? 'Sending…' : 'Send Request' }}
+              <button class="cancel-btn" @click="createDeptModal.open = false">Cancel</button>
+              <button class="confirm-btn" :disabled="createDeptModal.saving" @click="submitCreateNewDepartment">
+                {{ createDeptModal.saving ? 'Creating…' : 'Create Department' }}
               </button>
             </div>
           </div>
@@ -430,46 +669,51 @@
       </Transition>
 
       <!-- ══════════════════════════════════════
-           HOURS MODAL
+           CREATE SEASON MODAL
       ══════════════════════════════════════ -->
       <Transition name="modal">
-        <div v-if="hoursModal.open" class="modal-overlay" @click.self="hoursModal.open = false">
+        <div v-if="createSeasonModal.open" class="modal-overlay" @click.self="createSeasonModal.open = false">
           <div class="modal">
-            <h3 class="modal-title">{{ hoursModal.isEdit ? 'Edit Hours' : 'Add Hours' }}</h3>
+            <h3 class="modal-title">Create Season</h3>
             <div class="form-group">
-              <label>Name <span class="optional">(optional)</span></label>
-              <input v-model="hoursModal.data.name" type="text" placeholder="e.g. Regular Hours" />
+              <label>Season Name</label>
+              <input v-model="createSeasonModal.name" type="text" placeholder="e.g. Fall 2024, Summer, Finals Week" @keyup.enter="submitCreateSeason" />
             </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Day</label>
-                <select v-model="hoursModal.data.dayOfWeek">
-                  <option v-for="d in DAYS" :key="d" :value="d">{{ d }}</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>Season <span class="optional">(optional)</span></label>
-                <select v-model="hoursModal.data.season">
-                  <option value="">— None —</option>
-                  <option v-for="s in SEASONS" :key="s" :value="s">{{ s }}</option>
-                </select>
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Open</label>
-                <input v-model="hoursModal.data.startTime" type="time" />
-              </div>
-              <div class="form-group">
-                <label>Close</label>
-                <input v-model="hoursModal.data.endTime" type="time" />
-              </div>
-            </div>
-            <p v-if="hoursModal.error" class="modal-error">{{ hoursModal.error }}</p>
+            <p v-if="createSeasonModal.error" class="modal-error">{{ createSeasonModal.error }}</p>
             <div class="modal-actions">
-              <button class="cancel-btn" @click="hoursModal.open = false">Cancel</button>
-              <button class="confirm-btn" :disabled="hoursModal.saving" @click="saveHours">
-                {{ hoursModal.saving ? 'Saving…' : hoursModal.isEdit ? 'Save Changes' : 'Create' }}
+              <button class="cancel-btn" @click="createSeasonModal.open = false">Cancel</button>
+              <button class="confirm-btn" @click="submitCreateSeason">Next: Set Hours</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- ══════════════════════════════════════
+           SEASON HOURS MODAL
+      ══════════════════════════════════════ -->
+      <Transition name="modal">
+        <div v-if="seasonHoursModal.open" class="modal-overlay" @click.self="seasonHoursModal.open = false">
+          <div class="modal modal-wide">
+            <h3 class="modal-title">{{ seasonHoursModal.seasonName }} — Hours</h3>
+            <div class="season-hours-table">
+              <div class="season-hours-header">
+                <span>Day</span><span>Open</span><span>Opens</span><span>Closes</span>
+              </div>
+              <div v-for="row in seasonHoursModal.days" :key="row.day" class="season-hours-row">
+                <span class="shm-day">{{ row.day }}</span>
+                <label class="shm-toggle">
+                  <input type="checkbox" v-model="row.open" />
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </label>
+                <input v-model="row.startTime" type="time" :disabled="!row.open" class="shm-time" />
+                <input v-model="row.endTime" type="time" :disabled="!row.open" class="shm-time" />
+              </div>
+            </div>
+            <p v-if="seasonHoursModal.error" class="modal-error">{{ seasonHoursModal.error }}</p>
+            <div class="modal-actions">
+              <button class="cancel-btn" @click="seasonHoursModal.open = false">Cancel</button>
+              <button class="confirm-btn" :disabled="seasonHoursModal.saving" @click="saveSeasonHours">
+                {{ seasonHoursModal.saving ? 'Saving…' : 'Save Hours' }}
               </button>
             </div>
           </div>
@@ -521,6 +765,164 @@
       </Transition>
 
       <!-- ══════════════════════════════════════
+           SEMESTER MODAL
+      ══════════════════════════════════════ -->
+      <Transition name="modal">
+        <div v-if="semesterModal.open" class="modal-overlay" @click.self="semesterModal.open = false">
+          <div class="modal">
+            <h3 class="modal-title">{{ semesterModal.isEdit ? 'Edit Semester' : 'Add Semester' }}</h3>
+            <div class="form-group">
+              <label>Name</label>
+              <input v-model="semesterModal.data.name" type="text" placeholder="e.g. Spring 2026, Fall 2026" />
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Start Date</label>
+                <input v-model="semesterModal.data.startDate" type="date" />
+              </div>
+              <div class="form-group">
+                <label>End Date</label>
+                <input v-model="semesterModal.data.endDate" type="date" />
+              </div>
+            </div>
+            <p v-if="semesterModal.error" class="modal-error">{{ semesterModal.error }}</p>
+            <div class="modal-actions">
+              <button class="cancel-btn" @click="semesterModal.open = false">Cancel</button>
+              <button class="confirm-btn" :disabled="semesterModal.saving" @click="saveSemester">
+                {{ semesterModal.saving ? 'Saving…' : semesterModal.isEdit ? 'Save Changes' : 'Create' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- PDF import preview — user reviews/edits detected semesters
+           before any rows are created in the DB -->
+      <Transition name="modal">
+        <div v-if="pdfImport.open" class="modal-overlay" @click.self="pdfImport.open = false">
+          <div class="modal pdf-import-modal">
+            <h3 class="modal-title">Import semesters from PDF</h3>
+            <p class="modal-body-text">
+              Detected {{ pdfImport.rows.length }} semester{{ pdfImport.rows.length === 1 ? '' : 's' }}.
+              Review and edit before importing — rows missing dates will be skipped.
+            </p>
+
+            <div v-if="pdfImport.rows.length === 0" class="pdf-import-empty">
+              Nothing recognizable in this PDF. Try a different file, or add semesters manually.
+            </div>
+            <div v-else class="pdf-import-list">
+              <div v-for="(row, i) in pdfImport.rows" :key="i" class="pdf-import-row">
+                <label class="pdf-import-check">
+                  <input type="checkbox" v-model="row.include" />
+                </label>
+                <input class="pdf-import-name" type="text" v-model="row.name" placeholder="Semester name" />
+                <input class="pdf-import-date" type="date" v-model="row.startDate" />
+                <span class="pdf-import-arrow">→</span>
+                <input class="pdf-import-date" type="date" v-model="row.endDate" />
+              </div>
+            </div>
+
+            <p v-if="pdfImport.error" class="modal-error">{{ pdfImport.error }}</p>
+            <div class="modal-actions">
+              <button class="cancel-btn" @click="pdfImport.open = false">Cancel</button>
+              <button
+                class="confirm-btn"
+                :disabled="pdfImport.saving || pdfImport.rows.every(r => !r.include)"
+                @click="confirmPdfImport">
+                {{ pdfImport.saving ? 'Importing…' : `Import ${selectedImportCount}` }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- Delete-semester confirm -->
+      <Transition name="modal">
+        <div v-if="semesterDeleteConfirm.open" class="modal-overlay" @click.self="semesterDeleteConfirm.open = false">
+          <div class="modal modal-sm">
+            <h3 class="modal-title">Delete this semester?</h3>
+            <p class="modal-body-text">
+              Removing <strong>{{ semesterDeleteConfirm.item?.name }}</strong> won't affect
+              any unavailability rows already tagged with this semester's name, but conflict
+              detection will stop applying once today leaves this range.
+            </p>
+            <div class="modal-actions">
+              <button class="cancel-btn" @click="semesterDeleteConfirm.open = false">Cancel</button>
+              <button class="confirm-btn danger" :disabled="semesterDeleteConfirm.saving" @click="executeSemesterDelete">
+                {{ semesterDeleteConfirm.saving ? 'Deleting…' : 'Delete' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- ══════════════════════════════════════
+           EMPLOYEE MODAL
+      ══════════════════════════════════════ -->
+      <Transition name="modal">
+        <div v-if="empModal2.open" class="modal-overlay" @click.self="empModal2.open = false">
+          <div class="modal modal-emp">
+            <h3 class="modal-title">{{ empModal2.isEdit ? 'Edit Employee' : 'Add Employee' }}</h3>
+            <div class="form-group">
+              <label>First Name</label>
+              <input v-model="empModal2.data.fName" type="text" placeholder="Jane" />
+            </div>
+            <div class="form-group">
+              <label>Last Name</label>
+              <input v-model="empModal2.data.lName" type="text" placeholder="Smith" />
+            </div>
+            <div class="form-group">
+              <label>Email</label>
+              <input v-model="empModal2.data.email" type="text" placeholder="jane@example.com" />
+            </div>
+            <div class="form-group">
+              <label>Role</label>
+              <select v-model="empModal2.data.role">
+                <option value="Employee">Employee</option>
+                <option value="Manager">Manager</option>
+                <option value="Admin">Admin</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Shift Color</label>
+              <ColorPicker v-model="empModal2.data.color" />
+              <div class="emp-color-preview" v-if="empModal2.data.color">
+                <div class="emp-avatar-preview" :style="{ background: empModal2.data.color }">
+                  {{ (empModal2.data.fName?.[0] || '?') + (empModal2.data.lName?.[0] || '') }}
+                </div>
+                <span class="emp-color-hex">Preview</span>
+              </div>
+            </div>
+            <p v-if="empModal2.error" class="modal-error">{{ empModal2.error }}</p>
+            <div class="modal-actions">
+              <button class="cancel-btn" @click="empModal2.open = false">Cancel</button>
+              <button class="confirm-btn" :disabled="empModal2.saving" @click="saveEmployee">
+                {{ empModal2.saving ? 'Saving…' : empModal2.isEdit ? 'Save Changes' : 'Add Employee' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- ══════════════════════════════════════
+           DELETE EMPLOYEE CONFIRM
+      ══════════════════════════════════════ -->
+      <Transition name="modal">
+        <div v-if="deleteEmpConfirm.open" class="modal-overlay" @click.self="deleteEmpConfirm.open = false">
+          <div class="modal modal-sm">
+            <h3 class="modal-title">Remove {{ deleteEmpConfirm.emp?.fName }} {{ deleteEmpConfirm.emp?.lName }}?</h3>
+            <p class="modal-body-text">This will permanently delete the employee.</p>
+            <div class="modal-actions">
+              <button class="cancel-btn" @click="deleteEmpConfirm.open = false">Cancel</button>
+              <button class="confirm-btn danger" :disabled="deleteEmpConfirm.saving" @click="executeDeleteEmployee">
+                {{ deleteEmpConfirm.saving ? 'Deleting…' : 'Delete' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- ══════════════════════════════════════
            DELETE CONFIRM
       ══════════════════════════════════════ -->
       <Transition name="modal">
@@ -539,13 +941,52 @@
       </Transition>
 
     </template>
+
+    <!-- ══════════════════════════════════════
+         REQUEST ANOTHER DEPARTMENT MODAL
+         (shared between manager + employee views)
+    ══════════════════════════════════════ -->
+    <Transition name="modal">
+      <div v-if="requestModal.open" class="modal-overlay" @click.self="requestModal.open = false">
+        <div class="modal">
+          <h3 class="modal-title">Request Department Access</h3>
+          <p class="modal-desc">
+            Select a department you'd like {{ isManager ? 'to manage' : 'to work in' }}. An Admin will review your request.
+          </p>
+          <div class="form-group">
+            <label>Department</label>
+            <select v-model="requestModal.id_department">
+              <option value="">— Select a department —</option>
+              <option v-for="d in availableDepts" :key="d.id_department" :value="d.id_department">
+                {{ d.name }}
+              </option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Message <span class="optional">(optional)</span></label>
+            <input v-model="requestModal.message" type="text" placeholder="Why do you need access?" />
+          </div>
+          <p v-if="requestModal.error" class="modal-error">{{ requestModal.error }}</p>
+          <div class="modal-actions">
+            <button class="cancel-btn" @click="requestModal.open = false">Cancel</button>
+            <button class="confirm-btn" :disabled="requestModal.saving" @click="submitRequest">
+              {{ requestModal.saving ? 'Sending…' : 'Send Request' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from "vue";
-import { useRouter } from "vue-router";
+import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import Utils from "../config/utils.js";
+import { useDepartment } from "../composables/useDepartment.js";
+import { useBreakpoint } from "../composables/useBreakpoint.js";
+import DeptSwitcher from "../components/DeptSwitcher.vue";
+import ColorPicker from "../components/ColorPicker.vue";
 import {
   getAllDepartments,
   getDepartment,
@@ -569,7 +1010,8 @@ import {
   createSetting,
   createSettingValue,
   updateSettingValue,
-  getManagerDepartments,
+  deleteManagerDepartment,
+  getDeptManagers,
   createManagerDepartment,
   createDepartmentAccessRequest,
   getDepartmentAccessRequests,
@@ -578,23 +1020,37 @@ import {
   assignPositionEmployee,
   removePositionEmployee,
 } from "../services/departmentService.js";
+import {
+  getSemesters,
+  createSemester,
+  updateSemester,
+  deleteSemester,
+  pickActiveSemester,
+} from "../services/semesterService.js";
+import { parseSemestersFromText } from "../utils/parseSemestersFromText.js";
+import { formatDateShort } from "../utils/dateFormat.js";
+// `pdfExtract.js` pulls in pdfjs-dist (~450KB). Deferred via dynamic
+// import below so the PDF library only loads if the user actually
+// clicks "Upload calendar PDF".
 import apiClient from "../services/services.js";
+import { fetchShiftsWithAssignments } from "../services/schedulingService.js";
 
 const router      = useRouter();
+const route       = useRoute();
 const currentUser = ref(Utils.getStore("user"));
 
 const isManager = computed(() =>
   currentUser.value?.role === "Manager" || currentUser.value?.role === "Admin"
 );
+const isAdmin = computed(() => currentUser.value?.role === "Admin");
 const userInitials = computed(() => {
   const u = currentUser.value;
   return `${u?.fName?.[0] ?? ""}${u?.lName?.[0] ?? ""}`.toUpperCase() || "??";
 });
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-const TABS    = ["Overview", "Positions", "Hours", "Events", "Settings"];
+const TABS    = ["Overview", "Positions", "Employees", "Hours", "Events", "Semesters"];
 const DAYS    = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-const SEASONS = ["Fall","Winter","Spring","Summer","Finals"];
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const activeTab      = ref("Overview");
@@ -603,16 +1059,27 @@ const loading        = ref(false);
 const apiError       = ref("");
 const noDeptsYet     = ref(false);
 
-// All departments this manager can access
-const myDepts        = ref([]); // [{ id_department, name, description }]
-const selectedDeptId = ref(null);
-const allDepts       = ref([]); // all departments in system (for request modal)
+// Department switcher — shared composable
+const { myDepts, selectedDeptId, loadDepts, setDept } = useDepartment();
+const { isPhone } = useBreakpoint();
+const allDepts = ref([]); // all departments in system (for request modal)
 
 const department      = ref({});
 const positions       = ref([]);
 const employees       = ref([]);
+const allStaff        = ref([]); // unfiltered — used for manager name lookups
 const calendarEntries = ref([]);
 const events          = ref([]);
+const semesters        = ref([]);
+const deptManagerLinks = ref([]);
+
+// ── Live "Right Now" overview strip ──────────────────────────────────────────
+// Today's shifts, joined with employee + position so we can render a mini
+// timeline + live active count. Ticks every 30s so the active state stays
+// honest without burning battery.
+const todayShifts = ref([]);
+const nowTick     = ref(Date.now());
+let _nowInterval  = null;
 
 // Pending access requests from this manager
 const myPendingRequests = ref([]);
@@ -621,6 +1088,61 @@ const myPendingRequests = ref([]);
 const createForm  = ref({ name: "", description: "" });
 const creating    = ref(false);
 const createError = ref("");
+
+// ── Create *additional* department modal (used when the user already has
+//    at least one department and wants to add another). Distinct from the
+//    blank-state "Create Your Department" form above so we don't wipe the
+//    existing myDepts list on save. ──────────────────────────────────────────
+const createDeptModal = ref({ open: false, name: "", description: "", saving: false, error: "" });
+
+function openCreateDeptModal() {
+  createDeptModal.value = { open: true, name: "", description: "", saving: false, error: "" };
+}
+
+async function submitCreateNewDepartment() {
+  const name = createDeptModal.value.name.trim();
+  if (!name) { createDeptModal.value.error = "Department name is required."; return; }
+  createDeptModal.value.saving = true;
+  createDeptModal.value.error  = "";
+  try {
+    // 1. Create the department record.
+    const deptRes = await createDepartment({
+      name,
+      description: createDeptModal.value.description.trim() || "Student Scheduling System",
+    });
+    const newDept = deptRes.data;
+
+    // 2. Managers get a junction row so the department shows in their list
+    //    on next load (and we don't touch their primary id_department).
+    //    Admins don't need a junction — loadDepts pulls getAllDepartments()
+    //    for admins, so new departments appear automatically everywhere.
+    if (!isAdmin.value && currentUser.value?.id_employee) {
+      try {
+        await createManagerDepartment({
+          id_employee:   currentUser.value.id_employee,
+          id_department: newDept.id_department,
+        });
+      } catch (_) { /* non-critical — e.g. duplicate */ }
+    }
+
+    // 3. Append to the in-session department list and switch to it.
+    if (!myDepts.value.some(d => d.id_department === newDept.id_department)) {
+      myDepts.value = [...myDepts.value, newDept];
+    }
+    // Also keep allDepts (used by the "Request access" modal) in sync.
+    if (!allDepts.value.some(d => d.id_department === newDept.id_department)) {
+      allDepts.value = [...allDepts.value, newDept];
+    }
+    setDept(newDept.id_department);
+
+    createDeptModal.value.open = false;
+    await loadDeptData(newDept.id_department);
+  } catch (err) {
+    createDeptModal.value.error = err.response?.data?.message || err.message || "Failed to create department.";
+  } finally {
+    createDeptModal.value.saving = false;
+  }
+}
 
 async function submitCreateDepartment() {
   if (!createForm.value.name.trim()) { createError.value = "Department name is required."; return; }
@@ -634,10 +1156,16 @@ async function submitCreateDepartment() {
     });
     const newDept = deptRes.data;
 
-    // 2. Link employee to new department
-    await apiClient.put(`/employees/${currentUser.value.id_employee}`, {
-      id_department: newDept.id_department,
-    });
+    // 2. Link employee to new department (primary field + junction table)
+    await Promise.all([
+      apiClient.put(`/employees/${currentUser.value.id_employee}`, {
+        id_department: newDept.id_department,
+      }),
+      createManagerDepartment({
+        id_employee:   currentUser.value.id_employee,
+        id_department: newDept.id_department,
+      }),
+    ]);
 
     // 3. Update localStorage
     const updated = { ...currentUser.value, id_department: newDept.id_department };
@@ -646,7 +1174,7 @@ async function submitCreateDepartment() {
 
     // 4. Show the new department
     myDepts.value = [newDept];
-    selectedDeptId.value = newDept.id_department;
+    setDept(newDept.id_department);
     noDeptsYet.value = false;
     await loadDeptData(newDept.id_department);
   } catch (err) {
@@ -658,35 +1186,28 @@ async function submitCreateDepartment() {
 
 // ── Init: load all depts for this manager ────────────────────────────────────
 async function initLoad() {
-  if (!isManager.value) return;
   initLoading.value = true;
   try {
-    const empId    = currentUser.value?.id_employee;
-    const primaryId = currentUser.value?.id_department ?? null;
+    const empId = currentUser.value?.id_employee;
 
-    // Load junction table + all depts in parallel
-    const [junctionRes, allDeptsRes] = await Promise.allSettled([
-      empId ? getManagerDepartments(empId) : Promise.resolve({ data: [] }),
+    // Delegate dept list loading to shared composable; also load allDepts for request modal
+    const [, allDeptsRes] = await Promise.allSettled([
+      loadDepts(currentUser.value),
       getAllDepartments(),
     ]);
-
     allDepts.value = allDeptsRes.status === "fulfilled" ? (allDeptsRes.value.data || []) : [];
 
-    const junctionRows = junctionRes.status === "fulfilled" ? (junctionRes.value.data || []) : [];
-    const deptIdSet = new Set(junctionRows.map(j => Number(j.id_department)));
-    if (primaryId) deptIdSet.add(Number(primaryId));
-
-    myDepts.value = allDepts.value.filter(d => deptIdSet.has(d.id_department));
-
-    if (myDepts.value.length === 0) {
-      noDeptsYet.value = true;
-    } else {
-      noDeptsYet.value = false;
-      selectedDeptId.value = myDepts.value[0].id_department;
-      await loadDeptData(selectedDeptId.value);
+    if (isManager.value) {
+      if (myDepts.value.length === 0) {
+        noDeptsYet.value = true;
+      } else {
+        noDeptsYet.value = false;
+        await loadDeptData(selectedDeptId.value);
+      }
     }
 
-    // Load this manager's pending access requests
+    // Load this user's pending access requests (managers and employees both
+    // need this for the "Your Pending Requests" list).
     if (empId) {
       const reqRes = await getDepartmentAccessRequests({ id_employeeRequester: empId, status: "Pending" });
       myPendingRequests.value = reqRes.data || [];
@@ -702,34 +1223,296 @@ async function loadDeptData(id) {
   if (!id) return;
   loading.value  = true;
   apiError.value = "";
+  // Clear dept-specific data immediately so stale data from the previous dept never shows
+  calendarEntries.value = [];
+  events.value          = [];
+  positions.value       = [];
+  employees.value       = [];
+  semesters.value       = [];
   try {
-    const [deptRes, posRes, empRes, calRes, evtRes] = await Promise.allSettled([
+    const [deptRes, posRes, empRes, allStaffRes, calRes, evtRes, mgrRes, semRes] = await Promise.allSettled([
       getDepartment(id),
       getPositions(id),
+      getEmployees(id),
       getEmployees(),
       getCalendarEntries(id),
       getEvents(id),
+      getDeptManagers(id),
+      getSemesters(id),
     ]);
 
-    if (deptRes.status === "fulfilled") department.value      = deptRes.value.data || {};
-    if (posRes.status  === "fulfilled") positions.value       = posRes.value.data  || [];
-    if (empRes.status  === "fulfilled") employees.value       = empRes.value.data  || [];
-    if (calRes.status  === "fulfilled") calendarEntries.value = calRes.value.data  || [];
-    if (evtRes.status  === "fulfilled") events.value          = evtRes.value.data  || [];
+    if (deptRes.status      === "fulfilled") department.value       = deptRes.value.data      || {};
+    if (posRes.status       === "fulfilled") positions.value        = posRes.value.data       || [];
+    if (empRes.status       === "fulfilled") employees.value        = empRes.value.data       || [];
+    if (allStaffRes.status  === "fulfilled") allStaff.value         = allStaffRes.value.data  || [];
+    if (calRes.status       === "fulfilled") calendarEntries.value  = calRes.value.data       || [];
+    if (evtRes.status       === "fulfilled") events.value           = evtRes.value.data       || [];
+    if (mgrRes.status       === "fulfilled") deptManagerLinks.value = mgrRes.value.data       || [];
+    if (semRes.status       === "fulfilled") semesters.value        = semRes.value.data       || [];
   } catch (err) {
     apiError.value = "Could not load department data: " + (err.message || "Network error");
   } finally {
     loading.value = false;
   }
-  await loadBufferTime(id);
+  await Promise.all([loadBufferTime(id), loadActiveSeason(id)]);
+  loadTodayShifts(id);
 }
 
-function onDeptChange() {
+// ── Right Now pulse bar computeds ───────────────────────────────────────────
+// Stable palette per position — mirrors the Template Editor so blocks
+// read the same across the app.
+const POSITION_PALETTE = [
+  "#B76E6E","#D08B6A","#C9A96E","#9DA66B",
+  "#7BA37D","#6FA39C","#7B9CC2","#8B91C2",
+  "#A088B8","#BE8AA8","#8F9299","#9C7B5F",
+];
+function getPositionColorForOverview(id_position) {
+  if (!id_position) return "#5c5c6e";
+  const idx = positions.value.findIndex(p => p.id_position === id_position);
+  const key = idx >= 0 ? idx : Number(id_position) || 0;
+  return POSITION_PALETTE[key % POSITION_PALETTE.length];
+}
+
+// Current hour (0-24 fractional), reactive via nowTick.
+const rightNowHour = computed(() => {
+  const _ = nowTick.value;
+  const d = new Date();
+  return d.getHours() + d.getMinutes() / 60;
+});
+
+// Fraction of the business day (24h) the current time represents. Used to
+// position the "now" marker on the timeline.
+const timelineBounds = computed(() => {
+  if (!todayShifts.value.length) return { start: 6, end: 22 };
+  const start = Math.min(6, ...todayShifts.value.map(s => Math.floor(s.startHour)));
+  const end   = Math.max(22, ...todayShifts.value.map(s => Math.ceil(s.endHour)));
+  return { start, end };
+});
+function timelinePct(hour) {
+  const { start, end } = timelineBounds.value;
+  const span = end - start;
+  return ((hour - start) / span) * 100;
+}
+
+const activeShiftsNow = computed(() => {
+  const now = rightNowHour.value;
+  return todayShifts.value.filter(s =>
+    s.id_employee && s.startHour <= now && s.endHour > now
+  );
+});
+const nextShift = computed(() => {
+  const now = rightNowHour.value;
+  const upcoming = todayShifts.value
+    .filter(s => s.id_employee && s.startHour > now)
+    .sort((a, b) => a.startHour - b.startHour);
+  return upcoming[0] || null;
+});
+const nextShiftInLabel = computed(() => {
+  const s = nextShift.value;
+  if (!s) return "";
+  const diffMin = Math.max(0, Math.round((s.startHour - rightNowHour.value) * 60));
+  if (diffMin < 60) return `${diffMin}m`;
+  const h = Math.floor(diffMin / 60);
+  const m = diffMin % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+});
+
+function overviewShiftStyle(shift) {
+  const color = getPositionColorForOverview(shift.id_position);
+  const startPct = Math.max(0, timelinePct(shift.startHour));
+  const endPct   = Math.min(100, timelinePct(shift.endHour));
+  const widthPct = Math.max(1, endPct - startPct);
+  return {
+    left:  `${startPct}%`,
+    width: `${widthPct}%`,
+    background: `linear-gradient(180deg, ${color} 0%, ${color}d9 100%)`,
+    boxShadow: `0 1px 4px ${color}55`,
+  };
+}
+
+async function loadTodayShifts(id) {
+  try {
+    const empMap = {};
+    for (const e of (employees.value || [])) empMap[e.id_employee] = e;
+    const posMap = {};
+    for (const p of (positions.value || [])) posMap[p.id_position] = p;
+    const all = await fetchShiftsWithAssignments(empMap, posMap, id);
+    const todayKey = new Date().toISOString().slice(0, 10);
+    todayShifts.value = (all || []).filter(s => s.date === todayKey);
+  } catch (_) { todayShifts.value = []; }
+}
+
+// Which semester contains today? Used to tag the card with an "Active"
+// badge in the UI. Server does the same computation when it looks up
+// conflicts — this is just a visual cue.
+function isSemesterActive(s) {
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+  return s && s.startDate <= todayKey && todayKey <= s.endDate;
+}
+
+const semesterModal = ref({ open: false, isEdit: false, data: {}, editId: null, saving: false, error: "" });
+const semesterDeleteConfirm = ref({ open: false, item: null, saving: false });
+
+function openCreateSemester() {
+  semesterModal.value = {
+    open: true, isEdit: false, editId: null, saving: false, error: "",
+    data: { name: "", startDate: "", endDate: "" },
+  };
+}
+function openEditSemester(s) {
+  semesterModal.value = {
+    open: true, isEdit: true, editId: s.id_semester, saving: false, error: "",
+    data: { name: s.name, startDate: s.startDate, endDate: s.endDate },
+  };
+}
+async function saveSemester() {
+  const d = semesterModal.value.data;
+  if (!d.name || !d.startDate || !d.endDate) {
+    semesterModal.value.error = "Name, start date, and end date are required.";
+    return;
+  }
+  if (d.startDate > d.endDate) {
+    semesterModal.value.error = "End date must be on or after start date.";
+    return;
+  }
+  semesterModal.value.saving = true;
+  semesterModal.value.error = "";
+  try {
+    if (semesterModal.value.isEdit) {
+      const res = await updateSemester(semesterModal.value.editId, d);
+      const idx = semesters.value.findIndex(s => s.id_semester === semesterModal.value.editId);
+      if (idx !== -1) semesters.value[idx] = res.data;
+    } else {
+      const res = await createSemester({ ...d, id_department: selectedDeptId.value });
+      semesters.value = [...semesters.value, res.data]
+        .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)));
+    }
+    semesterModal.value.open = false;
+  } catch (err) {
+    semesterModal.value.error = err.response?.data?.message || err.message || "Save failed.";
+  } finally {
+    semesterModal.value.saving = false;
+  }
+}
+
+function confirmDeleteSemester(s) {
+  semesterDeleteConfirm.value = { open: true, item: s, saving: false };
+}
+
+// ── PDF import ──────────────────────────────────────────────────────────────
+// User uploads an academic calendar PDF → we extract text client-side
+// and heuristically detect semesters. The preview modal lets them edit
+// / check off rows before any DB writes happen.
+const semesterPdfInput = ref(null);
+const pdfImport = ref({
+  open: false,
+  parsing: false,
+  saving: false,
+  error: "",
+  rows: [],  // [{ include, name, startDate, endDate }]
+});
+
+const selectedImportCount = computed(() =>
+  pdfImport.value.rows.filter(r => r.include).length
+);
+
+async function onSemesterPdfChange(e) {
+  const file = e.target?.files?.[0];
+  // Always reset the input's value so the user can re-upload the same
+  // file later (change events only fire when the value actually changes).
+  if (e.target) e.target.value = "";
+  if (!file) return;
+  pdfImport.value = { open: false, parsing: true, saving: false, error: "", rows: [] };
+  try {
+    const { extractTextFromPdf } = await import("../utils/pdfExtract.js");
+    const text = await extractTextFromPdf(file);
+    const detected = parseSemestersFromText(text);
+    pdfImport.value = {
+      open: true,
+      parsing: false,
+      saving: false,
+      error: "",
+      rows: detected.map(r => ({ include: true, ...r })),
+    };
+  } catch (err) {
+    pdfImport.value.parsing = false;
+    apiError.value = "Couldn't read that PDF: " + (err.message || "Unknown error");
+  }
+}
+
+async function confirmPdfImport() {
+  const selected = pdfImport.value.rows.filter(r => r.include && r.name && r.startDate && r.endDate);
+  if (!selected.length) {
+    pdfImport.value.error = "Nothing to import — check at least one row with complete dates.";
+    return;
+  }
+  pdfImport.value.saving = true;
+  pdfImport.value.error = "";
+  try {
+    // Sequential rather than Promise.all so a single failure doesn't
+    // leave us with half the rows committed and no clear idea which.
+    for (const r of selected) {
+      const res = await createSemester({
+        id_department: selectedDeptId.value,
+        name: r.name,
+        startDate: r.startDate,
+        endDate: r.endDate,
+      });
+      semesters.value = [...semesters.value, res.data];
+    }
+    semesters.value = semesters.value
+      .slice()
+      .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)));
+    pdfImport.value.open = false;
+  } catch (err) {
+    pdfImport.value.error = err.response?.data?.message || err.message || "Import failed partway through.";
+  } finally {
+    pdfImport.value.saving = false;
+  }
+}
+async function executeSemesterDelete() {
+  const item = semesterDeleteConfirm.value.item;
+  if (!item) return;
+  semesterDeleteConfirm.value.saving = true;
+  try {
+    await deleteSemester(item.id_semester);
+    semesters.value = semesters.value.filter(s => s.id_semester !== item.id_semester);
+    semesterDeleteConfirm.value.open = false;
+  } catch (err) {
+    apiError.value = "Delete failed: " + (err.response?.data?.message || err.message);
+    semesterDeleteConfirm.value.open = false;
+  } finally {
+    semesterDeleteConfirm.value.saving = false;
+  }
+}
+
+
+watch(selectedDeptId, (id) => {
+  if (!isManager.value) return;       // employees use a read-only view
+  if (!id || noDeptsYet.value) return;
   activeTab.value = "Overview";
-  loadDeptData(selectedDeptId.value);
+  loadDeptData(id);
+});
+
+function maybeOpenCreateFromQuery() {
+  if (route.query.create === "1" && isManager.value && !noDeptsYet.value) {
+    openCreateDeptModal();
+    router.replace({ query: { ...route.query, create: undefined } });
+  }
 }
 
-onMounted(initLoad);
+onMounted(async () => {
+  await initLoad();
+  maybeOpenCreateFromQuery();
+  _nowInterval = setInterval(() => { nowTick.value = Date.now(); }, 30_000);
+});
+
+onBeforeUnmount(() => {
+  if (_nowInterval) clearInterval(_nowInterval);
+});
+
+watch(() => route.query.create, () => maybeOpenCreateFromQuery());
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtTime(t) {
@@ -743,6 +1526,67 @@ function fmtTime(t) {
 const sortedEvents = computed(() =>
   [...events.value].sort((a, b) => (a.start_time || "") > (b.start_time || "") ? 1 : -1)
 );
+const upcomingEvents = computed(() =>
+  [...events.value]
+    .filter(e => e.start_time && new Date(e.start_time) >= new Date())
+    .sort((a, b) => a.start_time > b.start_time ? 1 : -1)
+    .slice(0, 5)
+);
+const nextEvent = computed(() => upcomingEvents.value[0] || null);
+
+const todayEntry = computed(() => {
+  if (!activeSeason.value) return null;
+  const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const today = dayNames[new Date().getDay()];
+  return getEntryForSeasonDay(activeSeason.value, today);
+});
+
+// ── Manager assignment ─────────────────────────────────────────
+const addManagerId   = ref("");
+const addingManager  = ref(false);
+const managerError   = ref("");
+
+const assignableManagers = computed(() => {
+  const linked = new Set(deptManagerLinks.value.map(l => l.id_employee));
+  return employees.value.filter(e =>
+    (e.role === 'Manager' || e.role === 'Admin') && !linked.has(e.id_employee)
+  );
+});
+
+function managerName(id_employee) {
+  const emp = allStaff.value.find(e => e.id_employee === id_employee);
+  return emp ? `${emp.fName} ${emp.lName}` : `Employee #${id_employee}`;
+}
+
+async function addManager() {
+  if (!addManagerId.value) return;
+  addingManager.value = true;
+  managerError.value  = "";
+  try {
+    const res = await createManagerDepartment({
+      id_employee:   addManagerId.value,
+      id_department: selectedDeptId.value,
+    });
+    deptManagerLinks.value.push(res.data);
+    addManagerId.value = "";
+  } catch (err) {
+    managerError.value = err.message || "Failed to add manager.";
+  } finally {
+    addingManager.value = false;
+  }
+}
+
+async function removeManager(link) {
+  managerError.value = "";
+  try {
+    await deleteManagerDepartment(link.id_managerDepartment);
+    deptManagerLinks.value = deptManagerLinks.value.filter(
+      l => l.id_managerDepartment !== link.id_managerDepartment
+    );
+  } catch (err) {
+    managerError.value = err.message || "Failed to remove manager.";
+  }
+}
 function eventMonth(dt) {
   if (!dt) return "—";
   return new Date(dt).toLocaleDateString("en-US", { month: "short" }).toUpperCase();
@@ -880,6 +1724,89 @@ const empModal = ref({
 const COLORS = ["#FF1744","#C0392B","#E8724A","#9B6B9B","#4A90A4","#C8973A","#D4756B","#6C8EAD"];
 function empColor(emp)    { return emp?.color || COLORS[(emp?.id_employee || 0) % COLORS.length]; }
 function empInitials(emp) { return `${emp?.fName?.[0] || ""}${emp?.lName?.[0] || ""}`.toUpperCase() || "?"; }
+
+// ── Employee tab ───────────────────────────────────────────────────────────────
+const empSearch = ref("");
+const filteredEmployees = computed(() => {
+  const q = empSearch.value.toLowerCase();
+  if (!q) return employees.value;
+  return employees.value.filter(e =>
+    `${e.fName} ${e.lName} ${e.email}`.toLowerCase().includes(q)
+  );
+});
+
+const empModal2 = ref({ open: false, isEdit: false, editId: null, data: {}, saving: false, error: "" });
+const deleteEmpConfirm = ref({ open: false, emp: null, saving: false });
+
+function openCreateEmployee() {
+  empModal2.value = {
+    open: true, isEdit: false, editId: null,
+    data: { fName: "", lName: "", email: "", role: "Employee", color: null },
+    saving: false, error: "",
+  };
+}
+function openEditEmployee(emp) {
+  empModal2.value = {
+    open: true, isEdit: true, editId: emp.id_employee,
+    data: { fName: emp.fName, lName: emp.lName, email: emp.email, role: emp.role, color: emp.color || null },
+    saving: false, error: "",
+  };
+}
+function confirmDeleteEmployee(emp) {
+  deleteEmpConfirm.value = { open: true, emp, saving: false };
+}
+
+async function saveEmployee() {
+  const { isEdit, editId, data } = empModal2.value;
+  if (!data.fName || !data.lName || !data.email) {
+    empModal2.value.error = "First name, last name, and email are required.";
+    return;
+  }
+  empModal2.value.saving = true;
+  empModal2.value.error  = "";
+  try {
+    if (isEdit) {
+      await apiClient.put(`/employees/${editId}`, data);
+      const idx = employees.value.findIndex(e => e.id_employee === editId);
+      if (idx !== -1) employees.value[idx] = { ...employees.value[idx], ...data };
+    } else {
+      const res = await apiClient.post("/employees/create-employee", {
+        ...data,
+        id_department: selectedDeptId.value || null,
+      });
+      // The backend may return a pre-existing employee (matched by email) —
+      // in that case the junction row was already created server-side and
+      // we just need to add them to the local list if not already shown.
+      const alreadyShown = employees.value.some(e => e.id_employee === res.data.id_employee);
+      if (!alreadyShown) employees.value.push(res.data);
+      // Brand-new managers/admins still get the manager junction created
+      // explicitly for their primary department.
+      const isNewRecord = res.data.email === data.email && res.data.fName === data.fName;
+      if (isNewRecord && (data.role === "Manager" || data.role === "Admin") && selectedDeptId.value) {
+        await createManagerDepartment({ id_employee: res.data.id_employee, id_department: selectedDeptId.value });
+      }
+    }
+    empModal2.value.open = false;
+  } catch (err) {
+    empModal2.value.error = err.response?.data?.message || err.message || "Save failed.";
+  } finally {
+    empModal2.value.saving = false;
+  }
+}
+
+async function executeDeleteEmployee() {
+  deleteEmpConfirm.value.saving = true;
+  try {
+    await apiClient.delete(`/employees/${deleteEmpConfirm.value.emp.id_employee}`);
+    employees.value = employees.value.filter(e => e.id_employee !== deleteEmpConfirm.value.emp.id_employee);
+    deleteEmpConfirm.value.open = false;
+  } catch (err) {
+    apiError.value = "Delete failed: " + err.message;
+    deleteEmpConfirm.value.open = false;
+  } finally {
+    deleteEmpConfirm.value.saving = false;
+  }
+}
 function empNameById(id)  { const e = employees.value.find(e => e.id_employee === id); return e ? `${e.fName} ${e.lName}` : `Employee #${id}`; }
 
 const unassignedEmployees = computed(() => {
@@ -921,39 +1848,103 @@ async function removeEmp(row) {
   } catch (err) { empModal.value.error = err.message || "Failed to remove."; }
 }
 
-// ── Hours CRUD ────────────────────────────────────────────────────────────────
-const hoursModal = ref({ open: false, isEdit: false, data: {}, editId: null, saving: false, error: "" });
+// ── Season Hours ───────────────────────────────────────────────────────────────
+const groupedBySeasons = computed(() => {
+  const groups = {};
+  calendarEntries.value.forEach(entry => {
+    const s = entry.season || "Unassigned";
+    if (!groups[s]) groups[s] = [];
+    groups[s].push(entry);
+  });
+  return Object.entries(groups).map(([name, entries]) => ({ name, entries }));
+});
 
-function openCreateHours() {
-  hoursModal.value = { open: true, isEdit: false, saving: false, error: "", editId: null,
-    data: { name: "", dayOfWeek: "Monday", season: "", startTime: "08:00", endTime: "17:00" } };
+function getEntryForSeasonDay(seasonName, dayName) {
+  return calendarEntries.value.find(e =>
+    (e.season || "Unassigned") === seasonName && e.dayOfWeek === dayName
+  ) || null;
 }
-function openEditHours(entry) {
-  hoursModal.value = {
-    open: true, isEdit: true, saving: false, error: "",
-    data: { name: entry.name || "", dayOfWeek: entry.dayOfWeek || "Monday", season: entry.season || "", startTime: entry.startTime?.slice(0,5) || "08:00", endTime: entry.endTime?.slice(0,5) || "17:00" },
-    editId: entry.id_hours_of_operation,
+
+// ── Create Season Modal ────────────────────────────────────────────────────────
+const createSeasonModal = ref({ open: false, name: "", error: "" });
+
+function openCreateSeason() {
+  createSeasonModal.value = { open: true, name: "", error: "" };
+}
+function submitCreateSeason() {
+  const name = createSeasonModal.value.name.trim();
+  if (!name) { createSeasonModal.value.error = "Season name is required."; return; }
+  if (groupedBySeasons.value.some(g => g.name === name)) {
+    createSeasonModal.value.error = "A season with that name already exists."; return;
+  }
+  createSeasonModal.value.open = false;
+  openSeasonHoursModal(name);
+}
+
+// ── Season Hours Modal ─────────────────────────────────────────────────────────
+const seasonHoursModal = ref({ open: false, seasonName: "", saving: false, error: "", days: [] });
+
+function openSeasonHoursModal(seasonName) {
+  seasonHoursModal.value = {
+    open: true, seasonName, saving: false, error: "",
+    days: DAYS.map(day => {
+      const existing = getEntryForSeasonDay(seasonName, day);
+      return {
+        day,
+        open: !!existing,
+        startTime: existing?.startTime?.slice(0, 5) || "08:00",
+        endTime:   existing?.endTime?.slice(0, 5)   || "17:00",
+        existingId: existing?.id_hours_of_operation || null,
+      };
+    }),
   };
 }
-async function saveHours() {
-  const { isEdit, data, editId } = hoursModal.value;
-  if (!data.name?.trim()) { hoursModal.value.error = "Name is required."; return; }
-  if (!data.dayOfWeek) { hoursModal.value.error = "Day is required."; return; }
-  hoursModal.value.saving = true; hoursModal.value.error = "";
+
+async function saveSeasonHours() {
+  const { seasonName, days } = seasonHoursModal.value;
+  seasonHoursModal.value.saving = true;
+  seasonHoursModal.value.error  = "";
   try {
-    const payload = { name: data.name.trim(), dayOfWeek: data.dayOfWeek, season: data.season || null, startTime: data.startTime, endTime: data.endTime };
-    if (isEdit) {
-      await updateCalendarEntry(editId, payload);
-      const idx = calendarEntries.value.findIndex(e => e.id_hours_of_operation === editId);
-      if (idx !== -1) calendarEntries.value[idx] = { ...calendarEntries.value[idx], ...payload };
-    } else {
-      const res = await createCalendarEntry(payload);
-      calendarEntries.value.push(res.data);
+    for (const d of days) {
+      const seasonVal = seasonName === "Unassigned" ? null : seasonName;
+      if (d.open) {
+        const payload = {
+          name:          `${seasonName} – ${d.day}`,
+          dayOfWeek:     d.day,
+          season:        seasonVal,
+          startTime:     d.startTime,
+          endTime:       d.endTime,
+          id_department: selectedDeptId.value,
+        };
+        if (d.existingId) {
+          await updateCalendarEntry(d.existingId, payload);
+          const idx = calendarEntries.value.findIndex(e => e.id_hours_of_operation === d.existingId);
+          if (idx !== -1) calendarEntries.value[idx] = { ...calendarEntries.value[idx], ...payload };
+        } else {
+          const res = await createCalendarEntry(payload);
+          calendarEntries.value.push(res.data);
+          d.existingId = res.data.id_hours_of_operation;
+        }
+      } else if (d.existingId) {
+        await deleteCalendarEntry(d.existingId);
+        calendarEntries.value = calendarEntries.value.filter(e => e.id_hours_of_operation !== d.existingId);
+        d.existingId = null;
+      }
     }
-    hoursModal.value.open = false;
+    seasonHoursModal.value.open = false;
   } catch (err) {
-    hoursModal.value.error = err.message || "Save failed.";
-  } finally { hoursModal.value.saving = false; }
+    seasonHoursModal.value.error = err.message || "Save failed.";
+  } finally {
+    seasonHoursModal.value.saving = false;
+  }
+}
+
+function confirmDeleteSeason(seasonName) {
+  const entries = calendarEntries.value.filter(e => (e.season || "Unassigned") === seasonName);
+  deleteConfirm.value = {
+    open: true, type: "season", item: { seasonName, entries },
+    label: `season "${seasonName}" and all its hours`, saving: false,
+  };
 }
 
 // ── Events CRUD ───────────────────────────────────────────────────────────────
@@ -1018,7 +2009,6 @@ async function saveEvent() {
 const deleteConfirm = ref({ open: false, type: "", item: null, label: "", saving: false });
 
 function confirmDeletePosition(pos) { deleteConfirm.value = { open: true, type: "position", item: pos, label: `position "${pos.name}"`, saving: false }; }
-function confirmDeleteHours(entry)  { deleteConfirm.value = { open: true, type: "hours",    item: entry, label: `hours entry "${entry.name || entry.dayOfWeek}"`, saving: false }; }
 function confirmDeleteEvent(ev)     { deleteConfirm.value = { open: true, type: "event",    item: ev, label: `event "${ev.title}"`, saving: false }; }
 
 async function executeDelete() {
@@ -1028,9 +2018,13 @@ async function executeDelete() {
     if (type === "position") {
       await deletePosition(item.id_position);
       positions.value = positions.value.filter(p => p.id_position !== item.id_position);
-    } else if (type === "hours") {
-      await deleteCalendarEntry(item.id_hours_of_operation);
-      calendarEntries.value = calendarEntries.value.filter(e => e.id_hours_of_operation !== item.id_hours_of_operation);
+    } else if (type === "season") {
+      for (const entry of item.entries) {
+        await deleteCalendarEntry(entry.id_hours_of_operation);
+      }
+      const ids = new Set(item.entries.map(e => e.id_hours_of_operation));
+      calendarEntries.value = calendarEntries.value.filter(e => !ids.has(e.id_hours_of_operation));
+      if (activeSeason.value === item.seasonName) await setActiveSeason("");
     } else if (type === "event") {
       await deleteEvent(item.id_event);
       events.value = events.value.filter(e => e.id_event !== item.id_event);
@@ -1040,6 +2034,46 @@ async function executeDelete() {
     apiError.value = "Delete failed: " + (err.message || "Unknown error");
     deleteConfirm.value.open = false;
   } finally { deleteConfirm.value.saving = false; }
+}
+
+// ── Settings: Active Season ───────────────────────────────────────────────────
+const ACTIVE_SEASON_KEY   = "Active Season";
+const activeSeason        = ref("");
+let   activeSeasonValueId = null;
+let   activeSeasonSettingId = null;
+
+async function loadActiveSeason(id) {
+  if (!id) return;
+  try {
+    const valRes = await getSettingValues(id);
+    const values = valRes.data || [];
+    const sv = values.find(v => v.name === ACTIVE_SEASON_KEY || v.key === "active_season");
+    if (sv) { activeSeasonValueId = sv.id_settingValue; activeSeasonSettingId = sv.id_setting; activeSeason.value = sv.value || ""; return; }
+    const settingsRes = await getSettings();
+    let setting = (settingsRes.data || []).find(s => s.name === ACTIVE_SEASON_KEY || s.key === "active_season");
+    if (!setting) {
+      const nr = await createSetting({ name: ACTIVE_SEASON_KEY, key: "active_season", type: "string" });
+      setting = nr.data;
+    }
+    activeSeasonSettingId = setting?.id_setting;
+    if (activeSeasonSettingId) {
+      const nvr = await createSettingValue({ id_setting: activeSeasonSettingId, id_department: id, value: "" });
+      activeSeasonValueId = nvr.data?.id_settingValue;
+    }
+    activeSeason.value = "";
+  } catch { activeSeason.value = ""; }
+}
+
+async function setActiveSeason(seasonName) {
+  try {
+    if (activeSeasonValueId) {
+      await updateSettingValue(activeSeasonValueId, seasonName);
+    } else if (activeSeasonSettingId) {
+      const res = await createSettingValue({ id_setting: activeSeasonSettingId, id_department: selectedDeptId.value, value: seasonName });
+      activeSeasonValueId = res.data?.id_settingValue;
+    }
+    activeSeason.value = seasonName;
+  } catch (err) { console.error("Failed to set active season:", err); }
 }
 
 // ── Settings: Buffer Time ─────────────────────────────────────────────────────
@@ -1092,14 +2126,15 @@ async function saveBufferTime() {
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,600,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 .dept-root {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Satoshi', sans-serif;
   display: flex; flex-direction: column;
-  height: 100vh; background: var(--bg-page); color: var(--tx-primary); overflow: hidden;
+  flex: 1; background: var(--bg-page); color: var(--tx-primary); overflow: hidden;
 }
 
 /* ── Full-page centered states ── */
@@ -1109,8 +2144,8 @@ async function saveBufferTime() {
   border: 1px solid var(--bdr-subtle); border-radius: 16px; max-width: 400px;
 }
 .big-icon { font-size: 40px; display: block; margin-bottom: 16px; }
-.centered-box h2 { font-size: 20px; font-weight: 700; margin-bottom: 10px; color: var(--tx-heading); }
-.centered-box p  { font-size: 14px; color: var(--tx-muted); margin-bottom: 24px; }
+.centered-box h2 { font-size: 22px; font-weight: 700; margin-bottom: 10px; color: var(--tx-heading); }
+.centered-box p  { font-size: 16px; color: var(--tx-muted); margin-bottom: 24px; }
 
 /* ── Create Department box ── */
 .create-dept-box {
@@ -1118,10 +2153,10 @@ async function saveBufferTime() {
   border-radius: 16px; padding: 48px; width: 480px; max-width: 95vw; text-align: center;
 }
 .create-dept-icon  { font-size: 48px; margin-bottom: 16px; }
-.create-dept-title { font-size: 22px; font-weight: 700; color: var(--tx-heading); margin-bottom: 8px; }
-.create-dept-sub   { font-size: 14px; color: var(--tx-muted); margin-bottom: 28px; }
+.create-dept-title { font-size: 24px; font-weight: 700; color: var(--tx-heading); margin-bottom: 8px; }
+.create-dept-sub   { font-size: 16px; color: var(--tx-muted); margin-bottom: 28px; }
 .create-dept-box .form-group { text-align: left; }
-.form-error { font-size: 12px; color: var(--err-text); margin: 8px 0; }
+.form-error { font-size: 14px; color: var(--err-text); margin: 8px 0; }
 .wide-btn   { width: 100%; margin-top: 8px; }
 
 /* ── Top nav ── */
@@ -1131,18 +2166,56 @@ async function saveBufferTime() {
   background: var(--bg-surface); border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0;
 }
 .nav-left  { display: flex; align-items: center; gap: 16px; }
+.nav-dept-switcher { display: flex; align-items: center; gap: 12px; }
+.nav-divider { width: 1px; height: 20px; background: var(--bdr-subtle); flex-shrink: 0; }
+.dept-sub-nav {
+  display: flex; align-items: center; gap: 4px;
+  padding: 12px 24px; border-bottom: 1px solid var(--bdr-subtle);
+  background: var(--bg-surface); flex-shrink: 0;
+}
+.dept-sub-tab {
+  position: relative; padding: 6px 14px; background: none; border: none;
+  color: var(--tx-muted); font-family: 'Satoshi', sans-serif; font-size: 15px;
+  cursor: pointer; border-radius: 0; transition: color 0.15s;
+}
+.dept-sub-tab::after {
+  content: ''; position: absolute; bottom: -13px; left: 8px; right: 8px;
+  height: 2px; background: transparent; border-radius: 2px; transition: background 0.15s;
+}
+.dept-sub-tab:hover { color: var(--tx-secondary); }
+.dept-sub-tab:hover::after { background: var(--bdr-medium); }
+.dept-sub-tab.active { color: var(--accent); font-weight: 600; }
+.dept-sub-tab.active::after { background: var(--accent); }
+.dept-sub-nav-right { margin-left: auto; }
+
+.new-dept-btn {
+  background: var(--accent-bg); border: 1px solid var(--accent-border);
+  color: var(--accent); padding: 4px 10px; border-radius: 6px;
+  font-size: 12px; font-weight: 600; font-family: 'Satoshi', sans-serif;
+  cursor: pointer; transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.new-dept-btn:hover { background: var(--accent-subtle); border-color: var(--accent); }
+
+/* Button pair in the header: Request Department + New Department. Always
+   a vertical stack on the right side of the dept header, aligned with the
+   top of the name/description column on its left. */
+.dept-header-actions {
+  display: flex; flex-direction: column; gap: 6px;
+  align-items: stretch; flex-shrink: 0;
+}
 .nav-right { margin-left: auto; }
 .back-btn {
   display: flex; align-items: center; gap: 6px;
   background: none; border: none; color: var(--tx-muted);
-  font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer; transition: color 0.15s;
+  font-family: 'Satoshi', sans-serif; font-size: 15px; cursor: pointer; transition: color 0.15s;
 }
 .back-btn:hover { color: var(--accent); }
 .nav-logo { display: flex; align-items: center; }
 .nav-tabs { display: flex; gap: 2px; }
 .nav-tab {
   padding: 6px 18px; background: transparent; border: none;
-  color: var(--tx-muted); font-family: 'DM Sans', sans-serif; font-size: 13px;
+  color: var(--tx-muted); font-family: 'Satoshi', sans-serif; font-size: 15px;
   cursor: pointer; border-radius: 6px; transition: background 0.15s, color 0.15s;
 }
 .nav-tab:hover  { background: var(--bdr-subtle); color: var(--tx-secondary); }
@@ -1151,7 +2224,7 @@ async function saveBufferTime() {
 .avatar {
   width: 30px; height: 30px; border-radius: 50%; background: var(--accent);
   display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 700; color: #fff; overflow: hidden;
+  font-size: 13px; font-weight: 700; color: #fff; overflow: hidden;
 }
 .avatar-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 
@@ -1167,52 +2240,54 @@ async function saveBufferTime() {
 }
 .loading-spinner.sm { width: 20px; height: 20px; border-width: 2px; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.loading-text { font-size: 13px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
+.loading-text { font-size: 15px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
 .content-loading { display: flex; justify-content: center; padding: 48px; }
 .error-banner {
   background: var(--err-bg); border-bottom: 1px solid var(--err-border);
-  color: var(--err-text); font-size: 12px; padding: 8px 20px; display: flex; align-items: center; gap: 10px;
+  color: var(--err-text); font-size: 14px; padding: 8px 20px; display: flex; align-items: center; gap: 10px;
 }
 .retry-btn {
   background: none; border: 1px solid var(--err-text); color: var(--err-text);
-  padding: 2px 10px; border-radius: 4px; cursor: pointer; font-size: 11px;
+  padding: 2px 10px; border-radius: 4px; cursor: pointer; font-size: 13px;
 }
 
 /* ── Department header ── */
 .dept-header {
   padding: 20px 36px 16px;
   background: var(--bg-surface); border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0;
+  display: flex; align-items: flex-start; gap: 16px;
 }
+.dept-header-main { flex: 1; min-width: 0; }
 .dept-selector-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-.dept-selector-label { font-size: 12px; color: var(--tx-muted); font-weight: 500; }
+.dept-selector-label { font-size: 14px; color: var(--tx-muted); font-weight: 500; }
 .dept-selector {
   background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary);
-  padding: 5px 10px; border-radius: 8px; font-size: 13px;
-  font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s;
+  padding: 5px 10px; border-radius: 8px; font-size: 15px;
+  font-family: 'Satoshi', sans-serif; outline: none; transition: border-color 0.15s;
 }
 .dept-selector:focus { border-color: var(--accent); }
 
 .dept-name-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 .dept-color-dot { width: 12px; height: 12px; border-radius: 2px; background: var(--accent); flex-shrink: 0; }
-.dept-name { font-size: 22px; font-weight: 700; color: var(--tx-heading); }
+.dept-name { font-size: 24px; font-weight: 700; color: var(--tx-heading); }
 
 .dept-desc-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.dept-desc { font-size: 14px; color: var(--tx-muted); }
+.dept-desc { font-size: 16px; color: var(--tx-muted); }
 
 .inline-edit-btn {
   background: none; border: none; color: var(--tx-ghost);
-  font-size: 14px; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: color 0.15s, background 0.15s;
+  font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: color 0.15s, background 0.15s;
 }
 .inline-edit-btn:hover { color: var(--accent); background: var(--bg-active); }
 .inline-input {
   background: var(--bg-input); border: 1px solid var(--accent);
   color: var(--tx-primary); padding: 4px 10px; border-radius: 6px;
-  font-size: 20px; font-weight: 700; font-family: 'DM Sans', sans-serif;
+  font-size: 22px; font-weight: 700; font-family: 'Satoshi', sans-serif;
   outline: none; min-width: 200px;
 }
-.inline-input.wide { font-size: 14px; font-weight: 400; min-width: 300px; }
+.inline-input.wide { font-size: 16px; font-weight: 400; min-width: 300px; }
 .save-inline-btn, .cancel-inline-btn {
-  background: none; border: none; cursor: pointer; font-size: 16px;
+  background: none; border: none; cursor: pointer; font-size: 18px;
   width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center;
   transition: background 0.15s, color 0.15s;
 }
@@ -1222,16 +2297,17 @@ async function saveBufferTime() {
 .cancel-inline-btn:hover { background: var(--bdr-subtle); }
 .save-inline-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.dept-header-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.dept-header-bottom { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
 .dept-chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .dept-chip {
   padding: 3px 12px; background: var(--bg-active); border: 1px solid var(--bdr-subtle);
-  border-radius: 100px; font-size: 12px; color: var(--tx-secondary); font-weight: 500;
+  border-radius: 100px; font-size: 14px; color: var(--tx-secondary); font-weight: 500;
 }
 .request-access-btn {
   background: none; border: 1px solid var(--bdr-medium); color: var(--tx-muted);
-  padding: 5px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
-  font-family: 'DM Sans', sans-serif; transition: border-color 0.15s, color 0.15s;
+  padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px;
+  font-family: 'Satoshi', sans-serif; transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
 }
 .request-access-btn:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -1244,42 +2320,195 @@ async function saveBufferTime() {
   display: flex; align-items: flex-start; justify-content: space-between;
   margin-bottom: 24px; flex-wrap: wrap; gap: 16px;
 }
-.panel-title { font-size: 22px; font-weight: 700; color: var(--tx-heading); margin-bottom: 4px; }
-.panel-sub   { font-size: 13px; color: var(--tx-faint); }
+.panel-title { font-size: 24px; font-weight: 700; color: var(--tx-heading); margin-bottom: 4px; }
+.panel-sub   { font-size: 15px; color: var(--tx-faint); }
 .empty-state {
-  text-align: center; padding: 48px; color: var(--tx-ghost); font-style: italic; font-size: 14px;
+  text-align: center; padding: 48px; color: var(--tx-ghost); font-style: italic; font-size: 16px;
   background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 12px;
+}
+
+/* ── Right Now pulse bar ── */
+.right-now-bar {
+  background: linear-gradient(135deg, var(--bg-modal) 0%, var(--bg-surface) 100%);
+  border: 1px solid var(--bdr-subtle);
+  border-radius: 14px;
+  padding: 18px 22px 20px;
+  margin-bottom: 18px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.10);
+}
+.rn-header {
+  display: flex; align-items: center; gap: 28px; flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.rn-live {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 10px; border-radius: 999px;
+  background: rgba(34, 197, 94, 0.14);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  color: rgb(34, 197, 94);
+  font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .08em;
+}
+.rn-live-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: rgb(34, 197, 94);
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55);
+  animation: rn-pulse 1.8s ease-in-out infinite;
+}
+@keyframes rn-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55); transform: scale(1); }
+  50%      { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); transform: scale(1.15); }
+}
+.rn-count-block { display: flex; align-items: baseline; gap: 10px; }
+.rn-count {
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-size: 44px; font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--tx-heading);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.rn-count-label {
+  font-size: 14px; color: var(--tx-secondary);
+  letter-spacing: -0.01em;
+  max-width: 110px;
+  line-height: 1.15;
+}
+.rn-next {
+  margin-left: auto;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+  font-family: 'Satoshi', 'Inter', sans-serif;
+}
+.rn-next-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .08em;
+  color: var(--tx-faint);
+}
+.rn-next-value {
+  font-size: 20px; font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.rn-next-who { font-size: 12px; color: var(--tx-secondary); }
+.rn-next--muted .rn-next-label { color: var(--tx-muted); }
+
+.rn-timeline {
+  position: relative;
+  height: 28px;
+  background: var(--bg-surface);
+  border-radius: 6px;
+  border: 1px solid var(--bdr-subtle);
+  margin-bottom: 22px;
+  overflow: visible;
+}
+.rn-shift {
+  position: absolute; top: 3px; bottom: 3px;
+  border-radius: 4px;
+  transition: filter .15s, transform .15s;
+  cursor: help;
+}
+.rn-shift:hover { filter: brightness(1.12); transform: translateY(-1px); }
+.rn-shift--active {
+  animation: rn-shift-pulse 2.4s ease-in-out infinite;
+}
+.rn-shift--open {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 1.5px dashed rgba(240, 230, 211, 0.5);
+}
+@keyframes rn-shift-pulse {
+  0%, 100% { filter: brightness(1); }
+  50%      { filter: brightness(1.14); }
+}
+.rn-now-line {
+  position: absolute; top: -4px; bottom: -4px;
+  width: 2px; background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  z-index: 2; pointer-events: none;
+}
+.rn-now-dot {
+  position: absolute; top: -4px; left: -4px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.22), 0 0 10px var(--accent);
+  animation: rn-pulse 1.8s ease-in-out infinite;
+}
+.rn-axis {
+  position: absolute; left: 0; right: 0; top: calc(100% + 4px);
+  display: flex; justify-content: space-between;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; color: var(--tx-faint);
+  pointer-events: none;
 }
 
 /* ── Overview ── */
 .overview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+.overview-wide-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
 .overview-card { background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 12px; padding: 20px 22px; }
-.ov-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--tx-faint); margin-bottom: 8px; }
-.ov-value { font-size: 14px; color: var(--tx-secondary); word-break: break-word; }
-.ov-big   { font-size: 28px; font-weight: 700; color: var(--accent); font-family: 'DM Mono', monospace; }
+.ov-label { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--tx-faint); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+.ov-value { font-size: 16px; color: var(--tx-secondary); word-break: break-word; }
+.ov-big   { font-size: 30px; font-weight: 700; color: var(--accent); font-family: 'DM Mono', monospace; }
+.ov-season-badge { background: var(--accent); color: #fff; border-radius: 4px; padding: 1px 7px; font-size: 12px; text-transform: none; letter-spacing: 0; font-weight: 600; }
+.ov-no-season { color: var(--tx-faint); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 13px; }
+.ov-count-badge { background: var(--bg-elevated); color: var(--tx-secondary); border-radius: 10px; padding: 1px 8px; font-size: 13px; text-transform: none; letter-spacing: 0; font-weight: 600; }
+.ov-empty-hint { color: var(--tx-faint); font-size: 15px; font-style: italic; }
+.ov-hours-list { display: flex; flex-direction: column; gap: 7px; }
+.ov-hours-row { display: flex; align-items: center; gap: 14px; }
+.ov-hours-day { width: 34px; font-size: 14px; font-weight: 600; color: var(--tx-secondary); flex-shrink: 0; }
+.ov-hours-time { font-size: 15px; color: var(--tx-primary); font-family: 'DM Mono', monospace; }
+.ov-hours-closed { font-size: 14px; color: var(--tx-faint); font-style: italic; }
+.ov-events-list { display: flex; flex-direction: column; gap: 10px; }
+.ov-event-row { display: flex; align-items: center; gap: 12px; }
+.ov-event-date { display: flex; flex-direction: column; align-items: center; background: var(--bg-elevated); border-radius: 6px; padding: 5px 9px; min-width: 40px; flex-shrink: 0; }
+.ov-event-month { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: var(--accent); text-transform: uppercase; line-height: 1.2; }
+.ov-event-day { font-size: 19px; font-weight: 700; color: var(--tx-primary); line-height: 1.1; font-family: 'DM Mono', monospace; }
+.ov-event-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ov-event-title { font-size: 15px; font-weight: 600; color: var(--tx-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-event-time { font-size: 13px; color: var(--tx-faint); }
+
+/* Open Today */
+.ov-faint { font-size: 15px; color: var(--tx-faint); font-style: italic; margin-top: 2px; }
+.ov-open-badge { display: inline-block; background: #16a34a22; color: #4ade80; border-radius: 4px; padding: 2px 10px; font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.ov-closed-badge { display: inline-block; background: #ff174422; color: var(--accent); border-radius: 4px; padding: 2px 10px; font-size: 14px; font-weight: 700; }
+.ov-today-hours { font-size: 15px; color: var(--tx-primary); font-family: 'DM Mono', monospace; }
+
+/* Next Event highlight */
+.ov-next-event { background: var(--bg-elevated); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+.ov-next-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+.ov-next-body { display: flex; align-items: center; gap: 12px; }
+.ov-next-title { font-size: 16px !important; }
+.ov-events-rest { border-top: 1px solid var(--bdr-subtle); padding-top: 10px; }
+.ov-event-date-sm .ov-event-day { font-size: 16px !important; }
+
+/* Managers */
+.ov-managers-card { margin-top: 16px; }
+.ov-managers-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.ov-manager-chip { background: var(--bg-elevated); border: 1px solid var(--bdr-subtle); border-radius: 20px; padding: 4px 14px; font-size: 15px; color: var(--tx-primary); font-weight: 500; }
 
 .my-requests-section { margin-top: 28px; }
-.section-title { font-size: 15px; font-weight: 600; color: var(--tx-heading); margin-bottom: 12px; }
+.section-title { font-size: 17px; font-weight: 600; color: var(--tx-heading); margin-bottom: 12px; }
 .my-request-row {
   display: flex; align-items: center; gap: 12px;
   background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 10px;
   padding: 12px 16px; margin-bottom: 8px;
 }
-.my-request-dept { font-size: 14px; font-weight: 500; color: var(--tx-primary); flex: 1; }
+.my-request-dept { font-size: 16px; font-weight: 500; color: var(--tx-primary); flex: 1; }
 
 /* ── Positions ── */
 .positions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
 .position-card { background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 12px; padding: 18px 20px; transition: border-color 0.15s; }
 .position-card:hover { border-color: var(--bdr-medium); }
 .pos-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.pos-name  { font-size: 15px; font-weight: 600; color: var(--tx-primary); }
+.pos-name  { font-size: 17px; font-weight: 600; color: var(--tx-primary); }
 .pos-meta  { margin-bottom: 6px; }
-.pos-pay   { font-size: 12px; font-family: 'DM Mono', monospace; color: #22c55e; }
-.pos-desc  { font-size: 12px; color: var(--tx-muted); margin-bottom: 10px; }
+.pos-pay   { font-size: 14px; font-family: 'DM Mono', monospace; color: #22c55e; }
+.pos-desc  { font-size: 14px; color: var(--tx-muted); margin-bottom: 10px; }
 .manage-emp-btn {
   width: 100%; margin-top: 10px; padding: 6px 0;
   background: var(--bg-active); border: 1px solid var(--bdr-subtle); border-radius: 7px;
-  color: var(--tx-secondary); font-family: 'DM Sans', sans-serif; font-size: 12px;
+  color: var(--tx-secondary); font-family: 'Satoshi', sans-serif; font-size: 14px;
   cursor: pointer; transition: border-color 0.15s, color 0.15s;
 }
 .manage-emp-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -1287,7 +2516,7 @@ async function saveBufferTime() {
 /* ── Manage Employees modal ── */
 .modal-lg { width: 480px; }
 .emp-modal-loading { display: flex; justify-content: center; padding: 24px; }
-.emp-empty { font-size: 13px; color: var(--tx-ghost); font-style: italic; margin-bottom: 16px; }
+.emp-empty { font-size: 15px; color: var(--tx-ghost); font-style: italic; margin-bottom: 16px; }
 .assigned-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; max-height: 260px; overflow-y: auto; }
 .assigned-list::-webkit-scrollbar { width: 4px; }
 .assigned-list::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
@@ -1298,29 +2527,106 @@ async function saveBufferTime() {
 .assigned-avatar {
   width: 28px; height: 28px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 10px; font-weight: 700; color: #fff; flex-shrink: 0;
+  font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0;
 }
-.assigned-name { font-size: 13px; color: var(--tx-primary); flex: 1; font-weight: 500; }
-.icon-action.sm { width: 24px; height: 24px; font-size: 11px; }
+.assigned-name { font-size: 15px; color: var(--tx-primary); flex: 1; font-weight: 500; }
+.icon-action.sm { width: 24px; height: 24px; font-size: 13px; }
 .add-emp-row { display: flex; gap: 10px; align-items: center; margin-bottom: 4px; }
 .emp-select {
   flex: 1; background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary);
-  padding: 8px 10px; border-radius: 8px; font-size: 13px;
-  font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s;
+  padding: 8px 10px; border-radius: 8px; font-size: 15px;
+  font-family: 'Satoshi', sans-serif; outline: none; transition: border-color 0.15s;
 }
 .emp-select:focus { border-color: var(--accent); }
 .emp-select option { background: var(--bg-modal); }
 
-/* ── Hours table ── */
+/* ── Seasons grid ── */
+.seasons-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.season-card {
+  background: var(--bg-surface); border: 1px solid var(--bdr-subtle);
+  border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;
+  transition: border-color 0.15s;
+}
+.season-card:hover { border-color: var(--bdr-medium); }
+.season-card--active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.season-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.season-name-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.season-name { font-size: 18px; font-weight: 700; color: var(--tx-primary); }
+.active-chip { display: inline-block; padding: 2px 9px; border-radius: 100px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; background: var(--accent); color: #fff; }
+.active-season-badge { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; padding: 2px 10px; border-radius: 100px; font-size: 13px; font-weight: 600; background: var(--accent); color: #fff; }
+.season-days { display: flex; flex-direction: column; gap: 4px; }
+.season-day-row { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.season-day-label { font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 600; color: var(--tx-muted); width: 30px; flex-shrink: 0; text-transform: uppercase; }
+.season-day-hours { font-family: 'DM Mono', monospace; font-size: 14px; color: var(--tx-secondary); }
+.season-day-closed { font-size: 14px; color: var(--tx-ghost, #444); font-style: italic; }
+.season-card-footer { margin-top: auto; }
+.set-active-btn {
+  width: 100%; padding: 7px 0; border-radius: 8px;
+  border: 1px solid var(--bdr-medium); background: transparent;
+  color: var(--tx-secondary); font-family: 'Satoshi', sans-serif; font-size: 15px; font-weight: 500;
+  cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.set-active-btn:hover { border-color: var(--accent); color: var(--accent); }
+.set-active-btn.active-set { border-color: var(--accent); color: var(--accent); background: rgba(255,23,68,0.06); }
+.set-active-btn.active-set:hover { background: rgba(255,23,68,0.12); }
+
+/* ── Season Hours Modal ── */
+.modal-wide { width: 620px !important; max-width: 96vw !important; }
+.season-hours-table { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--bdr-subtle); border-radius: 10px; overflow: visible; }
+.season-hours-header {
+  display: grid; grid-template-columns: 100px 52px 1fr 1fr;
+  padding: 8px 14px; background: var(--bg-input); border-radius: 10px 10px 0 0;
+  font-size: 13px; font-weight: 600; color: var(--tx-faint); text-transform: uppercase; letter-spacing: 0.07em;
+}
+.season-hours-row {
+  display: grid; grid-template-columns: 100px 52px 1fr 1fr;
+  align-items: center; padding: 10px 14px; gap: 10px;
+  border-top: 1px solid var(--bdr-subtle);
+}
+.shm-day { font-size: 15px; color: var(--tx-primary); font-weight: 500; }
+.shm-time {
+  background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary);
+  padding: 5px 8px; border-radius: 7px; font-size: 15px; font-family: 'DM Mono', monospace;
+  outline: none; width: 100%; transition: border-color 0.15s;
+}
+.shm-time:focus { border-color: var(--accent); }
+.shm-time:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* Toggle switch */
+.shm-toggle { position: relative; display: inline-block; width: 36px; height: 20px; cursor: pointer; }
+.shm-toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-track {
+  position: absolute; inset: 0; background: var(--bdr-medium); border-radius: 20px; transition: background 0.2s;
+}
+.shm-toggle input:checked + .toggle-track { background: var(--accent); }
+.toggle-thumb {
+  position: absolute; top: 3px; left: 3px;
+  width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: transform 0.2s;
+}
+.shm-toggle input:checked + .toggle-track .toggle-thumb { transform: translateX(16px); }
+
+/* ── Hours table (kept for back-compat if used elsewhere) ── */
 .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--bdr-subtle); }
-.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 15px; }
 .data-table thead { background: var(--bg-surface); }
-.data-table th { text-align: left; padding: 12px 16px; font-size: 11px; font-weight: 600; color: var(--tx-faint); text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 1px solid var(--bdr-subtle); }
+.data-table th { text-align: left; padding: 12px 16px; font-size: 13px; font-weight: 600; color: var(--tx-faint); text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 1px solid var(--bdr-subtle); }
 .data-table td { padding: 12px 16px; border-bottom: 1px solid var(--bdr-strong); color: var(--tx-secondary); vertical-align: middle; }
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tr:hover td { background: var(--bg-input); }
-.day-badge { display: inline-block; padding: 2px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; background: var(--bg-active); color: var(--tx-secondary); }
-.mono { font-family: 'DM Mono', monospace; font-size: 12px; }
+.empty-row { text-align: center; color: var(--tx-faint); padding: 32px 0 !important; }
+.emp-name-cell { display: flex; align-items: center; gap: 10px; }
+.emp-avatar { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0; }
+.role-badge { display: inline-block; padding: 2px 10px; border-radius: 100px; font-size: 13px; font-weight: 600; background: var(--bg-active); color: var(--tx-secondary); }
+.role-badge.manager, .role-badge.admin { background: rgba(255,23,68,0.15); color: #FF1744; }
+.search-input { background: var(--bg-input); border: 1px solid var(--bdr-subtle); border-radius: 8px; padding: 8px 14px; color: var(--tx-primary); font-family: inherit; font-size: 15px; outline: none; width: 220px; }
+.search-input:focus { border-color: var(--accent); }
+.day-badge { display: inline-block; padding: 2px 10px; border-radius: 100px; font-size: 13px; font-weight: 600; background: var(--bg-active); color: var(--tx-secondary); }
+.mono {
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-size: 14px; font-weight: 500;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
 
 /* ── Events ── */
 .events-list { display: flex; flex-direction: column; gap: 12px; }
@@ -1328,71 +2634,284 @@ async function saveBufferTime() {
 .event-card:hover { border-color: var(--bdr-medium); }
 .event-card-left { flex-shrink: 0; }
 .event-date-block { width: 48px; display: flex; flex-direction: column; align-items: center; background: var(--bg-active); border-radius: 8px; padding: 6px 0; }
-.event-month   { font-size: 10px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; }
-.event-day-num { font-size: 20px; font-weight: 700; color: var(--tx-primary); font-family: 'DM Mono', monospace; }
+.event-month   { font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; }
+.event-day-num { font-size: 22px; font-weight: 700; color: var(--tx-primary); font-family: 'DM Mono', monospace; }
 .event-card-body { flex: 1; }
 .event-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-.event-title { font-size: 15px; font-weight: 600; color: var(--tx-primary); }
+.event-title { font-size: 17px; font-weight: 600; color: var(--tx-primary); }
 .event-meta  { display: flex; gap: 12px; margin-bottom: 6px; flex-wrap: wrap; }
-.event-meta-item { font-size: 12px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
-.event-desc  { font-size: 13px; color: var(--tx-secondary); }
+.event-meta-item { font-size: 14px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
+.event-desc  { font-size: 15px; color: var(--tx-secondary); }
+
+/* ── Semesters ── */
+.panel-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.secondary-btn {
+  background: var(--bg-surface); border: 1px solid var(--bdr-medium);
+  color: var(--tx-secondary); padding: 8px 14px; border-radius: 8px;
+  cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 600;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.secondary-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.secondary-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.semesters-list { display: flex; flex-direction: column; gap: 10px; max-width: 720px; }
+.semester-card {
+  display: flex; align-items: center; gap: 16px;
+  background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 12px;
+  padding: 14px 18px; transition: border-color 0.15s;
+}
+.semester-card:hover { border-color: var(--bdr-medium); }
+.semester-card--active { border-color: var(--accent); background: var(--accent-bg); }
+.semester-card-main { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.semester-card-head { display: flex; align-items: center; gap: 10px; }
+.semester-name {
+  font-size: 16px; font-weight: 600; color: var(--tx-primary);
+}
+.semester-active-badge {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 100px;
+  background: var(--accent); color: #fff;
+}
+.semester-dates { font-size: 13px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
+
+/* PDF import preview */
+.pdf-import-modal { width: 680px; max-width: 95vw; }
+.pdf-import-empty {
+  padding: 18px; text-align: center;
+  color: var(--tx-faint); font-size: 14px; font-style: italic;
+  background: var(--bg-surface); border: 1px dashed var(--bdr-subtle);
+  border-radius: 10px; margin: 8px 0 16px;
+}
+.pdf-import-list { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; margin-bottom: 16px; }
+.pdf-import-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; background: var(--bg-surface);
+  border: 1px solid var(--bdr-subtle); border-radius: 8px;
+}
+.pdf-import-check { display: flex; align-items: center; }
+.pdf-import-name {
+  flex: 1;
+  background: transparent; border: 1px solid transparent;
+  color: var(--tx-primary); font-family: inherit; font-size: 14px;
+  padding: 5px 8px; border-radius: 6px; outline: none;
+  font-weight: 500;
+}
+.pdf-import-name:focus { border-color: var(--accent); background: var(--bg-modal); }
+.pdf-import-date {
+  background: var(--bg-modal); border: 1px solid var(--bdr-medium);
+  color: var(--tx-primary); font-family: 'DM Mono', monospace; font-size: 13px;
+  padding: 4px 6px; border-radius: 6px; outline: none;
+}
+.pdf-import-date:focus { border-color: var(--accent); }
+.pdf-import-arrow { color: var(--tx-ghost); font-size: 14px; }
 
 /* ── Settings ── */
 .settings-section { max-width: 600px; }
 .setting-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 12px; padding: 20px 24px; margin-bottom: 12px; flex-wrap: wrap; }
 .setting-info { flex: 1; }
-.setting-label { font-size: 15px; font-weight: 600; color: var(--tx-primary); margin-bottom: 4px; }
-.setting-desc  { font-size: 13px; color: var(--tx-muted); }
+.setting-label { font-size: 17px; font-weight: 600; color: var(--tx-primary); margin-bottom: 4px; }
+.setting-desc  { font-size: 15px; color: var(--tx-muted); }
 .setting-control { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.setting-input { width: 80px; background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary); padding: 7px 10px; border-radius: 8px; font-size: 14px; font-family: 'DM Mono', monospace; outline: none; text-align: center; transition: border-color 0.15s; }
+.setting-input { width: 80px; background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary); padding: 7px 10px; border-radius: 8px; font-size: 16px; font-family: 'DM Mono', monospace; outline: none; text-align: center; transition: border-color 0.15s; }
 .setting-input:focus { border-color: var(--accent); }
-.setting-unit { font-size: 13px; color: var(--tx-muted); }
-.save-success { font-size: 12px; color: #22c55e; margin-top: 4px; }
-.save-error   { font-size: 12px; color: var(--err-text); margin-top: 4px; }
+.setting-unit { font-size: 15px; color: var(--tx-muted); }
+.save-success { font-size: 14px; color: #22c55e; margin-top: 4px; }
+.save-error   { font-size: 14px; color: var(--err-text); margin-top: 4px; }
+
+/* ── Manager settings ── */
+.mgr-setting-row { align-items: flex-start; flex-direction: column; gap: 16px; }
+.mgr-setting-body { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.mgr-setting-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bg-elevated); border-radius: 8px; }
+.mgr-setting-name { flex: 1; font-size: 16px; color: var(--tx-primary); }
+.mgr-you-badge { font-size: 13px; font-weight: 600; color: var(--tx-faint); background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 10px; padding: 1px 8px; }
+.mgr-add-row { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+.mgr-select { flex: 1; background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary); padding: 8px 10px; border-radius: 8px; font-size: 16px; outline: none; }
 
 /* ── Shared ── */
 .action-btns { display: flex; gap: 6px; }
-.icon-action { background: var(--bdr-subtle); border: none; color: var(--tx-muted); width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; }
+.icon-action { background: var(--bdr-subtle); border: none; color: var(--tx-muted); width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 15px; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; }
 .icon-action:hover        { background: var(--bg-active); color: var(--accent); }
 .icon-action.danger:hover { background: var(--err-bg); color: var(--err-text); }
 
-.status-badge { display: inline-block; padding: 2px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; }
+.status-badge { display: inline-block; padding: 2px 10px; border-radius: 100px; font-size: 13px; font-weight: 600; }
 .status-badge.Pending  { background: var(--warn-bg);  color: var(--warn-text); }
 .status-badge.Approved { background: var(--ok-bg);    color: var(--ok-text); }
 .status-badge.Denied   { background: var(--deny-bg);  color: var(--err-text); }
 
 /* ── Buttons ── */
-.primary-btn { background: var(--accent); border: none; color: #fff; padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: background 0.15s, transform 0.12s; }
+.primary-btn { background: var(--accent); border: none; color: #fff; padding: 7px 16px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; font-family: 'Satoshi', sans-serif; transition: background 0.15s, transform 0.12s; }
 .primary-btn:hover    { background: var(--accent-hover); transform: translateY(-1px); }
 .primary-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
 /* ── Modals ── */
 .modal-overlay { position: fixed; inset: 0; background: var(--bg-moverlay); display: flex; align-items: center; justify-content: center; z-index: 300; backdrop-filter: blur(4px); }
-.modal { background: var(--bg-modal); border: 1px solid var(--bdr-medium); border-radius: 14px; padding: 28px; width: 420px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
+.modal { background: var(--bg-modal); border: 1px solid var(--bdr-medium); border-radius: 14px; padding: 28px; width: 420px; max-width: 96vw; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
 .modal-sm { width: 320px; }
-.modal-title { font-size: 18px; font-weight: 700; color: var(--tx-primary); margin-bottom: 8px; }
-.modal-desc  { font-size: 13px; color: var(--tx-muted); margin-bottom: 20px; }
-.modal-body-text { font-size: 14px; color: var(--tx-muted); margin-bottom: 20px; }
+.modal.modal-emp {
+  width: 520px;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 32px;
+}
+.modal-title { font-size: 20px; font-weight: 700; color: var(--tx-primary); margin-bottom: 8px; }
+.modal-desc  { font-size: 15px; color: var(--tx-muted); margin-bottom: 20px; }
+.modal-body-text { font-size: 16px; color: var(--tx-muted); margin-bottom: 20px; }
 .form-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
 .form-row   { display: flex; gap: 12px; }
 .form-row .form-group { flex: 1; }
-.form-group label { font-size: 10px; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
+.form-group label { font-size: 12px; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
 .req { color: var(--accent); }
 .optional { font-weight: 400; text-transform: none; font-style: italic; letter-spacing: 0; }
 .form-group input,
-.form-group select { background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary); padding: 8px 10px; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; width: 100%; }
+.form-group select { background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary); padding: 8px 10px; border-radius: 8px; font-size: 15px; font-family: 'Satoshi', sans-serif; outline: none; transition: border-color 0.15s; width: 100%; }
 .form-group input:focus,
 .form-group select:focus { border-color: var(--accent); }
 .form-group select option { background: var(--bg-modal); }
-.modal-error { font-size: 12px; color: var(--err-text); margin-bottom: 12px; }
+.modal-error { font-size: 14px; color: var(--err-text); margin-bottom: 12px; }
+
+.emp-color-preview { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.emp-avatar-preview {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; color: #fff;
+}
+.emp-color-hex { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--tx-muted); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-.cancel-btn { background: none; border: 1px solid var(--bdr-medium); color: var(--tx-muted); padding: 8px 18px; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 13px; transition: border-color 0.15s; }
+.cancel-btn { background: none; border: 1px solid var(--bdr-medium); color: var(--tx-muted); padding: 8px 18px; border-radius: 8px; cursor: pointer; font-family: 'Satoshi', sans-serif; font-size: 15px; transition: border-color 0.15s; }
 .cancel-btn:hover { border-color: var(--bdr-subtle); color: var(--tx-secondary); }
-.confirm-btn { background: var(--accent); border: none; color: #fff; padding: 8px 18px; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600; transition: background 0.15s; }
+.confirm-btn { background: var(--accent); border: none; color: #fff; padding: 8px 18px; border-radius: 8px; cursor: pointer; font-family: 'Satoshi', sans-serif; font-size: 15px; font-weight: 600; transition: background 0.15s; }
 .confirm-btn:hover    { background: var(--accent-hover); }
 .confirm-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .confirm-btn.danger   { background: var(--danger-btn); }
 .confirm-btn.danger:hover { background: var(--danger-btn-h); }
 .modal-enter-active, .modal-leave-active { transition: opacity 0.2s, transform 0.2s; }
 .modal-enter-from, .modal-leave-to { opacity: 0; transform: scale(0.96); }
+
+/* ── Employee My Departments view ───────────────────────────────────────── */
+.emp-page-title {
+  font-size: 18px; font-weight: 700; color: var(--tx-heading);
+  margin-left: 4px;
+}
+.emp-content { padding: 32px 36px; max-width: 960px; margin: 0 auto; width: 100%; }
+.emp-header-row {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 24px; flex-wrap: wrap; gap: 16px;
+}
+.emp-section-title { font-size: 24px; font-weight: 700; color: var(--tx-heading); margin-bottom: 4px; }
+.emp-section-sub   { font-size: 14px; color: var(--tx-faint); }
+.emp-empty {
+  padding: 40px; text-align: center; color: var(--tx-faint); font-size: 15px;
+  background: var(--bg-surface); border: 1px dashed var(--bdr-medium); border-radius: 12px;
+}
+.emp-dept-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+.emp-dept-card {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--bg-surface); border: 1px solid var(--bdr-subtle);
+  border-radius: 12px; padding: 16px 18px;
+  transition: border-color 0.15s, transform 0.05s;
+}
+.emp-dept-card:hover { border-color: var(--accent); }
+.emp-dept-color {
+  width: 8px; align-self: stretch; background: var(--accent); border-radius: 4px; flex-shrink: 0;
+}
+.emp-dept-body { flex: 1; min-width: 0; }
+.emp-dept-name { font-size: 17px; font-weight: 600; color: var(--tx-primary); margin-bottom: 2px; }
+.emp-dept-desc {
+  font-size: 14px; color: var(--tx-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.emp-dept-pill {
+  font-size: 12px; font-weight: 700; color: var(--accent);
+  background: var(--accent-bg); border: 1px solid var(--accent-border);
+  padding: 3px 8px; border-radius: 100px; text-transform: uppercase; letter-spacing: 0.08em;
+  flex-shrink: 0;
+}
+.emp-requests-section {
+  margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--bdr-subtle);
+}
+.emp-request-row {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--bg-surface); border: 1px solid var(--bdr-subtle);
+  border-radius: 10px; padding: 12px 16px; margin-top: 10px;
+}
+.emp-request-dept { flex: 1; font-size: 16px; font-weight: 600; color: var(--tx-primary); }
+.emp-request-status {
+  font-size: 13px; font-weight: 600; color: var(--warn-text);
+  background: var(--warn-bg); padding: 3px 10px; border-radius: 100px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.emp-cancel-btn {
+  background: none; border: 1px solid var(--bdr-medium); color: var(--tx-faint);
+  width: 26px; height: 26px; border-radius: 6px; cursor: pointer;
+  font-size: 14px; transition: color 0.15s, border-color 0.15s;
+}
+.emp-cancel-btn:hover { color: var(--err-text); border-color: var(--err-text); }
+
+/* ── Phone overrides ── */
+@media (max-width: 599.98px) {
+  /* Seven tabs + "New Department" won't fit on a 390px row. Turn the
+     sub-nav into an iOS-style horizontally-scrollable strip so every tab
+     stays one tap away (faster than a dropdown). "New Department" flows
+     at the end of the strip instead of being pushed right. */
+  .dept-sub-nav {
+    padding: 10px 14px;
+    gap: 2px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+  }
+  .dept-sub-nav::-webkit-scrollbar { display: none; }
+  .dept-sub-tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: 14px;
+    padding: 6px 12px;
+  }
+  /* Tighter padding on phone — the dept header takes up a lot of vertical
+     real estate otherwise. The two-column (main | actions) layout is
+     already handled by the base .dept-header flex. */
+  .dept-header { padding: 14px 14px 12px; gap: 10px; }
+
+  /* Tab panel content: the panel-header search + add-button row stacks
+     vertically so the search input isn't squeezed. */
+  .tab-panel .panel-header { gap: 10px; }
+  .tab-panel .panel-header > div[style*="flex"] { width: 100%; flex-direction: column !important; align-items: stretch !important; }
+  .tab-panel .search-input { width: 100%; }
+
+  /* Overview tab: every card becomes a full-width row instead of flowing
+     into a 2- or 3-column grid, so users see one block at a time. */
+  .overview-grid,
+  .overview-wide-grid { grid-template-columns: 1fr; gap: 10px; }
+  .overview-wide-grid { margin-top: 10px; }
+}
+
+/* ── Employees tab: phone card list ── */
+.dept-emp-cards { display: flex; flex-direction: column; gap: 8px; }
+.dept-emp-card {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--bdr-subtle);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.dept-emp-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dept-emp-name {
+  font-size: 15px; font-weight: 600; color: var(--tx-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dept-emp-email {
+  font-size: 12px; color: var(--tx-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dept-emp-body .role-badge { margin-top: 2px; align-self: flex-start; }
+.dept-emp-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.dept-emp-empty {
+  padding: 16px; text-align: center;
+  font-size: 14px; color: var(--tx-faint);
+  background: var(--bg-surface); border: 1px dashed var(--bdr-subtle); border-radius: 10px;
+}
 </style>

@@ -13,15 +13,8 @@ import SocialLogin from '../components/SocialLogin.vue';
     <!-- Left panel — branding -->
     <div class="left-panel">
       <div class="brand">
-        <div class="brand-icon">
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-            <rect x="2" y="4" width="11" height="7" rx="2" fill="#FF1744"/>
-            <rect x="15" y="4" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-            <rect x="2" y="14" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-            <rect x="15" y="14" width="11" height="7" rx="2" fill="#F0E6D3"/>
-          </svg>
-        </div>
-        <span class="brand-name">Scheduler</span>
+        <img src="../assets/cowork_logo_dark.png" alt="CoWork" class="brand-logo" />
+        <span class="brand-name">Cowork</span>
       </div>
 
       <div class="hero-text">
@@ -30,16 +23,16 @@ import SocialLogin from '../components/SocialLogin.vue';
           Shifts, simplified<span class="dot">.</span>
         </h1>
         <p class="subline">
-          One platform for every department on campus — from Fitness Center to IT, schedules that actually work.
+          One platform for every department on campus — from The Brew to IT, schedules that actually work.
         </p>
       </div>
 
       <div class="dept-chips">
-        <span class="chip">Fitness Center</span>
+        <span class="chip">The Dub</span>
         <span class="chip">Student Success</span>
         <span class="chip">IT</span>
         <span class="chip">Library</span>
-        <span class="chip">Dining</span>
+        <span class="chip">The Brew</span>
       </div>
     </div>
 
@@ -72,12 +65,13 @@ import SocialLogin from '../components/SocialLogin.vue';
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,700;1,700&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,600,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,700;1,700&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 .login-root {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Satoshi', sans-serif;
   display: flex;
   min-height: 100vh;
   background: #08060a;
@@ -139,18 +133,14 @@ import SocialLogin from '../components/SocialLogin.vue';
   gap: 10px;
   margin-bottom: 80px;
 }
-.brand-icon {
-  width: 42px; height: 42px;
-  background: #180508;
-  border: 1px solid rgba(255,23,68,0.3);
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.brand-logo {
+  height: 52px;
+  width: auto;
+  object-fit: contain;
 }
 .brand-name {
   font-family: 'DM Mono', monospace;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 500;
   letter-spacing: 0.08em;
   color: #e2e8f0;
@@ -161,7 +151,7 @@ import SocialLogin from '../components/SocialLogin.vue';
 }
 .eyebrow {
   font-family: 'DM Mono', monospace;
-  font-size: 11px;
+  font-size: 13px;
   letter-spacing: 0.2em;
   color: #FF1744;
   text-transform: uppercase;
@@ -177,7 +167,7 @@ import SocialLogin from '../components/SocialLogin.vue';
 }
 .dot { color: #FF1744; }
 .subline {
-  font-size: 15px;
+  font-size: 17px;
   color: #64748b;
   line-height: 1.7;
   max-width: 380px;
@@ -191,7 +181,7 @@ import SocialLogin from '../components/SocialLogin.vue';
 }
 .chip {
   font-family: 'DM Mono', monospace;
-  font-size: 11px;
+  font-size: 13px;
   padding: 5px 12px;
   border-radius: 100px;
   border: 1px solid rgba(255,23,68,0.2);
@@ -222,20 +212,20 @@ import SocialLogin from '../components/SocialLogin.vue';
 .card-top { margin-bottom: 36px; }
 .card-label {
   font-family: 'DM Mono', monospace;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.2em;
   color: #FF1744;
   margin-bottom: 12px;
 }
 .card-title {
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 600;
   color: #f1f5f9;
   margin-bottom: 8px;
   letter-spacing: -0.02em;
 }
 .card-sub {
-  font-size: 13px;
+  font-size: 15px;
   color: #475569;
   line-height: 1.6;
 }
@@ -253,7 +243,7 @@ import SocialLogin from '../components/SocialLogin.vue';
 }
 .divider-text {
   font-family: 'DM Mono', monospace;
-  font-size: 10px;
+  font-size: 12px;
   color: #334155;
   letter-spacing: 0.1em;
   white-space: nowrap;
@@ -266,7 +256,7 @@ import SocialLogin from '../components/SocialLogin.vue';
 }
 
 .card-footer {
-  font-size: 11px;
+  font-size: 13px;
   color: #334155;
   text-align: center;
   line-height: 1.6;

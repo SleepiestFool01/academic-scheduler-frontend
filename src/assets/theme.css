@@ -71,6 +71,11 @@
   --scrollbar:      #1e1e2e;
   --hour-even:      rgba(255, 255, 255, 0.012);
   --today-badge-tx: #000;
+
+  /* Responsive sizing tokens (theme-agnostic) */
+  --modal-max-w:    min(520px, calc(100vw - 24px));
+  --modal-max-h:    min(80vh, calc(100vh - 32px));
+  --tap-target-min: 44px;
 }
 
 /* ── Light theme ── */
@@ -140,4 +145,43 @@
   --scrollbar:      #c0bdb5;
   --hour-even:      rgba(0, 0, 0, 0.015);
   --today-badge-tx: #fff;
+}
+
+/* ── Touch-target hardening ──
+   Bump tightly-spaced controls to a comfortable tap size on phone/tablet.
+   Uses `:where(...)` so specificity stays at zero — never overrides any
+   component's intentional sizing. Desktop unchanged. */
+@media (max-width: 959.98px) {
+  :where(.icon-action, .toolbar-btn, button.btn, .nav-tab, .emp-picker-option) {
+    min-height: var(--tap-target-min);
+    min-width:  var(--tap-target-min);
+  }
+}
+
+/* ── Modal sizing safety net ──
+   Every modal across the app shares these classes; rather than patch each
+   `width: 360px` declaration individually, cap them globally. `max-width`
+   wins over `width` per CSS spec, and `:where(...)` keeps specificity at
+   zero so components can still override intentionally. */
+:where(.modal, .stm-modal, .tpl-apply-modal, .modal-card, .modal-content) {
+  max-width:  var(--modal-max-w);
+  max-height: var(--modal-max-h);
+  overflow-y: auto;
+}
+
+/* ── Phone defensive overflow pass ──
+   Pages we did not redesign still need to not horizontally scroll the
+   whole viewport. Tables get a horizontally scrollable container; common
+   header/action rows wrap instead of overflowing; the page itself is
+   pinned to the viewport so no stray element can push it wider.
+   Inner elements that want to pan (e.g. .cal-grid-wrapper in week view)
+   still scroll themselves via their own overflow-x: auto. */
+@media (max-width: 599.98px) {
+  html, body { overflow-x: hidden; max-width: 100vw; }
+  :where(.table-wrap) { overflow-x: auto; max-width: 100%; }
+  :where(.page-header, .section-header, .header-actions, .action-btns, .row-actions) {
+    flex-wrap: wrap;
+  }
+  /* Safety net: images and media never push beyond their container. */
+  :where(img, video, iframe) { max-width: 100%; height: auto; }
 }

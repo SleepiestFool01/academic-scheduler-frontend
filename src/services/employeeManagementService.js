@@ -5,13 +5,15 @@
  * Uses the existing apiClient from services.js (handles auth token automatically).
  */
 import apiClient from "./services.js";
+import { fmtHour as _fmtHour } from "../composables/usePreferences.js";
 
 // ── Employees ──────────────────────────────────────────────────────────────────
 
 export const employeeService = {
-  /** GET /employees — all users regardless of role */
-  getAll() {
-    return apiClient.get("/employees");
+  /** GET /employees — all users regardless of role, optionally filtered by department */
+  getAll(id_department = null) {
+    const qs = id_department ? `?id_department=${id_department}` : "";
+    return apiClient.get(`/employees${qs}`);
   },
 
   /** POST /employees/create-employee — create a new employee record */
@@ -48,20 +50,14 @@ export function timeStrToHour(t) {
   const [h, m] = t.split(":").map(Number);
   return h + m / 60;
 }
-export function fmtHour(h) {
-  const total = Math.round(h * 60);
-  const hr = Math.floor(total / 60);
-  const min = total % 60;
-  const suffix = hr >= 12 ? "pm" : "am";
-  const disp = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
-  return min === 0 ? `${disp}${suffix}` : `${disp}:${String(min).padStart(2, "0")}${suffix}`;
-}
+export const fmtHour = _fmtHour;
 const DAY_ENUM = ["Sun", "Mon", "Tue", "Wed", "Thur", "Fri", "Sat"];
 
 export const shiftService = {
-  /** GET /shifts */
-  getAll() {
-    return apiClient.get("/shifts");
+  /** GET /shifts, optionally filtered by department */
+  getAll(id_department = null) {
+    const qs = id_department ? `?id_department=${id_department}` : "";
+    return apiClient.get(`/shifts${qs}`);
   },
 
   /** GET /shift-assignments */
@@ -73,7 +69,7 @@ export const shiftService = {
    * Create a shift definition, optionally assigning it to an employee.
    * @param {{ id_employee?, date, startHour, endHour, notes, positionName, id_position? }} p
    */
-  async createAndAssign({ id_employee = null, date, startHour, endHour, notes, positionName = "", id_position = null }) {
+  async createAndAssign({ id_employee = null, date, startHour, endHour, notes, positionName = "", id_position = null, id_department = null, force = false }) {
     const [y, mo, d] = date.split("-").map(Number);
     const dow = new Date(y, mo - 1, d).getDay();
     const label = positionName || "Shift";
@@ -86,23 +82,33 @@ export const shiftService = {
       startTime:   hourToTimeStr(startHour),
       endTime:     hourToTimeStr(endHour),
       id_position,
+      id_department,
     });
 
     if (id_employee) {
-      const { data: assignment } = await apiClient.post("/shift-assignments", {
-        id_employee,
-        id_shift: shift.id_shift,
-        date,
-      });
-      return { shift, assignment };
+      try {
+        const body = { id_employee, id_shift: shift.id_shift, date };
+        if (force) body.force = true;
+        const { data: assignment } = await apiClient.post("/shift-assignments", body);
+        return { shift, assignment };
+      } catch (err) {
+        // The shift already persisted; surface details so the caller can
+        // confirm the unavailability conflict and retry just the assignment.
+        err.orphanShift = shift;
+        err.pendingAssignment = { id_employee, id_shift: shift.id_shift, date };
+        throw err;
+      }
     }
 
     return { shift, assignment: null };
   },
 
-  /** Create a ShiftAssignment for an existing shift */
-  async createAssignment(id_shift, id_employee, date) {
-    const { data } = await apiClient.post("/shift-assignments", { id_shift, id_employee, date });
+  /** Create a ShiftAssignment for an existing shift. `force` bypasses a
+   *  soft unavailability conflict on the backend (time-off still blocks). */
+  async createAssignment(id_shift, id_employee, date, force = false) {
+    const body = { id_shift, id_employee, date };
+    if (force) body.force = true;
+    const { data } = await apiClient.post("/shift-assignments", body);
     return data;
   },
 

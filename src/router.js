@@ -1,13 +1,13 @@
-import { createRouter, createWebHistory } from "vue-router";
+import { createRouter, createWebHashHistory } from "vue-router";
 import Utils from "./config/utils";
 
 import LoginStart  from "./views/LoginStart.vue";
 import SelectRole  from "./views/SelectRole.vue";
 import GoogleAuth  from "./views/GoogleAuth.vue";
-import Dashboard   from "./views/Dashboard.vue";
+import AppLayout   from "./layouts/AppLayout.vue";
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  history: createWebHashHistory(import.meta.env.BASE_URL),
   routes: [
 
     // ── Auth ─────────────────────────────────────────────────────────────────
@@ -16,14 +16,25 @@ const router = createRouter({
     { path: "/select-role", component: SelectRole },
     { path: "/google-auth", component: GoogleAuth },
 
-    // ── App ──────────────────────────────────────────────────────────────────
-    { path: "/dashboard",   component: Dashboard },
-    { path: "/manage",      component: () => import("./views/EmployeeManagement.vue") },
-    { path: "/tradeboard",  component: () => import("./views/Tradeboard.vue") },
-    { path: "/tasks",       component: () => import("./views/Tasks.vue") },
-    { path: "/requests",    component: () => import("./views/Requests.vue") },
-    { path: "/department",  component: () => import("./views/DepartmentPage.vue") },
-    { path: "/profile",     component: () => import("./views/ProfilePage.vue") },
+    // ── App (shared navbar via AppLayout) ────────────────────────────────────
+    {
+      path: "/",
+      component: AppLayout,
+      children: [
+        { path: "dashboard",       component: () => import("./views/Dashboard.vue") },
+        { path: "department",      component: () => import("./views/DepartmentPage.vue") },
+        { path: "manage",          component: () => import("./views/EmployeeManagement.vue") },
+        { path: "tradeboard",      component: () => import("./views/Tradeboard.vue") },
+        { path: "tasks",           component: () => import("./views/Tasks.vue") },
+        { path: "requests",        component: () => import("./views/Requests.vue") },
+        { path: "availability",    component: () => import("./views/Availability.vue") },
+        { path: "templates",       component: () => import("./views/Templates.vue") },
+        { path: "templates/:id",   component: () => import("./views/TemplateEditor.vue") },
+        { path: "shifts",          component: () => import("./views/ShiftsPage.vue") },
+        { path: "settings",        component: () => import("./views/Settings.vue") },
+        { path: "profile",         component: () => import("./views/ProfilePage.vue") },
+      ],
+    },
 
     // ── Unknown paths → login ─────────────────────────────────────────────────
     { path: "/:pathMatch(.*)*", redirect: "/start" },

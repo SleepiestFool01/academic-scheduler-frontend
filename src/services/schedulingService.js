@@ -13,6 +13,7 @@
  */
 
 import apiClient from "./services.js";
+import { fmtHour as _fmtHour } from "../composables/usePreferences.js";
 
 // ── Route prefix constants — matched to app/routes/index.js ──────────────────
 const EMPLOYEES    = "/employees";         // router.use("/employees", EmployeeRoutes)
@@ -41,19 +42,10 @@ function timeStrToHour(t) {
   return h + m / 60;
 }
 
-/**
- * Format a fractional hour → display label ("9:30am")
- */
-export function fmtHour(h) {
-  const total  = Math.round(h * 60);
-  const hr     = Math.floor(total / 60);
-  const min    = total % 60;
-  const suffix = hr >= 12 ? "pm" : "am";
-  const disp   = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
-  return min === 0
-    ? `${disp}${suffix}`
-    : `${disp}:${String(min).padStart(2, "0")}${suffix}`;
-}
+// Format a fractional hour → display label, honoring the user's timeFormat
+// preference. Re-exports the composable's singleton so every call site —
+// including service-level label pre-computation — flows from one source.
+export const fmtHour = _fmtHour;
 
 /**
  * Day-of-week integer → Shift.day ENUM value
@@ -68,8 +60,9 @@ const DAY_ENUM = ["Sun", "Mon", "Tue", "Wed", "Thur", "Fri", "Sat"];
  * Hits: GET /users/employees
  * Returns: [{ id_employee, fName, lName, email, role, bio }]
  */
-export async function fetchEmployees() {
-  const { data } = await apiClient.get(`${EMPLOYEES}/employees`);
+export async function fetchEmployees(id_department = null) {
+  const qs = id_department ? `?id_department=${id_department}` : "";
+  const { data } = await apiClient.get(`${EMPLOYEES}/employees${qs}`);
   return data;
 }
 
@@ -85,9 +78,10 @@ export async function fetchEmployees() {
  * @param {Object} employeeMap   { [id_employee]: employeeObject }
  * @param {Object} positionMap   { [id_position]: positionObject }  (optional)
  */
-export async function fetchShiftsWithAssignments(employeeMap, positionMap = {}) {
+export async function fetchShiftsWithAssignments(employeeMap, positionMap = {}, id_department = null) {
+  const qs = id_department ? `?id_department=${id_department}` : "";
   const [shiftsRes, assignRes] = await Promise.all([
-    apiClient.get(SHIFTS),
+    apiClient.get(`${SHIFTS}${qs}`),
     apiClient.get(ASSIGNMENTS),
   ]);
 
@@ -184,6 +178,8 @@ export async function createShift({
   notes,
   positionName = "",
   id_position = null,
+  id_department = null,
+  force = false,
 }) {
   const [y, mo, d] = date.split("-").map(Number);
   const dowInt     = new Date(y, mo - 1, d).getDay();
@@ -199,31 +195,42 @@ export async function createShift({
     startTime:   hourToTimeStr(startHour),
     endTime:     hourToTimeStr(endHour),
     id_position,
+    id_department,
   });
 
-  // 2. Optionally create ShiftAssignment
+  // 2. Optionally create ShiftAssignment. If the assignment 409s (e.g. a
+  // class-schedule conflict the caller didn't pre-confirm), the shift row
+  // above is already persisted. We attach `pendingAssignment` to the
+  // thrown error so the caller can confirm with the user and retry just
+  // the assignment (via `createAssignment(..., true)`) — re-POSTing the
+  // shift would create a duplicate.
   if (id_employee) {
-    const { data: newAssignment } = await apiClient.post(ASSIGNMENTS, {
-      id_employee,
-      id_shift: newShift.id_shift,
-      date,
-    });
-    return {
-      id:                 newAssignment.id_shiftAssignment,
-      id_shift:           newShift.id_shift,
-      id_shiftAssignment: newAssignment.id_shiftAssignment,
-      id_employee,
-      employee:           "",   // caller supplies display name
-      date,
-      dayIndex:           dowInt,
-      startHour,
-      endHour,
-      startLabel:         fmtHour(startHour),
-      endLabel:           fmtHour(endHour),
-      notes:              notes || "",
-      id_position,
-      positionName,
-    };
+    try {
+      const assignBody = { id_employee, id_shift: newShift.id_shift, date };
+      if (force) assignBody.force = true;
+      const { data: newAssignment } = await apiClient.post(ASSIGNMENTS, assignBody);
+      return {
+        id:                 newAssignment.id_shiftAssignment,
+        id_shift:           newShift.id_shift,
+        id_shiftAssignment: newAssignment.id_shiftAssignment,
+        id_employee,
+        employee:           "",   // caller supplies display name
+        date,
+        dayIndex:           dowInt,
+        startHour,
+        endHour,
+        startLabel:         fmtHour(startHour),
+        endLabel:           fmtHour(endHour),
+        notes:              notes || "",
+        id_position,
+        positionName,
+      };
+    } catch (err) {
+      err.orphanShift = newShift;
+      err.pendingAssignment = { id_employee, id_shift: newShift.id_shift, date };
+      err.shiftBuildArgs = { dowInt, startHour, endHour, notes, id_position, positionName };
+      throw err;
+    }
   }
 
   // Unassigned
@@ -248,8 +255,13 @@ export async function createShift({
 /**
  * Create a ShiftAssignment (assign an employee to an existing shift).
  */
-export async function createAssignment(id_shift, id_employee, date) {
-  const { data } = await apiClient.post(ASSIGNMENTS, { id_shift, id_employee, date });
+// Pass `force: true` to bypass a soft unavailability conflict after the
+// caller has confirmed with the user. Approved time-off is still a hard
+// block on the backend regardless of force.
+export async function createAssignment(id_shift, id_employee, date, force = false) {
+  const body = { id_shift, id_employee, date };
+  if (force) body.force = true;
+  const { data } = await apiClient.post(ASSIGNMENTS, body);
   return data;
 }
 
@@ -301,12 +313,12 @@ export async function deleteShift(id_shiftAssignment, id_shift) {
 export async function fetchSwapRequests(employeeMap) {
   const { data } = await apiClient.get(SWAP_REQS);
   return data
-    .filter((r) => r.status === "Pending")
+    .filter((r) => r.status === "Pending" && employeeMap[r.id_employeeRequester])
     .map((r) => {
       const emp = employeeMap[r.id_employeeRequester];
       return {
         id:   r.id_swapRequest,
-        name: emp ? `${emp.fName} ${emp.lName}` : `Employee #${r.id_employeeRequester}`,
+        name: `${emp.fName} ${emp.lName}`,
         type: "Shift Swap",
         raw:  r,
       };

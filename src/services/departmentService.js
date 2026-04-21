@@ -13,7 +13,7 @@ export const updatePosition     = (id, data)      => apiClient.put(`/position/${
 export const deletePosition     = (id)            => apiClient.delete(`/position/${id}`);
 
 // ── Employees (all) ────────────────────────────────────────────────────────────
-export const getEmployees       = () => apiClient.get(`/employees`);
+export const getEmployees       = (id_department = null) => apiClient.get(`/employees${id_department ? `?id_department=${id_department}` : ''}`);
 
 // ── Calendar entries (hours of operation) ─────────────────────────────────────
 export const getCalendarEntries    = (id_department) => apiClient.get(`/calendar?id_department=${id_department}`);
@@ -36,8 +36,20 @@ export const updateSettingValue   = (id, value)     => apiClient.put(`/setting-v
 
 // ── Manager ↔ Department (multi-dept junction) ────────────────────────────────
 export const getManagerDepartments  = (id_employee)            => apiClient.get(`/manager-departments?id_employee=${id_employee}`);
+export const getDeptManagers        = (id_department)          => apiClient.get(`/manager-departments?id_department=${id_department}`);
 export const createManagerDepartment = (data)                  => apiClient.post(`/manager-departments`, data);
 export const deleteManagerDepartment = (id_managerDepartment)  => apiClient.delete(`/manager-departments/${id_managerDepartment}`);
+
+// ── Employee ↔ Department (multi-dept junction for non-manager staff) ────────
+export const getEmployeeDepartments  = (id_employee)            => apiClient.get(`/employee-departments?id_employee=${id_employee}`);
+export const createEmployeeDepartment = (data)                  => apiClient.post(`/employee-departments`, data);
+export const deleteEmployeeDepartment = (id_employeeDepartment) => apiClient.delete(`/employee-departments/${id_employeeDepartment}`);
+
+// Remove an employee from a specific department. Backend handles dropping
+// the right junction row (manager vs employee) and reassigning the primary
+// id_department if it was the one removed.
+export const removeEmployeeFromDepartment = (id_employee, id_department) =>
+  apiClient.delete(`/employees/${id_employee}/departments/${id_department}`);
 
 // ── Position ↔ Employee assignments ──────────────────────────────────────────
 export const getPositionEmployees   = (id_position) => apiClient.get(`/position-employees/position/${id_position}`);

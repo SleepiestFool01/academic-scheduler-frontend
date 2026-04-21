@@ -1,5 +1,5 @@
 <template>
-  <div class="app" @mousemove="onGlobalMouseMove" @mouseup="onGlobalMouseUp">
+  <div class="app" @mousemove="onGlobalMouseMove" @mouseup="onGlobalMouseUp" :style="{ '--cell-h': cellHeight + 'px' }">
 
     <!-- ── Loading overlay ── -->
     <Transition name="fade">
@@ -13,47 +13,12 @@
       <button @click="loadAll" class="retry-btn">Retry</button>
     </div>
 
-    <!-- ── Top Navigation ── -->
-    <nav class="topnav">
-      <div class="nav-logo">
-        <svg width="24" height="24" viewBox="0 0 28 28" fill="none">
-          <rect x="2" y="4" width="11" height="7" rx="2" fill="#FF1744"/>
-          <rect x="15" y="4" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-          <rect x="2" y="14" width="11" height="7" rx="2" fill="#FF1744" opacity="0.45"/>
-          <rect x="15" y="14" width="11" height="7" rx="2" fill="#F0E6D3"/>
-        </svg>
-      </div>
-      <div class="nav-tabs">
-        <button v-for="tab in tabs" :key="tab" class="nav-tab"
-          :class="{ active: activeTab === tab }" @click="handleTabClick(tab)">{{ tab }}</button>
-      </div>
-      <div class="nav-right">
-        <button v-if="currentUser?.role === 'Manager' || currentUser?.role === 'Admin'"
-          class="manage-btn" @click="router.push('/manage')">
-          ⚙ Manage
-        </button>
-        <button class="theme-toggle" @click="toggleTheme" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
-          <svg v-if="isDark" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <circle cx="12" cy="12" r="5"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/>
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-            <line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/>
-            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-          </svg>
-          <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-          </svg>
-        </button>
-        <div class="avatar" @click="profileOpen = true" title="My Profile">
-          <img v-if="currentUser?.picture" :src="currentUser.picture" class="avatar-img" referrerpolicy="no-referrer" />
-          <span v-else>{{ userInitials }}</span>
-        </div>
-      </div>
-    </nav>
+    <!-- Navbar is in AppLayout -->
 
     <div class="layout">
 
-      <!-- ── Sidebar ── -->
-      <aside class="sidebar">
+      <!-- ── Sidebar ── (hidden on phone — its content lives in the agenda + drawer) -->
+      <aside v-if="!isPhone" class="sidebar">
         <div class="mini-cal-header">
           <button class="cal-nav-btn" @click="navigate(-1)">‹</button>
           <span class="mini-cal-month">{{ miniCalMonth }}</span>
@@ -67,54 +32,177 @@
             @click="jumpToDay(day)">{{ day }}</div>
         </div>
 
-        <div class="sidebar-section">
-          <p class="sidebar-label">Today's Employees</p>
-          <div v-for="emp in todaysEmployees" :key="emp.name" class="employee-chip" :style="{ background: emp.color }">{{ emp.name }}</div>
-          <div v-if="todaysEmployees.length === 0" class="sidebar-empty">No shifts today</div>
+        <!-- ══ MANAGER SIDEBAR ══ -->
+        <div v-if="isManager" class="sidebar-section">
+          <div class="sidebar-sec-header clickable" @click="router.push('/tradeboard')">
+            <span class="sidebar-sec-title">Tradeboard</span>
+            <span v-if="managerTradeboardItems.length" class="sidebar-sec-count">{{ managerTradeboardItems.length }}</span>
+          </div>
+          <div v-if="managerTradeboardItems.length === 0" class="sidebar-empty">No pending requests</div>
+          <div v-for="item in managerTradeboardItems" :key="item.id_swapRequest" class="sb-trade-item">
+            <div class="sb-trade-row">
+              <span class="sb-trade-name">{{ item.requesterName }}</span>
+              <span class="sb-trade-time">{{ item.shiftTime }}</span>
+            </div>
+            <div class="sb-trade-meta">
+              <span class="sb-trade-date">{{ item.shiftDate }}</span>
+              <span v-if="item.positionName" class="sb-trade-pos">{{ item.positionName }}</span>
+            </div>
+            <div v-if="item.needsApproval" class="sb-trade-claim">
+              <span class="sb-trade-claimer">← {{ item.requestedName }}</span>
+              <div class="sb-trade-actions">
+                <button class="sb-approve-btn" @click.stop="sidebarApproveDecline(item, 'Approved')">✓</button>
+                <button class="sb-deny-btn"    @click.stop="sidebarApproveDecline(item, 'Denied')">✕</button>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="sidebar-section">
-          <div class="open-shifts-header">
-            <p class="sidebar-label underline-link" @click="activeTab = 'Shifts'">Open Shifts</p>
-            <span class="open-shifts-week">this week</span>
+
+        <div v-if="isManager" class="sidebar-section">
+          <div class="sidebar-sec-header clickable" @click="router.push('/requests')">
+            <span class="sidebar-sec-title">Requests</span>
+            <span v-if="managerRequestItems.length" class="sidebar-sec-count">{{ managerRequestItems.length }}</span>
+          </div>
+          <div v-if="managerRequestItems.length === 0" class="sidebar-empty">No pending requests</div>
+          <div v-for="item in managerRequestItems" :key="item.id_personalAvailability" class="sb-req-item">
+            <div class="sb-req-row">
+              <span class="sb-req-name">{{ item.empName }}</span>
+              <span class="sb-req-type">Time Off</span>
+            </div>
+            <div class="sb-req-dates">{{ item.startDate }} → {{ item.endDate }}</div>
+            <div v-if="item.status === 'Pending'" class="sb-req-actions">
+              <button class="sb-approve-btn" @click.stop="sidebarRequestAction(item, 'Approved')">✓ Approve</button>
+              <button class="sb-deny-btn"    @click.stop="sidebarRequestAction(item, 'Denied')">✕ Deny</button>
+            </div>
+            <span v-else class="sb-req-status" :class="item.status.toLowerCase()">{{ item.status }}</span>
+          </div>
+        </div>
+
+        <div v-if="isManager" class="sidebar-section">
+          <div class="sidebar-sec-header">
+            <span class="sidebar-sec-title">Open Shifts</span>
+            <span class="sidebar-sec-sub">this week</span>
           </div>
           <div v-if="computedOpenShifts.length === 0" class="sidebar-empty">No open shifts this week</div>
           <div v-for="s in computedOpenShifts" :key="s.key" class="open-shift-item">
             <span class="open-shift-day">{{ s.dayLabel }}</span>
             <div class="open-shift-gaps">
-              <span v-for="gap in s.gaps" :key="gap" class="open-shift-gap">{{ gap }}</span>
+              <div v-for="(gap, gi) in s.gaps" :key="gi" class="open-shift-gap-row">
+                <span class="open-shift-gap">{{ gap.label }}<span v-if="gap.positionName" class="open-shift-pos">{{ gap.positionName }}</span></span>
+              </div>
             </div>
-          </div>
-        </div>
-        <div class="sidebar-section">
-          <p class="sidebar-label underline-link" @click="activeTab = 'Requests'">Requests</p>
-          <div v-if="pendingRequests.length === 0" class="sidebar-empty">No pending requests</div>
-          <div v-for="r in pendingRequests" :key="r.id" class="request-item">
-            <span class="request-name">{{ r.name }}</span>
-            <span class="request-type">{{ r.type }}</span>
           </div>
         </div>
 
-        <!-- My Tasks Today — Employee only -->
-        <div v-if="!isManager && myShiftTasks.length > 0" class="sidebar-section">
-          <p class="sidebar-label">My Tasks Today</p>
-          <div v-for="stl in myShiftTasks" :key="stl.shiftTaskListId" class="my-task-item">
-            <div class="my-task-list-name">{{ stl.taskList.name }}</div>
-            <div class="my-task-progress">
+        <div v-if="isManager" class="sidebar-section">
+          <div class="sidebar-sec-header">
+            <span class="sidebar-sec-title">Today's Employees</span>
+            <span v-if="todaysEmployees.length" class="sidebar-sec-count">{{ todaysEmployees.length }}</span>
+          </div>
+          <div v-for="emp in todaysEmployees" :key="emp.name" class="employee-chip" :style="{ background: emp.color }">{{ emp.name }}</div>
+          <div v-if="todaysEmployees.length === 0" class="sidebar-empty">No shifts today</div>
+        </div>
+
+        <div v-if="isManager" class="sidebar-section">
+          <div class="sidebar-sec-header">
+            <span class="sidebar-sec-title">Weekly Hours</span>
+            <span v-if="weeklyTotalHours" class="sidebar-sec-count">{{ weeklyTotalHours }}h</span>
+          </div>
+          <div v-if="weeklyHoursByEmployee.length === 0" class="sidebar-empty">No scheduled shifts</div>
+          <div v-for="row in weeklyHoursByEmployee" :key="row.id_employee || row.name" class="wh-row">
+            <div class="wh-head">
+              <span class="wh-dot" :style="{ background: row.color }"></span>
+              <span class="wh-name">{{ row.name }}</span>
+              <span class="wh-hours mono">{{ row.hours }}h</span>
+            </div>
+            <div class="wh-bar">
+              <div class="wh-bar-fill" :style="{ width: row.pct + '%', background: row.color }"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ EMPLOYEE SIDEBAR ══ -->
+
+        <!-- 1. My Shifts Today -->
+        <div v-if="!isManager" class="sidebar-section">
+          <div class="sidebar-sec-header">
+            <span class="sidebar-sec-title">My Shifts Today</span>
+            <span v-if="myTodayShifts.length" class="sidebar-sec-count">{{ myTodayShifts.length }}</span>
+          </div>
+          <div v-if="myTodayShifts.length === 0" class="sidebar-empty">No shifts today</div>
+          <div v-for="s in myTodayShifts" :key="s.id" class="my-shift-item">
+            <span class="my-shift-pos">{{ s.positionName || 'Shift' }}</span>
+            <span class="my-shift-time">{{ s.startLabel }} – {{ s.endLabel }}</span>
+          </div>
+        </div>
+
+        <!-- 2. Tasks -->
+        <div v-if="!isManager" class="sidebar-section">
+          <div class="sidebar-sec-header">
+            <span class="sidebar-sec-title">Tasks</span>
+            <span v-if="myShiftTasksTotal > 0" class="sidebar-sec-count">{{ myShiftTasksDone }}/{{ myShiftTasksTotal }}</span>
+          </div>
+          <div v-if="myActiveShiftTasks.length === 0" class="sidebar-empty">No tasks — you're not currently on shift</div>
+          <template v-for="stl in myActiveShiftTasks" :key="stl.shiftTaskListId">
+            <div class="sb-tasklist-header">
+              <span class="sb-tasklist-name">{{ stl.taskList.name }}</span>
+              <span class="sb-tasklist-shift">{{ stl.shiftLabel }}</span>
+            </div>
+            <div v-for="status in stl.statuses" :key="status.id_shiftTaskListStatus" class="sb-task-row">
+              <button class="sb-task-check" :class="{ done: status.isCompleted }" @click="toggleTaskStatus(status)" :title="status.isCompleted ? 'Mark incomplete' : 'Mark complete'">
+                <svg v-if="status.isCompleted" width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <path d="M1.5 5L3.8 7.5L8.5 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <span class="sb-task-label" :class="{ done: status.isCompleted }">{{ status.taskName }}</span>
+            </div>
+            <div class="sb-task-progress">
               <div class="my-task-bar">
-                <div
-                  class="my-task-fill"
-                  :style="{ width: stl.totalCount ? (stl.completedCount / stl.totalCount * 100) + '%' : '0%' }"
-                ></div>
+                <div class="my-task-fill" :style="{ width: stl.totalCount ? (stl.completedCount / stl.totalCount * 100) + '%' : '0%' }"></div>
               </div>
               <span class="my-task-count">{{ stl.completedCount }}/{{ stl.totalCount }}</span>
             </div>
+          </template>
+        </div>
+
+        <!-- 3. Tradeboard -->
+        <div v-if="!isManager" class="sidebar-section">
+          <div class="sidebar-sec-header clickable" @click="router.push('/tradeboard')">
+            <span class="sidebar-sec-title">Tradeboard</span>
+            <span v-if="tradeboardOpenShifts.length" class="sidebar-sec-count">{{ tradeboardOpenShifts.length }}</span>
+          </div>
+          <div v-if="tradeboardOpenShifts.length === 0" class="sidebar-empty">No open shifts</div>
+          <div v-for="r in tradeboardOpenShifts" :key="r.id" class="trade-preview-item" @click="router.push('/tradeboard')">
+            <div class="trade-preview-top">
+              <span class="trade-preview-name">{{ r.employeeName }}</span>
+              <span class="trade-preview-day">{{ r.dayLabel }}</span>
+            </div>
+            <span class="trade-preview-time">{{ r.startLabel }} – {{ r.endLabel }}</span>
+          </div>
+        </div>
+
+        <!-- 4. Requests -->
+        <div v-if="!isManager" class="sidebar-section">
+          <div class="sidebar-sec-header clickable" @click="router.push('/requests')">
+            <span class="sidebar-sec-title">My Requests</span>
+            <span v-if="myRequestsUnified.length" class="sidebar-sec-count">{{ myRequestsUnified.length }}</span>
+          </div>
+          <div v-if="myRequestsUnified.length === 0" class="sidebar-empty">
+            No active requests — submit time off or post a shift from the Tradeboard.
+          </div>
+          <div v-for="r in myRequestsVisible" :key="r.id" class="request-item">
+            <span class="request-type-tag">{{ r.type }}</span>
+            <span class="request-label">{{ r.label }}</span>
+            <span class="request-status-pill" :class="'status--' + r.status.toLowerCase()">{{ r.status }}</span>
+          </div>
+          <div v-if="myRequestsOverflow > 0" class="sidebar-view-all" @click="router.push('/requests')">
+            View all ({{ myRequestsOverflow }} more)
           </div>
         </div>
       </aside>
 
       <!-- ── Main Calendar ── -->
-      <main class="cal-main">
-        <div v-if="deptName" class="dept-name-bar">{{ deptName }}</div>
+      <main class="cal-main" :class="{ 'cmd-create-mode': cmdHeld && isManager }">
         <div class="cal-toolbar">
           <div class="cal-nav-group">
             <button class="toolbar-btn" @click="navigate(-1)">‹</button>
@@ -122,34 +210,129 @@
             <button class="toolbar-btn" @click="navigate(1)">›</button>
             <button class="today-btn" @click="goToday">Today</button>
           </div>
-          <div class="cal-view-group">
+          <div v-if="isManager" class="tpl-dropdown-wrap" @click.stop>
+            <button class="tpl-dropdown-btn" @click="toggleTemplateDropdown"
+              :class="{ active: templateDropdownOpen }" title="Apply a template">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="flex-shrink:0">
+                <rect x="1" y="3" width="14" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M5 1v4M11 1v4M1 7h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <span>Apply Templates</span>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
+                :style="{ transform: templateDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform .15s' }">
+                <path d="M2 3.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <Transition name="tpl-dd-pop">
+              <div v-if="templateDropdownOpen" class="tpl-dd-menu" @click.stop>
+                <div v-if="templatesLoading" class="tpl-dd-empty">Loading…</div>
+                <div v-else-if="templates.length === 0" class="tpl-dd-empty">
+                  No templates yet.
+                  <button class="tpl-dd-link" @click="router.push('/templates')">Create one →</button>
+                </div>
+                <button v-for="tpl in templates" :key="tpl.id_template" class="tpl-dd-item"
+                  @click="openApplyFromDashboard(tpl)">
+                  <span class="tpl-dd-name">{{ tpl.name }}</span>
+                  <span v-if="tpl.description" class="tpl-dd-desc">{{ tpl.description }}</span>
+                </button>
+              </div>
+            </Transition>
+          </div>
+          <!-- Desktop/tablet: segmented Day | Week | Month buttons -->
+          <div v-if="!isPhone" class="cal-view-group" :class="{ 'push-right': !isManager }">
             <button v-for="v in ['Day','Week','Month']" :key="v" class="view-btn"
               :class="{ active: calView === v }" @click="setView(v)">{{ v }}</button>
           </div>
-          <button class="add-shift-btn" @click="openBlankModal"><span>+</span> Add Shift</button>
+          <!-- Phone: compact dropdown — Day/Week/Month buttons won't fit in the toolbar -->
+          <div v-else class="view-dropdown-wrap" @click.stop>
+            <button class="view-dropdown-btn" :class="{ active: viewDropdownOpen }" @click="toggleViewDropdown">
+              <span>{{ calView.charAt(0) }}</span>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
+                :style="{ transform: viewDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform .15s' }">
+                <path d="M2 3.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <Transition name="tpl-dd-pop">
+              <div v-if="viewDropdownOpen" class="view-dd-menu" @click.stop>
+                <button v-for="v in ['Day','Week','Month']" :key="v"
+                  class="view-dd-item"
+                  :class="{ active: calView === v }"
+                  @click="pickView(v)">{{ v }}</button>
+              </div>
+            </Transition>
+          </div>
+          <!-- Zoom + Fit: slider desktop-only, Fit is useful on phone too for time-grid views -->
+          <div v-if="calView !== 'Month'" class="zoom-group">
+            <template v-if="!isPhone">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" class="zoom-icon"><circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.6"/><line x1="10.5" y1="10.5" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="4" y1="6.5" x2="9" y2="6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              <input type="range" class="zoom-slider" min="20" max="160" step="4" :value="cellHeight" @input="cellHeight = +$event.target.value" title="Adjust zoom" />
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" class="zoom-icon"><circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.6"/><line x1="10.5" y1="10.5" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="4" y1="6.5" x2="9" y2="6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="6.5" y1="4" x2="6.5" y2="9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </template>
+            <button class="fit-btn" @click="fitToView" title="Fit business hours to screen">Fit</button>
+          </div>
+          <div v-if="isManager" class="add-split-btn" ref="addSplitRef">
+            <button class="add-split-main" @click="openBlankModal">
+              <span class="add-split-plus">+</span>
+              <span>{{ createMode === 'event' ? 'Add Event' : 'Add Shift' }}</span>
+            </button>
+            <button class="add-split-toggle" :class="{ 'add-split-toggle--open': addModeMenuOpen }"
+              @click.stop="addModeMenuOpen = !addModeMenuOpen" title="Switch mode" aria-label="Switch between Shift and Event">
+              <svg width="11" height="11" viewBox="0 0 10 10" fill="none"
+                :style="{ transform: addModeMenuOpen ? 'rotate(180deg)' : 'rotate(0)' }">
+                <path d="M2 3.5l3 3 3-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <Transition name="fade">
+              <div v-if="addModeMenuOpen" class="add-split-menu" @click.stop>
+                <button class="add-split-option" :class="{ active: createMode === 'shift' }" @click="setAddMode('shift')">
+                  <span class="add-split-check">{{ createMode === 'shift' ? '✓' : '' }}</span>
+                  <span>Add Shift</span>
+                </button>
+                <button class="add-split-option" :class="{ active: createMode === 'event' }" @click="setAddMode('event')">
+                  <span class="add-split-check">{{ createMode === 'event' ? '✓' : '' }}</span>
+                  <span>Add Event</span>
+                </button>
+              </div>
+            </Transition>
+          </div>
         </div>
 
         <!-- ════════════════════════════════════
              DAY VIEW
         ════════════════════════════════════ -->
         <Transition name="view-fade" mode="out-in">
-        <div v-if="calView === 'Day'" key="day" class="cal-grid-wrapper">
+        <div v-if="calView === 'Day'" key="day" class="cal-grid-wrapper"
+          @touchstart.passive="onDaySwipeStart" @touchend.passive="onDaySwipeEnd">
           <div class="cal-body" ref="calBody">
           <div class="cal-header-row">
             <div class="time-gutter"></div>
             <div class="day-header single-day" :class="{ today: isTodayDate(dayViewDate) }">
               <span class="day-letter">{{ DAY_NAMES[dayViewDate.getDay()] }}</span>
               <span class="day-number">{{ dayViewDate.getDate() }}</span>
-              <span class="day-month-label">{{ dayViewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) }}</span>
             </div>
           </div>
             <div class="cal-inner">
               <div class="time-column">
+                <div class="coverage-strip" :title="`Peak staffing: ${coverageMax} on shift`">
+                  <div v-for="(count, i) in coverageByHour" :key="i"
+                    class="coverage-seg"
+                    :style="{
+                      top: (i * cellHeight) + 'px',
+                      height: cellHeight + 'px',
+                      opacity: count / coverageMax,
+                    }"
+                    :title="`${count} on shift at ${formatHour(hours[i])}`"
+                  ></div>
+                </div>
                 <div v-for="hour in hours" :key="hour" class="time-slot-label">{{ formatHour(hour) }}</div>
               </div>
               <div class="day-column"
-                :class="{ 'is-dragging-col': drag.active && drag.dayIndex === 0 }"
-                @mousedown.prevent="onColumnMouseDown($event, 0)">
+                :class="{ 'is-dragging-col': drag.active && drag.dayIndex === 0, 'paste-target': isPasteMode, 'no-edit': !isManager }"
+                @mousedown.prevent="isPasteMode ? null : onColumnMouseDown($event, 0)"
+                @touchstart.passive="isPasteMode ? null : onColumnTouchStart($event, 0)"
+                @touchmove="onColumnTouchMove"
+                @touchend.passive="onColumnTouchEnd"
+                @click="isPasteMode ? pasteToDay(dayViewDate) : null">
                 <div v-for="hour in hours" :key="hour" class="hour-cell"></div>
                 <!-- Hours of operation markers -->
                 <template v-for="entry in hoursLinesForDate(dayViewDate)" :key="entry.key">
@@ -162,20 +345,64 @@
                 </template>
                 <!-- Department event blocks -->
                 <div v-for="ev in eventsForDate(dayViewDate)" :key="'ev-' + ev.id_event"
-                  class="event-block" :style="eventBlockStyle(ev)">
+                  class="event-block" :class="{ 'event-block--clickable': isManager }" :style="eventBlockStyle(ev)"
+                  @mousedown.stop @click.stop="openEditEventModal(ev, $event)"
+                  :title="isManager ? 'Click to edit event' : ''">
                   <div class="event-block-title">{{ ev.title }}</div>
                   <div class="event-block-time">{{ fmtHour(ev.startHour) }} – {{ fmtHour(ev.endHour) }}</div>
                 </div>
                 <div v-if="drag.active && drag.dayIndex === 0" class="ghost-block" :style="ghostStyle">
                   <span class="ghost-label">{{ ghostLabel }}</span>
                 </div>
-                <div v-for="shift in dayViewShifts" :key="shift.id"
-                  class="shift-block" :style="shiftStyle(shift)"
-                  @mousedown.stop @click.stop="selectShift(shift, $event)">
-                  <div class="shift-employee">{{ shift.positionName }}{{ shift.employee ? ' – ' + shift.employee : '' }}</div>
-                  <div class="shift-time">{{ shift.startLabel }} – {{ shift.endLabel }}</div>
+                <!-- Unavailability overlay for the selected shift's assignee -->
+                <div v-for="u in (selectedShift && selectedShift.id_employee
+                    ? unavailabilityForEmployeeOnDate(selectedShift.id_employee, dateToKey(dayViewDate))
+                    : [])"
+                  :key="'unavail-' + u.id_employeeUnavailability"
+                  class="unavailability-overlay"
+                  :style="unavailabilityBlockStyle(u)"
+                  :title="overlayTitle(u)">
+                  <span class="unavailability-overlay-label">{{ u.label || 'Unavailable' }}</span>
                 </div>
-                <div v-if="isTodayDate(dayViewDate)" class="current-time-line" :style="{ top: currentTimePx + 'px' }"></div>
+                <div v-for="shift in dayViewShifts" :key="shift.id"
+                  class="shift-block"
+                  :data-shift-id="String(shift.id)"
+                  :style="shiftStyle(shift)"
+                  :class="{
+                    'shift-block--multi-selected': selectedShiftIds.has(String(shift.id)),
+                    'shift-block--open':   !shift.id_employee,
+                    'shift-block--active': isShiftActiveNow(shift),
+                  }"
+                  @mousedown="onShiftBlockMouseDown($event, 0)" @click.stop="onShiftBlockClick(shift, $event)">
+                  <div class="shift-employee">{{ shift.employee || 'Open' }}</div>
+                  <div class="shift-time">{{ shift.startLabel }} – {{ shift.endLabel }}</div>
+                  <div v-if="shift.positionName || (isManager && shiftTaskBadge(shift))" class="shift-meta-row">
+                    <span v-if="shift.positionName" class="shift-pos-badge">{{ shift.positionName }}</span>
+                    <span v-if="isManager && shiftTaskBadge(shift)"
+                      class="shift-task-status"
+                      :class="{ 'shift-task-status--done': shiftTaskBadge(shift).allDone }">
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <path d="M2 5.2L4 7.2L8 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                      <span>{{ shiftTaskBadge(shift).allDone ? 'Done' : shiftTaskBadge(shift).label }}</span>
+                    </span>
+                  </div>
+                  <button v-if="canTakeShift(shift)" class="shift-action-btn shift-action-btn--take"
+                    @click.stop="takeShift(shift, $event)"
+                    @mousedown.stop
+                    title="Take this shift">
+                    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="M8 2v9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                      <path d="M4 7l4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M3 14h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                    </svg>
+                    <span>Take</span>
+                  </button>
+                </div>
+                <div v-if="isTodayDate(dayViewDate)" class="now-indicator" :style="{ top: currentTimePx + 'px' }">
+                  <div class="now-dot"></div>
+                  <div class="now-label">{{ currentTimeLabel }}</div>
+                </div>
               </div>
             </div>
           </div>
@@ -189,19 +416,34 @@
           <div class="cal-header-row">
             <div class="time-gutter"></div>
             <div v-for="(date, i) in weekDates" :key="i" class="day-header"
-              :class="{ today: isTodayDate(date) }"
-              @click="drillToDay(date)">
+              :class="{ today: isTodayDate(date), 'paste-target-header': isPasteMode }"
+              @click="isPasteMode ? pasteToDay(date) : drillToDay(date)">
               <span class="day-letter">{{ dayLetters[i] }}</span>
               <span class="day-number">{{ date.getDate() }}</span>
             </div>
           </div>
             <div class="cal-inner">
               <div class="time-column">
+                <div class="coverage-strip" :title="`Peak staffing: ${coverageMax} on shift`">
+                  <div v-for="(count, i) in coverageByHour" :key="i"
+                    class="coverage-seg"
+                    :style="{
+                      top: (i * cellHeight) + 'px',
+                      height: cellHeight + 'px',
+                      opacity: count / coverageMax,
+                    }"
+                    :title="`${count} on shift at ${formatHour(hours[i])}`"
+                  ></div>
+                </div>
                 <div v-for="hour in hours" :key="hour" class="time-slot-label">{{ formatHour(hour) }}</div>
               </div>
               <div v-for="(date, colIdx) in weekDates" :key="colIdx" class="day-column"
-                :class="{ 'is-dragging-col': drag.active && drag.dayIndex === colIdx }"
-                @mousedown.prevent="onColumnMouseDown($event, colIdx)">
+                :class="{ 'is-dragging-col': drag.active && drag.dayIndex === colIdx, 'paste-target': isPasteMode, 'no-edit': !isManager }"
+                @mousedown.prevent="isPasteMode ? null : onColumnMouseDown($event, colIdx)"
+                @touchstart.passive="isPasteMode ? null : onColumnTouchStart($event, colIdx)"
+                @touchmove="onColumnTouchMove"
+                @touchend.passive="onColumnTouchEnd"
+                @click="isPasteMode ? pasteToDay(date) : null">
                 <div v-for="hour in hours" :key="hour" class="hour-cell"></div>
                 <!-- Hours of operation markers -->
                 <template v-for="entry in hoursLinesForDate(date)" :key="entry.key">
@@ -214,20 +456,65 @@
                 </template>
                 <!-- Department event blocks -->
                 <div v-for="ev in eventsForDate(date)" :key="'ev-' + ev.id_event"
-                  class="event-block" :style="eventBlockStyle(ev)">
+                  class="event-block" :class="{ 'event-block--clickable': isManager }" :style="eventBlockStyle(ev)"
+                  @mousedown.stop @click.stop="openEditEventModal(ev, $event)"
+                  :title="isManager ? 'Click to edit event' : ''">
                   <div class="event-block-title">{{ ev.title }}</div>
                   <div class="event-block-time">{{ fmtHour(ev.startHour) }} – {{ fmtHour(ev.endHour) }}</div>
                 </div>
                 <div v-if="drag.active && drag.dayIndex === colIdx" class="ghost-block" :style="ghostStyle">
                   <span class="ghost-label">{{ ghostLabel }}</span>
                 </div>
-                <div v-for="shift in shiftsForWeekDay(colIdx)" :key="shift.id"
-                  class="shift-block" :style="shiftStyle(shift)"
-                  @mousedown.stop @click.stop="selectShift(shift, $event)">
-                  <div class="shift-employee">{{ shift.positionName }}{{ shift.employee ? ' – ' + shift.employee : '' }}</div>
-                  <div class="shift-time">{{ shift.startLabel }} – {{ shift.endLabel }}</div>
+                <!-- Unavailability overlay for the selected shift's assignee -->
+                <div v-for="u in (selectedShift && selectedShift.id_employee
+                    ? unavailabilityForEmployeeOnDate(selectedShift.id_employee, dateToKey(date))
+                    : [])"
+                  :key="'unavail-' + u.id_employeeUnavailability"
+                  class="unavailability-overlay"
+                  :style="unavailabilityBlockStyle(u)"
+                  :title="overlayTitle(u)">
+                  <span class="unavailability-overlay-label">{{ u.label || 'Unavailable' }}</span>
                 </div>
-                <div v-if="isTodayDate(date)" class="current-time-line" :style="{ top: currentTimePx + 'px' }"></div>
+                <div v-for="shift in shiftsForWeekDay(colIdx)" :key="shift.id"
+                  class="shift-block"
+                  :data-shift-id="String(shift.id)"
+                  :style="shiftStyle(shift)"
+                  :class="{
+                    'shift-block--multi-selected': selectedShiftIds.has(String(shift.id)),
+                    'shift-block--open':   !shift.id_employee,
+                    'shift-block--active': isShiftActiveNow(shift),
+                  }"
+                  @mousedown="onShiftBlockMouseDown($event, colIdx)" @click.stop="onShiftBlockClick(shift, $event)">
+                  <div class="shift-employee">{{ shift.employee || 'Open' }}</div>
+                  <div class="shift-time">{{ shift.startLabel }} – {{ shift.endLabel }}</div>
+                  <div v-if="shift.positionName || (isManager && shiftTaskBadge(shift))" class="shift-meta-row">
+                    <span v-if="shift.positionName" class="shift-pos-badge">{{ shift.positionName }}</span>
+                    <span v-if="isManager && shiftTaskBadge(shift)"
+                      class="shift-task-status"
+                      :class="{ 'shift-task-status--done': shiftTaskBadge(shift).allDone }">
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <path d="M2 5.2L4 7.2L8 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                      <span>{{ shiftTaskBadge(shift).allDone ? 'Done' : shiftTaskBadge(shift).label }}</span>
+                    </span>
+                  </div>
+                  <button v-if="canTakeShift(shift)" class="shift-action-btn shift-action-btn--take"
+                    @click.stop="takeShift(shift, $event)"
+                    @mousedown.stop
+                    title="Take this shift">
+                    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="M8 2v9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                      <path d="M4 7l4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M3 14h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                    </svg>
+                    <span>Take</span>
+                  </button>
+                </div>
+              </div>
+              <div v-if="todayWeekIndex !== -1" class="now-indicator now-indicator--week"
+                :style="{ top: currentTimePx + 'px', '--today-col': todayWeekIndex }">
+                <div class="now-dot"></div>
+                <div class="now-label">{{ currentTimeLabel }}</div>
               </div>
             </div>
           </div>
@@ -289,17 +576,23 @@
         <div class="qc-date-label">{{ quickCreate.dateLabel }}</div>
         <div class="form-group">
           <label>Position</label>
-          <select v-model="quickCreate.id_position">
+          <select v-model="quickCreate.id_position" @change="onQuickCreatePositionChange">
             <option :value="null" disabled>— Select a position —</option>
             <option v-for="p in positions" :key="p.id_position" :value="p.id_position">{{ p.name }}</option>
           </select>
         </div>
         <div class="form-group">
           <label>Employee <span class="label-optional">(optional)</span></label>
-          <select v-model="quickCreate.employee">
-            <option value="">— Unassigned —</option>
-            <option v-for="e in employees" :key="e.name" :value="e.name">{{ e.name }}</option>
-          </select>
+          <EmployeePicker
+            v-model="quickCreate.employee"
+            value-field="name"
+            :options="employeesForPosition(quickCreate.id_position, {
+              date: quickCreate.date ? dateToKey(quickCreate.date) : null,
+              startHour: fromTimeInput(quickCreate.startTime || '00:00'),
+              endHour: fromTimeInput(quickCreate.endTime || '23:59'),
+            })"
+            :disabled="!quickCreate.id_position"
+            empty-text="No available employees for this position and time." />
         </div>
         <div class="form-row">
           <div class="form-group"><label>Start</label><input type="time" v-model="quickCreate.startTime" /></div>
@@ -319,31 +612,38 @@
     <!-- ── Full Add / Edit Modal ── -->
     <Transition name="modal">
       <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
-        <div class="modal">
+        <div class="modal modal-add-shift">
           <h2 class="modal-title">{{ editingShiftId ? 'Edit Shift' : 'Add Shift' }}</h2>
           <div class="form-group">
             <label>Position</label>
-            <select v-model="newShift.id_position">
-              <option :value="null" disabled>— Select a position —</option>
-              <option v-for="p in positions" :key="p.id_position" :value="p.id_position">{{ p.name }}</option>
-            </select>
+            <SelectPicker
+              :model-value="newShift.id_position"
+              :options="positions.map(p => ({ value: p.id_position, label: p.name }))"
+              placeholder="— Select a position —"
+              @update:model-value="v => { newShift.id_position = v; onNewShiftPositionChange(); }"
+            />
           </div>
           <div class="form-group">
             <label>Employee <span class="label-optional">(optional)</span></label>
-            <select v-model="newShift.employee" @change="newShift.id_employee = employees.find(e => e.name === newShift.employee)?.id_employee ?? null">
-              <option value="">— Unassigned —</option>
-              <option v-for="e in employees" :key="e.name" :value="e.name">{{ e.name }}</option>
-            </select>
+            <EmployeePicker
+              v-model="newShift.employee"
+              value-field="name"
+              :options="employeesForPosition(newShift.id_position, {
+                date: newShift.date,
+                startHour: fromTimeInput(newShift.startTime || '00:00'),
+                endHour: fromTimeInput(newShift.endTime || '23:59'),
+              })"
+              :disabled="!newShift.id_position"
+              empty-text="No available employees for this position and time."
+              @select="opt => newShift.id_employee = opt?.id_employee ?? null" />
           </div>
           <div class="form-group">
-            <label>Day</label>
-            <select v-model="newShift.dayIndex">
-              <option v-for="(date, i) in weekDates" :key="i" :value="i">{{ dayLetters[i] }} {{ date.getDate() }}</option>
-            </select>
+            <label>Date</label>
+            <DatePicker v-model="newShift.date" placeholder="Select date" />
           </div>
           <div class="form-row">
-            <div class="form-group"><label>Start</label><input type="time" v-model="newShift.startTime" /></div>
-            <div class="form-group"><label>End</label><input type="time" v-model="newShift.endTime" /></div>
+            <div class="form-group"><label>Start</label><TimePicker v-model="newShift.startTime" placeholder="Start time" /></div>
+            <div class="form-group"><label>End</label><TimePicker v-model="newShift.endTime" placeholder="End time" /></div>
           </div>
           <div class="form-group">
             <label>Notes <span class="label-optional">(optional)</span></label>
@@ -353,6 +653,67 @@
             <button class="modal-cancel" @click="showAddModal = false">Cancel</button>
             <button class="modal-confirm" @click="addShift">{{ editingShiftId ? 'Save Changes' : 'Add Shift' }}</button>
           </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- ── Add Event Modal ── -->
+    <Transition name="modal">
+      <div v-if="showEventModal" class="modal-overlay" @click.self="showEventModal = false">
+        <div class="modal modal-add-shift">
+          <h2 class="modal-title">{{ editingEventId ? 'Edit Event' : 'Add Event' }}</h2>
+          <div class="form-group">
+            <label>Title</label>
+            <input type="text" v-model="newEvent.title" placeholder="e.g. Team meeting" />
+          </div>
+          <div class="form-group">
+            <label>Description <span class="label-optional">(optional)</span></label>
+            <input type="text" v-model="newEvent.description" placeholder="Brief description…" />
+          </div>
+          <div class="form-group">
+            <label>Date</label>
+            <DatePicker v-model="newEvent.date" placeholder="Select date" />
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Start</label><TimePicker v-model="newEvent.startTime" placeholder="Start time" /></div>
+            <div class="form-group"><label>End</label><TimePicker v-model="newEvent.endTime" placeholder="End time" /></div>
+          </div>
+          <div class="form-group">
+            <label>Location <span class="label-optional">(optional)</span></label>
+            <input type="text" v-model="newEvent.location" placeholder="e.g. Main Hall" />
+          </div>
+          <div class="modal-actions">
+            <button v-if="editingEventId" class="modal-cancel modal-cancel--danger" @click="deleteCurrentEvent">Delete</button>
+            <button class="modal-cancel" @click="showEventModal = false">Cancel</button>
+            <button class="modal-confirm" @click="saveEvent">{{ editingEventId ? 'Save Changes' : 'Add Event' }}</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- ── Event Quick-Create Popover ── -->
+    <Transition name="fade">
+      <div v-if="eventQuickCreate.visible" class="quick-create-popover" :style="eventQuickCreate.style" @mousedown.stop>
+        <div class="qc-header">
+          <div class="qc-time-badge">{{ eventQuickCreate.startLabel }} – {{ eventQuickCreate.endLabel }}</div>
+          <span class="qc-event-tag">Event</span>
+        </div>
+        <div class="qc-date-label">{{ eventQuickCreate.dateLabel }}</div>
+        <div class="form-group">
+          <label>Title</label>
+          <input v-model="eventQuickCreate.title" type="text" placeholder="e.g. Team meeting" autofocus />
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Start</label><input type="time" v-model="eventQuickCreate.startTime" /></div>
+          <div class="form-group"><label>End</label><input type="time" v-model="eventQuickCreate.endTime" /></div>
+        </div>
+        <div class="form-group">
+          <label>Location <span class="label-optional">(optional)</span></label>
+          <input v-model="eventQuickCreate.location" type="text" placeholder="Main Hall" />
+        </div>
+        <div class="qc-actions">
+          <button class="qc-cancel" @click="eventQuickCreate.visible = false">Cancel</button>
+          <button class="qc-confirm" @click="saveEventFromQuickCreate">Create Event</button>
         </div>
       </div>
     </Transition>
@@ -425,8 +786,44 @@
               </div>
             </div>
 
-            <div v-if="shiftTasksModal.shiftTaskLists.length === 0" class="stm-empty-state">
-              <p>No task lists assigned to this shift yet.</p>
+            <!-- Individual Tasks (not part of a list) -->
+            <div v-if="shiftTasksModal.shiftTasks.length > 0" class="stm-list-card">
+              <div class="stm-list-header">
+                <div class="stm-list-meta">
+                  <span class="stm-list-name">Individual Tasks</span>
+                  <span class="stm-progress">
+                    {{ shiftTasksModal.shiftTasks.filter(t => t.isCompleted).length }}/{{ shiftTasksModal.shiftTasks.length }} done
+                  </span>
+                </div>
+              </div>
+              <div class="stm-prog-bar">
+                <div class="stm-prog-fill"
+                  :style="{ width: shiftTasksModal.shiftTasks.length ? (shiftTasksModal.shiftTasks.filter(t=>t.isCompleted).length / shiftTasksModal.shiftTasks.length * 100) + '%' : '0%' }">
+                </div>
+              </div>
+              <div class="stm-tasks">
+                <label
+                  v-for="st in shiftTasksModal.shiftTasks"
+                  :key="st.id_shiftTask"
+                  class="stm-task-row"
+                  :class="{ 'stm-task-disabled': isManager }">
+                  <input
+                    type="checkbox"
+                    class="stm-checkbox"
+                    :checked="st.isCompleted"
+                    :disabled="isManager"
+                    @change="toggleShiftTask(st)"
+                  />
+                  <span class="stm-task-name" :class="{ done: st.isCompleted }">
+                    {{ taskNameById(st.id_task) }}
+                  </span>
+                  <button v-if="isManager" class="stm-remove-btn stm-remove-inline" title="Remove from shift" @click="removeShiftTaskItem(st)">✕</button>
+                </label>
+              </div>
+            </div>
+
+            <div v-if="shiftTasksModal.shiftTaskLists.length === 0 && shiftTasksModal.shiftTasks.length === 0" class="stm-empty-state">
+              <p>No task lists or tasks assigned to this shift yet.</p>
               <p v-if="!isManager" class="stm-empty-sub">Ask your manager to assign tasks.</p>
             </div>
           </div>
@@ -453,100 +850,274 @@
               <span class="stm-link" @click="$router.push('/tasks')">Create one in Tasks →</span>
             </p>
           </div>
+
+          <!-- Manager: Assign Individual Task -->
+          <div v-if="isManager && !shiftTasksModal.loading" class="stm-assign-section">
+            <p class="stm-assign-label">Assign Individual Task</p>
+            <div class="stm-assign-row">
+              <select v-model="shiftTasksModal.selectedTaskId" class="stm-select">
+                <option :value="null" disabled>Select a task…</option>
+                <option v-for="t in taskModalAvailableTasks" :key="t.id_task" :value="t.id_task">
+                  {{ t.name }}
+                </option>
+              </select>
+              <button
+                class="stm-assign-btn"
+                :disabled="shiftTasksModal.savingTask || !shiftTasksModal.selectedTaskId"
+                @click="assignTaskToCurrentShift">
+                {{ shiftTasksModal.savingTask ? '…' : 'Attach' }}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </Transition>
 
     <!-- ── Shift Detail Popover ── -->
     <Transition name="fade">
-      <div v-if="selectedShift" class="shift-popover" :style="popoverStyle" @mousedown.stop>
+      <div v-if="selectedShift" class="shift-popover" :style="popoverStyle" @mousedown.stop
+        :class="{ 'shift-popover--open': !selectedShift.id_employee }">
         <button class="popover-close" @click="selectedShift = null">✕</button>
-        <div class="popover-dot" :style="{ background: getEmployeeColor(selectedShift.employee) }"></div>
-        <div class="popover-employee">{{ [selectedShift.positionName, selectedShift.employee].filter(Boolean).join(' – ') }}</div>
+        <div class="popover-dot"
+          :style="!selectedShift.id_employee ? {} : { background: getEmployeeColor(selectedShift.employee) }"></div>
+        <div class="popover-employee">{{ [selectedShift.positionName, selectedShift.employee || 'Open'].filter(Boolean).join(' – ') }}</div>
         <div class="popover-time">{{ selectedShift.startLabel }} – {{ selectedShift.endLabel }}</div>
         <div class="popover-day">{{ selectedShiftDateLabel }}</div>
         <div v-if="selectedShift.notes" class="popover-notes">{{ selectedShift.notes }}</div>
         <div class="popover-actions">
-          <button class="popover-edit" @click="editShift">Edit</button>
+          <button v-if="isManager" class="popover-edit" @click="editShift">Edit</button>
           <button
             v-if="isManager || selectedShift.id_employee === currentUser?.id_employee"
             class="popover-tasks"
             @click="openShiftTasksModal(selectedShift)">
             Tasks
           </button>
-          <button class="popover-delete" @click="deleteShift(selectedShift.id)">Delete</button>
+          <button v-if="canPostShift(selectedShift)" class="popover-post" @click="postFromPopover">Post</button>
+          <button v-if="isManager" class="popover-delete" @click="deleteShift(selectedShift.id)">Delete</button>
         </div>
       </div>
     </Transition>
 
+
   </div>
 
   <!-- ── Profile panel ── -->
-  <Transition name="slide-right">
-    <div v-if="profileOpen" class="profile-overlay" @click.self="profileOpen = false">
-      <div class="profile-panel">
-        <div class="profile-header">
-          <div class="profile-avatar-lg">
-            <img v-if="currentUser?.picture" :src="currentUser.picture" class="avatar-img" referrerpolicy="no-referrer" />
-            <span v-else>{{ userInitials }}</span>
+  <!-- Profile panel is in AppLayout -->
+
+  <!-- ── Rubber-band selection rect ── -->
+  <div v-if="rubberBand.active" class="rubber-band-rect" :style="{
+    left:   Math.min(rubberBand.startX, rubberBand.x) + 'px',
+    top:    Math.min(rubberBand.startY, rubberBand.y) + 'px',
+    width:  Math.abs(rubberBand.x - rubberBand.startX) + 'px',
+    height: Math.abs(rubberBand.y - rubberBand.startY) + 'px',
+  }"></div>
+
+  <!-- ── Multi-select toolbar ── -->
+  <Transition name="toolbar-anim">
+    <div v-if="selectedShiftIds.size > 0 || isPasteMode" class="selection-toolbar" :class="{ 'paste-mode': isPasteMode }">
+      <template v-if="isPasteMode">
+        <span class="sel-count">Click a day to paste</span>
+        <div class="sel-divider"></div>
+        <button class="sel-btn sel-btn--clear" @click="isPasteMode = false" title="Cancel (Esc)">✕ Cancel</button>
+      </template>
+      <template v-else>
+        <span class="sel-count">{{ selectedShiftIds.size }} shift{{ selectedShiftIds.size !== 1 ? 's' : '' }} selected</span>
+        <div class="sel-divider"></div>
+        <button class="sel-btn" @click="copySelectedShifts" title="Copy (⌘C / Ctrl+C)">Copy</button>
+        <button class="sel-btn" @click="pasteDashShifts" :disabled="dashClipboard.length === 0" title="Paste (⌘V / Ctrl+V)">Paste</button>
+        <button v-if="isManager" class="sel-btn" @click="duplicateSelectedToNextWeek" title="Duplicate to next week">→ Next Week</button>
+        <button v-if="isManager" class="sel-btn sel-btn--delete" @click="deleteSelectedShifts" title="Delete (Del)">Delete</button>
+        <button class="sel-btn sel-btn--clear" @click="clearSelection" title="Clear (Esc)">✕</button>
+      </template>
+    </div>
+  </Transition>
+
+  <!-- ── Apply Template Modal (Dashboard quick-apply) ── -->
+  <Transition name="modal">
+    <div v-if="applyModal.open" class="modal-overlay" @click.self="applyModal.open = false">
+      <div class="modal tpl-apply-modal">
+        <h3 class="modal-title">Apply Template</h3>
+        <p class="tpl-apply-name">{{ applyModal.template?.name }}</p>
+
+        <div class="tpl-form-group">
+          <label>Period Length</label>
+          <div class="tpl-period-options">
+            <button
+              v-for="opt in PERIOD_OPTIONS"
+              :key="opt.value"
+              class="tpl-period-opt"
+              :class="{ active: applyModal.period === opt.value }"
+              @click="applyModal.period = opt.value"
+            >{{ opt.label }}</button>
           </div>
-          <button class="profile-close" @click="profileOpen = false">✕</button>
         </div>
-        <div class="profile-body">
-          <h2 class="profile-name">{{ currentUser?.fName }} {{ currentUser?.lName }}</h2>
-          <p class="profile-email">{{ currentUser?.email }}</p>
-          <span class="profile-role-badge" :class="currentUser?.role?.toLowerCase()">{{ currentUser?.role }}</span>
+
+        <div v-if="!isCustomPeriod" class="tpl-form-group">
+          <label>Period Start</label>
+          <div class="tpl-date-picker-wrap">
+            <button class="tpl-date-trigger" @click.stop="openPicker('start', applyModal.startDate)">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" class="tpl-date-trigger-icon">
+                <rect x="1" y="3" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                <line x1="1" y1="7" x2="15" y2="7" stroke="currentColor" stroke-width="1.5"/>
+                <line x1="5" y1="1" x2="5" y2="5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="11" y1="1" x2="11" y2="5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <span>{{ formatDateDisplay(applyModal.startDate) || 'Select date' }}</span>
+            </button>
+            <Transition name="tpl-dpc-pop">
+              <div v-if="datePicker.open && datePicker.field === 'start'" class="tpl-dpc-dropdown" @click.stop>
+                <div class="tpl-dpc-header">
+                  <button class="tpl-dpc-nav" @click="prevPickerMonth">‹</button>
+                  <span class="tpl-dpc-month-label">{{ pickerMonthLabel }}</span>
+                  <button class="tpl-dpc-nav" @click="nextPickerMonth">›</button>
+                </div>
+                <div class="tpl-dpc-dow-row">
+                  <span v-for="d in ['Su','Mo','Tu','We','Th','Fr','Sa']" :key="d" class="tpl-dpc-dow">{{ d }}</span>
+                </div>
+                <div class="tpl-dpc-days">
+                  <span v-for="p in pickerStartPad" :key="'p'+p" class="tpl-dpc-cell tpl-dpc-empty"></span>
+                  <span v-for="day in pickerDaysInMonth" :key="day" class="tpl-dpc-cell"
+                    :class="{
+                      'tpl-dpc-selected':    isPickerDaySelected(day),
+                      'tpl-dpc-today':       isPickerDayToday(day),
+                      'tpl-dpc-cell--busy':  isPickerDayBusy(day),
+                      'tpl-dpc-cell--open':  isPickerDayInEmptyWeek(day),
+                    }"
+                    @click="selectPickerDay(day)">{{ day }}</span>
+                </div>
+                <div class="tpl-dpc-legend">
+                  <span class="tpl-dpc-legend-dot tpl-dpc-legend-dot--open"></span>Empty week
+                  <span class="tpl-dpc-legend-dot tpl-dpc-legend-dot--busy"></span>Has shifts
+                </div>
+              </div>
+            </Transition>
+          </div>
         </div>
-        <div class="profile-divider"></div>
-        <button class="profile-btn" @click="router.push('/profile')">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <!-- Profile icon body -->
-            <path
-              d="M4 21 A8 8 0 0 1 20 21"
-              stroke="currentColor"
-              stroke-width="2"
-              fill="none"
-            />
-            <!-- Profile icon head -->
-            <circle
-              cx="12"
-              cy="7.5"
-              r="5"
-              stroke="currentColor"
-              stroke-width="2"
-            />
+
+        <div v-if="isCustomPeriod" class="tpl-form-row-dates">
+          <div class="tpl-form-group">
+            <label>Start Date</label>
+            <div class="tpl-date-picker-wrap">
+              <button class="tpl-date-trigger" @click.stop="openPicker('start', applyModal.startDate)">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" class="tpl-date-trigger-icon">
+                  <rect x="1" y="3" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                  <line x1="1" y1="7" x2="15" y2="7" stroke="currentColor" stroke-width="1.5"/>
+                  <line x1="5" y1="1" x2="5" y2="5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  <line x1="11" y1="1" x2="11" y2="5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                <span>{{ formatDateDisplay(applyModal.startDate) || 'Select date' }}</span>
+              </button>
+              <Transition name="tpl-dpc-pop">
+                <div v-if="datePicker.open && datePicker.field === 'start'" class="tpl-dpc-dropdown" @click.stop>
+                  <div class="tpl-dpc-header">
+                    <button class="tpl-dpc-nav" @click="prevPickerMonth">‹</button>
+                    <span class="tpl-dpc-month-label">{{ pickerMonthLabel }}</span>
+                    <button class="tpl-dpc-nav" @click="nextPickerMonth">›</button>
+                  </div>
+                  <div class="tpl-dpc-dow-row">
+                    <span v-for="d in ['Su','Mo','Tu','We','Th','Fr','Sa']" :key="d" class="tpl-dpc-dow">{{ d }}</span>
+                  </div>
+                  <div class="tpl-dpc-days">
+                    <span v-for="p in pickerStartPad" :key="'p'+p" class="tpl-dpc-cell tpl-dpc-empty"></span>
+                    <span v-for="day in pickerDaysInMonth" :key="day" class="tpl-dpc-cell"
+                      :class="{
+                      'tpl-dpc-selected':    isPickerDaySelected(day),
+                      'tpl-dpc-today':       isPickerDayToday(day),
+                      'tpl-dpc-cell--busy':  isPickerDayBusy(day),
+                      'tpl-dpc-cell--open':  isPickerDayInEmptyWeek(day),
+                    }"
+                      @click="selectPickerDay(day)">{{ day }}</span>
+                  </div>
+                </div>
+              </Transition>
+            </div>
+          </div>
+          <div class="tpl-date-range-arrow">→</div>
+          <div class="tpl-form-group">
+            <label>End Date</label>
+            <div class="tpl-date-picker-wrap">
+              <button class="tpl-date-trigger" @click.stop="openPicker('end', applyModal.endDate)">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" class="tpl-date-trigger-icon">
+                  <rect x="1" y="3" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                  <line x1="1" y1="7" x2="15" y2="7" stroke="currentColor" stroke-width="1.5"/>
+                  <line x1="5" y1="1" x2="5" y2="5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  <line x1="11" y1="1" x2="11" y2="5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                <span>{{ formatDateDisplay(applyModal.endDate) || 'Select date' }}</span>
+              </button>
+              <Transition name="tpl-dpc-pop">
+                <div v-if="datePicker.open && datePicker.field === 'end'" class="tpl-dpc-dropdown" @click.stop>
+                  <div class="tpl-dpc-header">
+                    <button class="tpl-dpc-nav" @click="prevPickerMonth">‹</button>
+                    <span class="tpl-dpc-month-label">{{ pickerMonthLabel }}</span>
+                    <button class="tpl-dpc-nav" @click="nextPickerMonth">›</button>
+                  </div>
+                  <div class="tpl-dpc-dow-row">
+                    <span v-for="d in ['Su','Mo','Tu','We','Th','Fr','Sa']" :key="d" class="tpl-dpc-dow">{{ d }}</span>
+                  </div>
+                  <div class="tpl-dpc-days">
+                    <span v-for="p in pickerStartPad" :key="'p'+p" class="tpl-dpc-cell tpl-dpc-empty"></span>
+                    <span v-for="day in pickerDaysInMonth" :key="day" class="tpl-dpc-cell"
+                      :class="{
+                        'tpl-dpc-selected':    isPickerDaySelected(day),
+                        'tpl-dpc-today':       isPickerDayToday(day),
+                        'tpl-dpc-disabled':    isPickerDayBeforeStart(day),
+                        'tpl-dpc-cell--busy':  isPickerDayBusy(day),
+                        'tpl-dpc-cell--open':  isPickerDayInEmptyWeek(day),
+                      }"
+                      @click="!isPickerDayBeforeStart(day) && selectPickerDay(day)">{{ day }}</span>
+                  </div>
+                  <div class="tpl-dpc-legend">
+                    <span class="tpl-dpc-legend-dot tpl-dpc-legend-dot--open"></span>Empty week
+                    <span class="tpl-dpc-legend-dot tpl-dpc-legend-dot--busy"></span>Has shifts
+                  </div>
+                </div>
+              </Transition>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="applyRangeLabel" class="tpl-apply-range-preview">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="opacity:.5;flex-shrink:0">
+            <rect x="1" y="3" width="14" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M5 1v4M11 1v4M1 7h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          Profile
-        </button>
-        <button class="settings-btn" @click="">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <!-- Gear icon teeth -->
-            <path
-              d="M19.4 12a7.4 7.4 0 0 0-.1-1l2-1.6-2-3.5-2.4 1a7.7 7.7 0 0 0-1.7-1l-.4-2.6h-4l-.4 2.6a7.7 7.7 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.6a7.4 7.4 0 0 0 0 2l-2 1.6 2 3.5 2.4-1a7.7 7.7 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.7 7.7 0 0 0 1.7-1l2.4 1 2-3.5-2-1.6c.07-.33.1-.66.1-1z"
-              stroke="currentColor"
-              stroke-width="2"
-              fill="none"
-              stroke-linejoin="round"
-            />
-            <!-- Gear icon hole -->
-            <circle
-              cx="12.75"
-              cy="12"
-              r="3"
-              stroke="currentColor"
-              stroke-width="2"
-            />
-          </svg>
-          Settings
-        </button>
-        <button class="logout-btn" @click="logout">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <polyline points="16,17 21,12 16,7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <line x1="21" y1="12" x2="9" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-          Log Out
-        </button>
+          <span>{{ applyRangeLabel }}</span>
+        </div>
+
+        <p v-if="applyModal.error" class="tpl-modal-error">{{ applyModal.error }}</p>
+        <div class="modal-actions">
+          <button class="modal-cancel" @click="applyModal.open = false">Cancel</button>
+          <button
+            class="modal-confirm"
+            :disabled="applyModal.applying || !applyModal.startDate || (isCustomPeriod && !applyModal.endDate)"
+            @click="applyTemplate"
+          >
+            {{ applyModal.applying ? 'Creating shifts…' : 'Apply Template' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Transition>
+
+  <!-- Unavailability conflict confirmation — used by Take, quick-create,
+       and the shift edit modal. Soft block; user can choose to proceed. -->
+  <UnavailabilityConflictModal
+    :open="conflictPrompt.open"
+    :subject="conflictPrompt.subject"
+    @confirm="onConflictConfirm"
+    @cancel="onConflictCancel" />
+
+  <!-- Delete confirmation -->
+  <Transition name="modal">
+    <div v-if="deleteConfirm.open" class="modal-overlay" @click.self="onDeleteCancel">
+      <div class="modal modal-sm">
+        <h3 class="modal-title">{{ deleteConfirm.title }}</h3>
+        <p v-if="deleteConfirm.body" class="modal-body-text">{{ deleteConfirm.body }}</p>
+        <div class="modal-actions">
+          <button class="modal-cancel" @click="onDeleteCancel">Cancel</button>
+          <button class="modal-confirm" :class="{ 'modal-confirm--danger': deleteConfirm.tone === 'danger' }" @click="onDeleteConfirm">{{ deleteConfirm.confirmLabel }}</button>
+        </div>
       </div>
     </div>
   </Transition>
@@ -554,13 +1125,26 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import Utils from "../config/utils.js";
 import AuthServices from "../services/authServices.js";
 import { useTheme } from "../composables/useTheme.js";
+import { useToast } from "../composables/useToast.js";
+import { useDepartment } from "../composables/useDepartment.js";
+import { useBreakpoint } from "../composables/useBreakpoint.js";
+import { usePreferences } from "../composables/usePreferences.js";
+import DeptSwitcher from "../components/DeptSwitcher.vue";
+import EmployeePicker from "../components/EmployeePicker.vue";
+import DatePicker from "../components/DatePicker.vue";
+import TimePicker from "../components/TimePicker.vue";
+import SelectPicker from "../components/SelectPicker.vue";
+import { formatDateShort } from "../utils/dateFormat.js";
+import UnavailabilityConflictModal from "../components/UnavailabilityConflictModal.vue";
 
 const { isDark, toggleTheme } = useTheme();
+const { showToast } = useToast();
+const { isPhone, isTouch } = useBreakpoint();
 import {
   fetchEmployees,
   fetchShiftsWithAssignments,
@@ -571,7 +1155,11 @@ import {
   deleteAssignment  as apiDeleteAssignment,
   fetchSwapRequests,
 } from "../services/schedulingService.js";
-import { getDepartment, getCalendarEntries, getEvents, getPositions } from "../services/departmentService.js";
+import { getUnavailability } from "../services/unavailabilityService.js";
+import { getActiveSemester } from "../services/semesterService.js";
+import { timeStrToHour } from "../services/employeeManagementService.js";
+import { useUnavailabilityRefresh } from "../composables/useUnavailabilityRefresh.js";
+import { getDepartment, getCalendarEntries, getEvents, getPositions, getSettingValues, getPositionEmployees, getDepartmentAccessRequests } from "../services/departmentService.js";
 import {
   fetchTaskLists,
   fetchTasks,
@@ -580,10 +1168,24 @@ import {
   removeShiftTaskList,
   getTaskListStatuses,
   updateTaskComplete,
+  getTemplateShiftTasks,
+  getShiftTasks,
+  attachTaskToShift,
+  removeShiftTask,
+  updateShiftTaskComplete,
 } from "../services/taskService.js";
+import {
+  fetchTemplates,
+  fetchTemplateShifts,
+  fetchTemplateShiftEmployees,
+  fetchTemplateShiftTaskLists,
+  createTemplateApplication,
+  createTemplateApplicationShift,
+} from "../services/templateService.js";
+import apiClient from "../services/services.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-const CELL_HEIGHT    = 60;
+const cellHeight     = ref(60);
 const CAL_START_HOUR = 0;   // full 24-hour grid
 const SNAP_MINUTES   = 15;
 const MAX_PILLS      = 3;
@@ -599,9 +1201,10 @@ const router = useRouter();
 
 function handleTabClick(tab) {
   const routes = {
+    Templates:  "/templates",
     Department: "/department",
     Employees:  "/manage",
-    Shifts:     "/manage?tab=Shifts",
+    Shifts:     "/shifts",
     Tradeboard: "/tradeboard",
     Tasks:      "/tasks",
     Requests:   "/requests",
@@ -627,8 +1230,11 @@ async function logout() {
   Utils.removeItem("user");
   router.push("/start");
 }
-const activeTab      = ref("Schedules");
-const calView        = ref("Week");
+const activeTab      = ref("Dashboard");
+// Default view depends on viewport at mount: phones start on Day (a week
+// grid at 390px is cramped); anything larger starts on Week. After mount,
+// the user can switch freely — we don't force-switch on resize.
+const calView        = ref(isPhone.value ? "Day" : "Week");
 const weekOffset     = ref(0);
 const dayOffset      = ref(0);
 const monthOffset    = ref(0);
@@ -643,14 +1249,14 @@ const loading = ref(true);
 const apiError = ref(null);
 
 const tabs = computed(() => {
-  const base = ["Schedules", "Employees", "Shifts", "Tradeboard", "Tasks", "Requests"];
-  if (currentUser.value?.role === "Manager" || currentUser.value?.role === "Admin") {
-    base.splice(1, 0, "Department");
+  const role = currentUser.value?.role;
+  if (role === "Manager" || role === "Admin") {
+    return ["Dashboard", "Department", "Templates", "Tradeboard", "Tasks", "Shifts", "Requests"];
   }
-  return base;
+  return ["Dashboard", "Department", "Tradeboard", "Tasks", "Shifts", "Requests"];
 });
 const dayLetters  = ["S","M","T","W","R","F","S"];
-const hours       = Array.from({ length: 24 }, (_, i) => i);
+const hours = Array.from({ length: 24 }, (_, i) => i);
 
 // ── Live data (populated from API on mount) ────────────────────────────────────
 // employees: [{ id_employee, fName, lName, email, color, name }]
@@ -658,12 +1264,319 @@ const employees    = ref([]);
 // employeeMap: { [id_employee]: employee } — for fast lookups
 const employeeMap  = ref({});
 
-const shifts          = ref([]);
-const pendingRequests = ref([]);
+const shifts             = ref([]);
+const pendingRequests    = ref([]);
+const sidebarAvailability = ref([]);
+const approvedAvailability = ref([]);
+// Dept-wide EmployeeUnavailability rows — fuels dropdown conflict
+// annotations in the shift modals and the hatched overlay on the calendar.
+// Loaded in loadAll alongside other dept data.
+const deptUnavailability = ref([]);
+// Employee's own request history — drives the Requests sidebar preview on
+// the employee dashboard. Swap requests come from `pendingRequests`
+// filtered per-user in the `myRequestsUnified` computed below.
+const myTimeOffRequests    = ref([]);
+const myDeptAccessRequests = ref([]);
 const calendarHours   = ref([]); // hours of operation from department calendar
+const activeSeason    = ref(""); // currently active season name (empty = no filter) — used for hours-of-operation variants only
+const activeSemester  = ref(""); // name of the Semester row whose [startDate, endDate] contains today — used for class-schedule conflict detection
 const deptEvents      = ref([]); // department events
 const deptName        = ref('');
 const positions       = ref([]);
+// Map of id_position → array of id_employee assigned to that position
+const positionEmployeeIds = ref({});
+
+function normalizeAvailabilityStatus(status) {
+  const value = String(status || "").toLowerCase();
+  if (value === "approved") return "Approved";
+  if (value === "denied") return "Denied";
+  return "Pending";
+}
+
+// Returns the employees that may be assigned to a shift of the given position.
+// If no position is selected, returns no employees (forces position-first).
+function employeesForPosition(id_position, options = {}) {
+  if (id_position == null || id_position === "") return [];
+  const ids = positionEmployeeIds.value[id_position];
+  if (!ids) return [];
+  const idSet = new Set(ids);
+  const eligible = employees.value.filter(e => idSet.has(e.id_employee));
+  const { date, startHour, endHour } = options;
+  if (!date || startHour == null || endHour == null) return eligible;
+  // Hard filter: approved time off still excludes the employee from the
+  // dropdown (they literally can't work that shift).
+  // Soft annotation: recurring unavailability (class schedule, etc.) stays
+  // in the dropdown with a `conflict` property so the option can show a
+  // warning — managers can override when they need to.
+  return eligible
+    .filter((employee) => !employeeHasApprovedTimeOff(employee.id_employee, date, startHour, endHour))
+    .map((employee) => ({
+      ...employee,
+      conflict: employeeUnavailabilityConflict(employee.id_employee, date, startHour, endHour),
+    }));
+}
+
+function employeeHasApprovedTimeOff(id_employee, date, startHour, endHour) {
+  return approvedAvailability.value.some((request) => {
+    if (request.id_employee !== id_employee) return false;
+    if (date < request.startDate || date > request.endDate) return false;
+    const reqStart = timeStrToHour(request.startTime);
+    const reqEnd = timeStrToHour(request.endTime);
+    return startHour < reqEnd && reqStart < endHour;
+  });
+}
+
+// Return the first conflicting unavailability row (or null) for the given
+// employee on a specific shift date/time. Mirrors
+// employeeHasApprovedTimeOff but honors both scope types: "season" rows
+// apply only while the dept's activeSeason matches; "dateRange" rows apply
+// only if `date` is inside [startDate, endDate].
+const DAY_NAMES_FULL_UNAVAIL = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+// Compare an activeSeason setting (e.g. "Fall", "Fall 2026") against a
+// row's `season` field ("Spring 2026"). Matches on semester name + year,
+// with either side allowed to omit the year. Falls back to "accept
+// everything" when activeSeason is empty/unset so freshly-imported rows
+// still count even before the dept owner has chosen a semester.
+function seasonsMatch(activeSeason, rowSeason) {
+  if (!activeSeason) return true;
+  if (!rowSeason) return false;
+  const [activeSem, activeYear] = String(activeSeason).trim().split(/\s+/);
+  const [rowSem,    rowYear]    = String(rowSeason).trim().split(/\s+/);
+  if (!activeSem || !rowSem) return false;
+  if (activeSem.toLowerCase() !== rowSem.toLowerCase()) return false;
+  if (activeYear && rowYear && activeYear !== rowYear) return false;
+  return true;
+}
+function employeeUnavailabilityConflict(id_employee, date, startHour, endHour) {
+  if (!date) return null;
+  // Derive day name from the YYYY-MM-DD key without timezone skew.
+  const [y, m, d] = date.split("-").map(Number);
+  const dayName = DAY_NAMES_FULL_UNAVAIL[new Date(y, m - 1, d).getDay()];
+  const targetId = Number(id_employee);
+  for (const row of deptUnavailability.value) {
+    // Coerce both sides — Sequelize occasionally returns integer FKs as
+    // strings depending on driver config, which would silently miss every
+    // match here with strict `!==`.
+    if (Number(row.id_employee) !== targetId) continue;
+    if (row.dayOfWeek !== dayName) continue;
+    if (row.scopeType === "season") {
+      if (!seasonsMatch(activeSemester.value, row.season)) continue;
+    } else if (row.scopeType === "dateRange") {
+      if (!row.startDate || !row.endDate) continue;
+      if (date < row.startDate || date > row.endDate) continue;
+    }
+    const rowStart = timeStrToHour(row.startTime);
+    const rowEnd   = timeStrToHour(row.endTime);
+    if (startHour < rowEnd && rowStart < endHour) return row;
+  }
+  return null;
+}
+
+// All unavailability rows that apply to the given employee on the given
+// YYYY-MM-DD date — used by the calendar overlay to paint hatched blocks
+// behind the shift grid when a shift is selected. Skips rows missing
+// startTime/endTime so a bad DB row can't crash the render.
+function unavailabilityForEmployeeOnDate(id_employee, date) {
+  if (!id_employee || !date) return [];
+  const [y, m, d] = date.split("-").map(Number);
+  const dayName = DAY_NAMES_FULL_UNAVAIL[new Date(y, m - 1, d).getDay()];
+  const targetId = Number(id_employee);
+  return deptUnavailability.value.filter(row => {
+    if (Number(row.id_employee) !== targetId) return false;
+    if (row.dayOfWeek !== dayName) return false;
+    if (!row.startTime || !row.endTime) return false;
+    if (row.scopeType === "season") {
+      return seasonsMatch(activeSemester.value, row.season);
+    }
+    if (row.scopeType === "dateRange") {
+      return row.startDate && row.endDate && date >= row.startDate && date <= row.endDate;
+    }
+    return false;
+  });
+}
+// Safe title string for the overlay tooltip. A null startTime/endTime
+// slipping through would throw during template render and blank the
+// dashboard — better to degrade to just the label.
+function overlayTitle(u) {
+  const label = u.label || "Unavailable";
+  const s = typeof u.startTime === "string" ? u.startTime.slice(0, 5) : "";
+  const e = typeof u.endTime   === "string" ? u.endTime.slice(0, 5)   : "";
+  return s && e ? `${label} — ${s}–${e}` : label;
+}
+
+// Absolute-position style for an unavailability block on the calendar,
+// mirroring the shift-block positioning math (CAL_START_HOUR + cellHeight).
+function unavailabilityBlockStyle(row) {
+  const startH = timeStrToHour(row.startTime);
+  const endH   = timeStrToHour(row.endTime);
+  const top    = Math.max(0, (startH - CAL_START_HOUR) * cellHeight.value);
+  const height = Math.max(18, (endH - startH) * cellHeight.value);
+  return { top: top + "px", height: height + "px" };
+}
+
+// Can the current (employee) user claim this unassigned shift?
+function canTakeShift(shift) {
+  if (isManager.value) return false;
+  if (!shift || shift.id_employee) return false;
+  if (!shift.id_shift || !currentUser.value?.id_employee) return false;
+  if (shift.id_position == null) return true;
+  const ids = positionEmployeeIds.value[shift.id_position];
+  return !!ids && ids.includes(currentUser.value.id_employee);
+}
+
+// Can the current (employee) user post this shift to the tradeboard?
+// Only their own upcoming-or-current shifts that aren't already posted.
+function canPostShift(shift) {
+  if (isManager.value) return false;
+  if (!shift || !shift.id_shift || !shift.id_employee) return false;
+  const myId = currentUser.value?.id_employee;
+  if (!myId || shift.id_employee !== myId) return false;
+  const alreadyPosted = pendingRequests.value.some(r => r.raw?.id_shift === shift.id_shift);
+  if (alreadyPosted) return false;
+  // Don't let the employee post a shift that's already fully in the past.
+  if (shift.date) {
+    const todayKey = dateToKey(new Date());
+    if (shift.date < todayKey) return false;
+    if (shift.date === todayKey && shift.endHour <= currentTimeHour.value) return false;
+  }
+  return true;
+}
+
+async function postFromPopover() {
+  const s = selectedShift.value;
+  if (!s) return;
+  selectedShift.value = null;
+  await postShiftToTradeboard(s, null);
+}
+
+async function postShiftToTradeboard(shift, e) {
+  e?.stopPropagation?.();
+  if (!canPostShift(shift)) return;
+  const ok = await confirmDelete({
+    title: "Post to Tradeboard?",
+    body: `Another employee will be able to claim this shift. ${formatDateShort(shift.date)} · ${shift.startLabel}–${shift.endLabel}`,
+    confirmLabel: "Post Shift",
+    tone: "primary",
+  });
+  if (!ok) return;
+  try {
+    const { data } = await apiClient.post("/swap-requests", {
+      id_shift:             shift.id_shift,
+      id_employeeRequester: currentUser.value.id_employee,
+      id_employeeRequested: null,
+      status:               "Pending",
+    });
+    pendingRequests.value = [
+      ...pendingRequests.value,
+      {
+        id:   data.id_swapRequest,
+        name: currentUser.value.fName ? `${currentUser.value.fName} ${currentUser.value.lName}` : "",
+        raw:  data,
+      },
+    ];
+    showToast({ message: `Posted to Tradeboard — ${shift.startLabel}–${shift.endLabel}`, type: "success" });
+  } catch (err) {
+    showToast({
+      message: "Couldn't post shift: " + (err.response?.data?.message || err.message),
+      type: "error",
+    });
+  }
+}
+
+// ── Unavailability conflict confirmation (shared modal state) ─────────────────
+// Promise-based — any caller can `await confirmConflict(subject)` and
+// get back true (user confirmed) or false (cancelled). The modal always
+// shows generic "unavailable" copy — it never exposes the underlying
+// reason, so we only need the subject (employee's name or "You").
+const conflictPrompt = ref({ open: false, subject: "", _resolve: null });
+
+function confirmConflict(subject) {
+  return new Promise((resolve) => {
+    conflictPrompt.value = { open: true, subject, _resolve: resolve };
+  });
+}
+function onConflictConfirm() {
+  const resolve = conflictPrompt.value._resolve;
+  conflictPrompt.value.open = false;
+  resolve?.(true);
+}
+function onConflictCancel() {
+  const resolve = conflictPrompt.value._resolve;
+  conflictPrompt.value.open = false;
+  resolve?.(false);
+}
+
+// ── Delete confirmation modal (reusable) ───────────────────────────────────
+const deleteConfirm = ref({ open: false, title: "", body: "", confirmLabel: "Delete", tone: "danger", _resolve: null });
+function confirmDelete({ title = "Delete shift?", body = "", confirmLabel = "Delete", tone = "danger" } = {}) {
+  return new Promise((resolve) => {
+    deleteConfirm.value = { open: true, title, body, confirmLabel, tone, _resolve: resolve };
+  });
+}
+function onDeleteConfirm() {
+  const resolve = deleteConfirm.value._resolve;
+  deleteConfirm.value.open = false;
+  resolve?.(true);
+}
+function onDeleteCancel() {
+  const resolve = deleteConfirm.value._resolve;
+  deleteConfirm.value.open = false;
+  resolve?.(false);
+}
+
+async function takeShift(shift, e) {
+  e?.stopPropagation?.();
+  const empId = currentUser.value?.id_employee;
+  if (!empId || !shift?.id_shift) return;
+  await tryTakeShift(shift, empId, false);
+}
+
+// Shared retry-with-confirm helper for any assignment POST. Returns the
+// created assignment, or null if the user cancelled, or throws the error
+// for anything non-overridable.
+async function createAssignmentWithConfirm(id_shift, id_employee, date, subject) {
+  try {
+    return await apiCreateAssignment(id_shift, id_employee, date);
+  } catch (err) {
+    const body = err.response?.data;
+    if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY") {
+      const ok = await confirmConflict(subject);
+      if (!ok) return null;
+      return await apiCreateAssignment(id_shift, id_employee, date, true);
+    }
+    throw err;
+  }
+}
+
+async function tryTakeShift(shift, empId, force) {
+  try {
+    const assignment = await apiCreateAssignment(shift.id_shift, empId, shift.date, force);
+    const emp = employeeMap.value[empId];
+    const idx = shifts.value.findIndex(s => s.id === shift.id);
+    if (idx !== -1) {
+      shifts.value[idx] = {
+        ...shifts.value[idx],
+        id:                 assignment.id_shiftAssignment,
+        id_shiftAssignment: assignment.id_shiftAssignment,
+        id_employee:        empId,
+        employee:           emp ? `${emp.fName} ${emp.lName}` : "",
+      };
+    }
+  } catch (err) {
+    const body = err.response?.data;
+    // Soft conflict (class schedule / manual unavailability) — confirm
+    // with the user and retry with force=true.
+    if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY") {
+      const ok = await confirmConflict("You");
+      if (ok) return tryTakeShift(shift, empId, true);
+      return;
+    }
+    // Hard conflict (approved time off) or unknown — show the reason.
+    const reason = body?.message || err.message || "Network error";
+    alert("Couldn't take this shift: " + reason);
+  }
+}
 
 // ── Task state ─────────────────────────────────────────────────────────────────
 const taskLists = ref([]);
@@ -677,27 +1590,118 @@ const shiftTasksModal = ref({
   open: false,
   shift: null,
   shiftTaskLists: [],   // [{ id_shiftTaskList, id_taskList, taskList, statuses }]
+  shiftTasks:     [],   // [{ id_shiftTask, id_task, isCompleted }] — individual tasks
   selectedTaskListId: null,
+  selectedTaskId:     null,
   loading: false,
   saving: false,
+  savingTask: false,
   error: "",
 });
 
-// Employee sidebar: task lists from today's shifts
-const myShiftTasks = ref([]); // [{ shiftTaskListId, taskList, statuses, completedCount, totalCount }]
+// Employee sidebar: task lists for all of today's shifts
+const myShiftTasks = ref([]); // [{ shiftTaskListId, id_shift, shiftLabel, taskList, statuses, completedCount, totalCount }]
+
+// Manager: { [id_shift]: { completed, total } } for shifts that have any task lists
+const shiftTaskSummary = ref({});
+
+// Tracks the current local time in fractional hours; refreshes every minute for the time-line indicator
+const currentTimeHour = ref(new Date().getHours() + new Date().getMinutes() / 60);
 
 // Derived from logged-in user (placeholder until auth is wired up)
 const currentUser = ref(Utils.getStore("user") || { fName: "?", lName: "?" });
+
+const { myDepts, selectedDeptId, loadDepts } = useDepartment();
+const { preferences: userPrefs, ready: prefsReady, fmtHour } = usePreferences();
 const userInitials = computed(() => {
   const u = currentUser.value;
   return `${u.fName?.[0] ?? ""}${u.lName?.[0] ?? ""}`.toUpperCase() || "??";
 });
 
-const newShift = ref({ employee: "", id_employee: null, id_position: null, dayIndex: 0, startTime: "09:00", endTime: "17:00", notes: "" });
+const newShift = ref({ employee: "", id_employee: null, id_position: null, date: "", startTime: "09:00", endTime: "17:00", notes: "" });
+
+// ── Create mode: switches between Add Shift and Add Event for managers ─────
+const createMode = ref("shift"); // 'shift' | 'event'
+const addModeMenuOpen = ref(false);
+const addSplitRef = ref(null);
+function setAddMode(m) {
+  createMode.value = m;
+  addModeMenuOpen.value = false;
+}
+function onAddSplitDocClick(e) {
+  if (!addModeMenuOpen.value) return;
+  if (addSplitRef.value && !addSplitRef.value.contains(e.target)) {
+    addModeMenuOpen.value = false;
+  }
+}
+onMounted(() => document.addEventListener("click", onAddSplitDocClick));
+onUnmounted(() => document.removeEventListener("click", onAddSplitDocClick));
+
+const showEventModal = ref(false);
+const editingEventId = ref(null);
+const newEvent = ref({ title: "", description: "", date: "", startTime: "09:00", endTime: "10:00", location: "" });
+const eventQuickCreate = ref({ visible: false, date: null, startHour: 0, endHour: 1, title: "", description: "", location: "", startTime: "", endTime: "", dateLabel: "", style: {} });
 
 // Drag state
 const drag = ref({ active: false, dayIndex: null, startHour: null, currentHour: null, colEl: null });
+const cmdHeld = ref(false);
+let dragStartedFromShiftBlock = false;
 const quickCreate = ref({ visible: false, dayIndex: null, date: null, startHour: null, endHour: null, startLabel: "", endLabel: "", startTime: "", endTime: "", dateLabel: "", id_position: null, employee: "", notes: "", style: {} });
+
+// ── Multi-select state ─────────────────────────────────────────────────────────
+const selectedShiftIds = ref(new Set()); // Set of String(shift.id) for type safety
+const rubberBand       = ref({ active: false, startX: 0, startY: 0, x: 0, y: 0 });
+const dashClipboard    = ref([]); // [{ date, startHour, endHour, id_position, positionName, id_employee, notes }]
+const isPasteMode      = ref(false);
+const undoStack        = ref([]); // max 20; { type: 'create'|'delete'|'update', shifts: [...] | before/after }
+
+function pushUndo(entry) {
+  undoStack.value.push(entry);
+  if (undoStack.value.length > 20) undoStack.value.shift();
+}
+
+async function undoLastAction() {
+  if (undoStack.value.length === 0) return;
+  const action = undoStack.value.pop();
+  if (action.type === 'create') {
+    for (const s of action.shifts) {
+      try {
+        await apiDeleteShift(s.id_shiftAssignment, s.id_shift);
+        shifts.value = shifts.value.filter(sh => sh.id !== s.id);
+      } catch (err) { console.error("Undo create failed:", err); }
+    }
+  } else if (action.type === 'delete') {
+    for (const s of action.shifts) {
+      try {
+        const block = await apiCreateShift({
+          id_employee:  s.id_employee,
+          date:         s.date,
+          startHour:    s.startHour,
+          endHour:      s.endHour,
+          notes:        s.notes || "",
+          positionName: s.positionName,
+          id_position:  s.id_position,
+          id_department: selectedDeptId.value || currentUser.value?.id_department || null,
+        });
+        block.employee     = s.employee || "";
+        block.positionName = s.positionName;
+        shifts.value.push(block);
+      } catch (err) { console.error("Undo delete failed:", err); }
+    }
+  } else if (action.type === 'update') {
+    const before = action.before;
+    try {
+      await apiUpdateShift(before.id_shift, {
+        startHour:   before.startHour,
+        endHour:     before.endHour,
+        notes:       before.notes,
+        id_position: before.id_position,
+      });
+      const idx = shifts.value.findIndex(s => s.id_shift === before.id_shift);
+      if (idx !== -1) shifts.value[idx] = { ...shifts.value[idx], startHour: before.startHour, endHour: before.endHour, startLabel: fmtHour(before.startHour), endLabel: fmtHour(before.endHour), notes: before.notes, id_position: before.id_position, positionName: before.positionName };
+    } catch (err) { console.error("Undo update failed:", err); }
+  }
+}
 
 // ── Date helpers ───────────────────────────────────────────────────────────────
 function dateKey(weekOff, dayIdx) {
@@ -710,7 +1714,12 @@ function dateKey(weekOff, dayIdx) {
   return d.toISOString().slice(0, 10);
 }
 
-function dateToKey(d) { return d.toISOString().slice(0, 10); }
+function dateToKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 function keyToDate(k) { const [y,m,d] = k.split("-").map(Number); return new Date(y, m-1, d); }
 
@@ -787,16 +1796,247 @@ const todaysEmployees = computed(() => {
   return names.map(n => employees.value.find(e => e.name === n)).filter(Boolean);
 });
 
+const myTodayShifts = computed(() => {
+  if (isManager.value) return [];
+  const key  = dateToKey(new Date());
+  const myId = currentUser.value?.id_employee;
+  return shifts.value.filter(s => s.date === key && s.id_employee === myId);
+});
+
+
+const tradeboardOpenShifts = computed(() => {
+  if (isManager.value) return [];
+  return pendingRequests.value
+    .filter(r => r.raw.id_employeeRequested == null)
+    .map(r => {
+      const shift = shifts.value.find(s => s.id_shift === r.raw.id_shift);
+      return {
+        id:           r.id,
+        employeeName: r.name,
+        dayLabel:     shift?.date ? DAY_ABBR[new Date(shift.date + 'T00:00:00').getDay()] : "—",
+        startLabel:   shift?.startLabel || "—",
+        endLabel:     shift?.endLabel   || "—",
+        positionName: shift?.positionName || "",
+      };
+    })
+    .slice(0, 5);
+});
+
+// Employee sidebar task summary
+// Only surface task lists for shifts the employee is currently on. Once a
+// shift ends, its tasks fall off the sidebar automatically.
+const myActiveShiftTasks = computed(() => {
+  return myShiftTasks.value.filter(stl => {
+    const shift = shifts.value.find(s => s.id_shift === stl.id_shift);
+    return shift && isShiftActiveNow(shift);
+  });
+});
+const myShiftTasksTotal = computed(() => myActiveShiftTasks.value.reduce((acc, stl) => acc + stl.totalCount, 0));
+const myShiftTasksDone  = computed(() => myActiveShiftTasks.value.reduce((acc, stl) => acc + stl.completedCount, 0));
+
+// Lookup: id_department → name for the sidebar Requests list. Populated
+// from the user's myDepts list (already loaded by useDepartment) so we
+// don't need an extra /departments fetch. Unknown dept IDs gracefully
+// fall back to "Dept #N" in the template.
+function deptNameById(id) {
+  const d = myDepts.value.find(d => Number(d.id_department) === Number(id));
+  return d?.name || `Dept #${id}`;
+}
+
+// Employee's request history for the sidebar — unified across time-off,
+// swap posts, and department-access. Hides resolved items (approved/denied)
+// that are older than 3 days so the box stays actionable.
+const myRequestsUnified = computed(() => {
+  if (isManager.value) return [];
+  const myId = currentUser.value?.id_employee;
+  if (!myId) return [];
+
+  // Preview only surfaces still-pending requests. Approved/denied history
+  // lives on /requests under the "All" tab.
+  const isPending = (status) => String(status || "").toLowerCase() === "pending";
+  const fmtShort = (iso) => {
+    if (!iso) return "";
+    const d = typeof iso === "string" ? new Date(iso.replace(" ", "T")) : new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
+
+  const items = [];
+
+  // Time-off — one row per pending request with date range
+  for (const a of myTimeOffRequests.value) {
+    if (!isPending(a.status)) continue;
+    const range = a.startDate === a.endDate
+      ? fmtShort(a.startDate)
+      : `${fmtShort(a.startDate)} → ${fmtShort(a.endDate)}`;
+    items.push({
+      id:     `to-${a.id_personalAvailability}`,
+      type:   "Time Off",
+      label:  range,
+      status: a.status || "Pending",
+      ts:     a.updatedAt || a.createdAt,
+    });
+  }
+
+  // Swap requests this employee posted. `pendingRequests` only holds
+  // still-pending items, so approved/denied rollups don't linger here —
+  // that's fine, the Tradeboard page owns the long history view.
+  for (const r of pendingRequests.value) {
+    const raw = r.raw;
+    if (raw.id_employeeRequester !== myId) continue;
+    const shift = shifts.value.find(s => s.id_shift === raw.id_shift);
+    const shiftDate = shift?.date ? fmtShort(shift.date) : "—";
+    // Status shown reflects where the swap is in the workflow.
+    const swapStatus = raw.id_employeeRequested ? "Claimed" : "Open";
+    items.push({
+      id:     `sw-${raw.id_swapRequest}`,
+      type:   "Swap",
+      label:  shiftDate,
+      status: swapStatus,
+      ts:     raw.updatedAt || raw.createdAt,
+    });
+  }
+
+  // Department access — pending only
+  for (const r of myDeptAccessRequests.value) {
+    if (!isPending(r.status)) continue;
+    items.push({
+      id:     `da-${r.id_departmentAccessRequest}`,
+      type:   "Dept Access",
+      label:  deptNameById(r.id_department),
+      status: r.status || "Pending",
+      ts:     r.updatedAt || r.createdAt,
+    });
+  }
+
+  // Newest first; cap to 5 rows in the sidebar, overflow surfaces via the
+  // "View all" header click → /requests.
+  items.sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0));
+  return items;
+});
+
+const myRequestsVisible = computed(() => myRequestsUnified.value.slice(0, 5));
+const myRequestsOverflow = computed(() =>
+  Math.max(0, myRequestsUnified.value.length - myRequestsVisible.value.length)
+);
+
+// Manager tradeboard sidebar — all pending swap requests enriched with shift + employee info
+const managerTradeboardItems = computed(() => {
+  if (!isManager.value) return [];
+  return pendingRequests.value.map(r => {
+    const raw      = r.raw;
+    const shift    = shifts.value.find(s => s.id_shift === raw.id_shift);
+    const reqsted  = raw.id_employeeRequested ? employeeMap.value[raw.id_employeeRequested] : null;
+    return {
+      id_swapRequest: raw.id_swapRequest,
+      requesterName:  r.name,
+      requestedName:  reqsted ? `${reqsted.fName} ${reqsted.lName}` : null,
+      shiftDate:      shift?.date ? formatDateShort(shift.date) : '—',
+      shiftTime:      shift ? `${shift.startLabel} – ${shift.endLabel}` : '—',
+      positionName:   shift?.positionName || '',
+      needsApproval:  raw.id_employeeRequested != null,
+    };
+  });
+});
+
+async function sidebarApproveDecline(item, status) {
+  try {
+    await apiClient.put(`/swap-requests/${item.id_swapRequest}`, { status });
+    pendingRequests.value = pendingRequests.value.filter(r => r.id !== item.id_swapRequest);
+  } catch { /* silent */ }
+}
+
+// Manager Requests sidebar — pending time-off requests
+const managerRequestItems = computed(() => {
+  if (!isManager.value) return [];
+  return sidebarAvailability.value.map(a => {
+    const emp = employeeMap.value[a.id_employee];
+    return {
+      id_personalAvailability: a.id_personalAvailability,
+      id_employee: a.id_employee,
+      empName:   emp ? `${emp.fName} ${emp.lName}` : `Employee #${a.id_employee}`,
+      startDate: a.startDate ? formatDateShort(a.startDate) : '—',
+      endDate:   a.endDate   ? formatDateShort(a.endDate)   : '—',
+      status:    a.status,
+    };
+  });
+});
+
+function sidebarRequestAction(item, status) {
+  apiClient.put(
+    `/personal-availability/employees/${item.id_employee}/${item.id_personalAvailability}`,
+    { status }
+  ).then(() => {
+    sidebarAvailability.value = sidebarAvailability.value.filter(
+      a => a.id_personalAvailability !== item.id_personalAvailability
+    );
+  }).catch(() => {});
+}
+
 const currentTimePx = computed(() => {
+  const _ = currentTimeHour.value; // trigger reactivity on the minute tick
   const now = new Date();
-  return (now.getHours() + now.getMinutes() / 60 - CAL_START_HOUR) * CELL_HEIGHT;
+  return (now.getHours() + now.getMinutes() / 60 - CAL_START_HOUR) * cellHeight.value;
+});
+const currentTimeLabel = computed(() => {
+  const _ = currentTimeHour.value;
+  const now = new Date();
+  return now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+});
+
+// ── Coverage heatmap (staffing density per hour) ────────────────────────────
+const coverageByHour = computed(() => {
+  const dates = calView.value === "Day"
+    ? [dateToKey(dayViewDate.value)]
+    : weekDates.value.map(dateToKey);
+  const counts = new Array(hours.length).fill(0);
+  for (const date of dates) {
+    const dayShifts = shifts.value.filter(s => s.date === date && s.id_employee);
+    for (let i = 0; i < hours.length; i++) {
+      const h = hours[i];
+      const count = dayShifts.filter(s => s.startHour <= h && s.endHour > h).length;
+      counts[i] = calView.value === "Day" ? counts[i] + count : Math.max(counts[i], count);
+    }
+  }
+  return counts;
+});
+const coverageMax = computed(() => Math.max(1, ...coverageByHour.value));
+
+// Index 0-6 of today's column in weekDates; -1 if today isn't in the visible week.
+const todayWeekIndex = computed(() => weekDates.value.findIndex(d => isTodayDate(d)));
+
+// ── Weekly hours per employee (manager sidebar) ─────────────────────────────
+const weeklyHoursByEmployee = computed(() => {
+  const weekKeys = new Set(weekDates.value.map(dateToKey));
+  const byId = new Map();
+  for (const s of shifts.value) {
+    if (!s.id_employee) continue;
+    if (!weekKeys.has(s.date)) continue;
+    const hours = Math.max(0, s.endHour - s.startHour);
+    const cur = byId.get(s.id_employee) || { id_employee: s.id_employee, name: s.employee, hours: 0 };
+    cur.hours += hours;
+    byId.set(s.id_employee, cur);
+  }
+  const rows = [...byId.values()].map(r => ({
+    ...r,
+    hours: Math.round(r.hours * 10) / 10,
+    color: getEmployeeColor(r.name),
+  }));
+  const max = Math.max(1, ...rows.map(r => r.hours));
+  return rows
+    .map(r => ({ ...r, pct: Math.round((r.hours / max) * 100) }))
+    .sort((a, b) => b.hours - a.hours);
+});
+const weeklyTotalHours = computed(() => {
+  const total = weeklyHoursByEmployee.value.reduce((sum, r) => sum + r.hours, 0);
+  return Math.round(total * 10) / 10;
 });
 
 const ghostStyle = computed(() => {
   if (!drag.value.active) return {};
   const s = Math.min(drag.value.startHour, drag.value.currentHour);
   const e = Math.max(drag.value.startHour, drag.value.currentHour) + SNAP_MINUTES / 60;
-  return { position: "absolute", top: `${(s - CAL_START_HOUR) * CELL_HEIGHT}px`, height: `${Math.max((e - s) * CELL_HEIGHT - 2, 20)}px`, left: "3px", right: "3px", zIndex: 10 };
+  return { position: "absolute", top: `${(s - CAL_START_HOUR) * cellHeight.value}px`, height: `${Math.max((e - s) * cellHeight.value - 2, 20)}px`, left: "3px", right: "3px", zIndex: 10 };
 });
 
 const ghostLabel = computed(() => {
@@ -824,7 +2064,10 @@ const DAY_NAMES_FULL = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Frid
 
 function businessHoursForDate(date) {
   const dayName = DAY_NAMES_FULL[date.getDay()];
-  const entry   = calendarHours.value.find(h => h.dayOfWeek === dayName);
+  const pool    = activeSeason.value
+    ? calendarHours.value.filter(h => h.season === activeSeason.value)
+    : calendarHours.value;
+  const entry   = pool.find(h => h.dayOfWeek === dayName);
   if (!entry) return null;
   return { start: fromTimeInput(entry.startTime), end: fromTimeInput(entry.endTime) };
 }
@@ -837,14 +2080,16 @@ const computedOpenShifts = computed(() => {
     const biz = businessHoursForDate(date);
     if (!biz) return; // no business hours defined for this day — skip
 
-    const key        = dateToKey(date);
-    const dayShifts  = shifts.value.filter(s => s.date === key);
-    const assigned   = dayShifts.filter(s => s.id_employee);
-    const unassigned = dayShifts.filter(s => !s.id_employee);
+    const key          = dateToKey(date);
+    const dayShifts    = shifts.value.filter(s => s.date === key);
+    const assigned     = dayShifts.filter(s => s.id_employee);
+    const unassigned   = dayShifts.filter(s => !s.id_employee);
 
-    // Build coverage from assigned shifts only, clamped to business hours
+    // Build coverage from ALL shifts (assigned + unassigned), clamped to business hours
+    // This prevents an unassigned shift from also showing up as a gap
+    const allCoverage = [...assigned, ...unassigned];
     const merged = [];
-    for (const iv of assigned
+    for (const iv of allCoverage
       .map(s => ({ start: Math.max(s.startHour, biz.start), end: Math.min(s.endHour, biz.end) }))
       .filter(iv => iv.start < iv.end)
       .sort((a, b) => a.start - b.start)) {
@@ -852,7 +2097,7 @@ const computedOpenShifts = computed(() => {
       else merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, iv.end);
     }
 
-    // Time gaps within business hours only
+    // Time gaps within business hours not covered by any shift
     const gapItems = [];
     let cursor = biz.start;
     for (const { start, end } of merged) {
@@ -861,21 +2106,26 @@ const computedOpenShifts = computed(() => {
     }
     if (cursor < biz.end) gapItems.push({ sortHour: cursor, label: `${fmtHour(cursor)} – ${fmtHour(biz.end)}` });
 
-    // Unassigned shifts that fall within business hours
+    // Unassigned shifts shown as open shift entries
+    const posMap = Object.fromEntries(positions.value.map(p => [p.id_position, p]));
     const unassignedItems = unassigned
       .filter(s => s.startHour < biz.end && s.endHour > biz.start)
       .map(s => ({
         sortHour: s.startHour,
-        label: s.positionName ? `${s.positionName}  ${fmtHour(s.startHour)} – ${fmtHour(s.endHour)}` : `${fmtHour(s.startHour)} – ${fmtHour(s.endHour)}`,
+        label: `${fmtHour(s.startHour)} – ${fmtHour(s.endHour)}`,
+        positionName: posMap[s.id_position]?.name || '',
       }));
 
-    const items = [...gapItems, ...unassignedItems].sort((a, b) => a.sortHour - b.sortHour);
+    const items = [
+      ...gapItems.map(g => ({ ...g, positionName: '' })),
+      ...unassignedItems,
+    ].sort((a, b) => a.sortHour - b.sortHour);
 
     if (items.length > 0) {
       result.push({
         key,
         dayLabel: abbr[date.getDay()],
-        gaps:     items.map(i => i.label),
+        gaps:     items.map(i => ({ label: i.label, positionName: i.positionName })),
         isToday:  isTodayDate(date),
       });
     }
@@ -926,6 +2176,128 @@ function setView(v) {
   calView.value = v;
   selectedShift.value       = null;
   quickCreate.value.visible = false;
+}
+
+// ── Touch swipe nav (phone only) ────────────────────────────────────────────
+// Horizontal swipe on the day grid → previous/next day. Threshold tuned so
+// vertical scrolling of the grid still works.
+const swipe = { startX: 0, startY: 0, t: 0 };
+function onDaySwipeStart(e) {
+  if (!isTouch.value) return;
+  const t = e.changedTouches?.[0];
+  if (!t) return;
+  swipe.startX = t.clientX;
+  swipe.startY = t.clientY;
+  swipe.t = Date.now();
+}
+function onDaySwipeEnd(e) {
+  if (!isTouch.value || calView.value !== "Day") return;
+  const t = e.changedTouches?.[0];
+  if (!t) return;
+  const dx = t.clientX - swipe.startX;
+  const dy = t.clientY - swipe.startY;
+  const dt = Date.now() - swipe.t;
+  if (dt > 600) return;
+  if (Math.abs(dx) < 60) return;
+  if (Math.abs(dy) > 40) return;
+  navigate(dx < 0 ? 1 : -1);
+}
+
+// ── Touch create (tap + long-press-drag) ────────────────────────────────────
+// Two creation gestures for managers on touch:
+//   • Quick tap on empty grid  → open quick-create popover with 1-hour block
+//   • Long-press then drag     → paint a custom range, same modal as desktop
+// Both reuse the existing mouse-based drag state & onGlobalMouseUp logic by
+// synthesizing event objects; no duplicated modal/popover code.
+const LONG_PRESS_MS = 400;
+const TAP_MOVE_TOL  = 10;
+const touchCreate = {
+  active: false, mode: "pending",
+  startX: 0, startY: 0, lastX: 0, lastY: 0,
+  startTime: 0, dayIndex: null, colEl: null,
+  pressTimer: null,
+};
+
+function onColumnTouchStart(e, colIdx) {
+  if (!isTouch.value || !isManager.value || isPasteMode.value) return;
+  const t = e.touches?.[0];
+  if (!t) return;
+  touchCreate.active    = true;
+  touchCreate.mode      = "pending";
+  touchCreate.startX    = t.clientX;
+  touchCreate.startY    = t.clientY;
+  touchCreate.lastX     = t.clientX;
+  touchCreate.lastY     = t.clientY;
+  touchCreate.startTime = Date.now();
+  touchCreate.dayIndex  = colIdx;
+  touchCreate.colEl     = e.currentTarget;
+  clearTimeout(touchCreate.pressTimer);
+  touchCreate.pressTimer = setTimeout(() => {
+    if (touchCreate.mode !== "pending") return;
+    touchCreate.mode = "drag";
+    onColumnMouseDown(
+      { button: 0, clientX: touchCreate.startX, clientY: touchCreate.startY, currentTarget: touchCreate.colEl, metaKey: false, ctrlKey: false },
+      colIdx,
+    );
+    if (navigator.vibrate) navigator.vibrate(15);
+  }, LONG_PRESS_MS);
+}
+
+function onColumnTouchMove(e) {
+  if (!touchCreate.active) return;
+  const t = e.touches?.[0];
+  if (!t) return;
+  touchCreate.lastX = t.clientX;
+  touchCreate.lastY = t.clientY;
+  if (touchCreate.mode === "pending") {
+    const dx = Math.abs(t.clientX - touchCreate.startX);
+    const dy = Math.abs(t.clientY - touchCreate.startY);
+    if (dx > TAP_MOVE_TOL || dy > TAP_MOVE_TOL) {
+      clearTimeout(touchCreate.pressTimer);
+      touchCreate.mode = "cancelled";
+    }
+    return;
+  }
+  if (touchCreate.mode === "drag") {
+    // Block the default scroll so the drag feels like painting a range.
+    if (e.cancelable) e.preventDefault();
+    onGlobalMouseMove({ clientX: t.clientX, clientY: t.clientY });
+  }
+}
+
+function onColumnTouchEnd() {
+  if (!touchCreate.active) return;
+  const wasDrag    = touchCreate.mode === "drag";
+  const wasPending = touchCreate.mode === "pending";
+  const dt         = Date.now() - touchCreate.startTime;
+  const colEl      = touchCreate.colEl;
+  const colIdx     = touchCreate.dayIndex;
+  const startX     = touchCreate.startX;
+  const startY     = touchCreate.startY;
+  const lastX      = touchCreate.lastX;
+  const lastY      = touchCreate.lastY;
+  clearTimeout(touchCreate.pressTimer);
+  touchCreate.active = false;
+  touchCreate.mode = "cancelled";
+  touchCreate.pressTimer = null;
+  touchCreate.colEl = null;
+
+  if (wasDrag) {
+    onGlobalMouseUp({ clientX: lastX, clientY: lastY });
+    return;
+  }
+  if (wasPending && dt < LONG_PRESS_MS) {
+    // Synthesize a 1-hour drag so the same onGlobalMouseUp code path runs.
+    // Subtract one snap step because onGlobalMouseUp adds it back.
+    const startHour = getHourFromEvent({ clientY: startY }, colEl);
+    const endHour   = Math.min(startHour + 1, CAL_START_HOUR + 24);
+    drag.value = {
+      active: true, dayIndex: colIdx,
+      startHour, currentHour: endHour - SNAP_MINUTES / 60,
+      colEl,
+    };
+    onGlobalMouseUp({ clientX: startX, clientY: startY });
+  }
 }
 
 // Click a day header in week view → drill to day
@@ -984,7 +2356,13 @@ function isMonthSelected(day) {
 }
 
 // ── Formatting ─────────────────────────────────────────────────────────────────
+// Hour-axis label on the calendar time gutter. 12h mode shows "12 AM / 6 AM /
+// 12 PM"; 24h mode shows zero-padded "00 / 06 / 12". Both drop ":00" since
+// this only renders whole-hour ticks.
 function formatHour(h) {
+  if (userPrefs.calendarDisplay?.timeFormat === "24h") {
+    return String(h).padStart(2, "0");
+  }
   if (h === 0)  return "12 AM";
   if (h === 12) return "12 PM";
   return h < 12 ? `${h} AM` : `${h - 12} PM`;
@@ -998,12 +2376,15 @@ function parseTimeToHour(timeStr) {
 
 function hoursLinesForDate(date) {
   const dayName = DAY_NAMES[date.getDay()];
-  return calendarHours.value
+  const pool    = activeSeason.value
+    ? calendarHours.value.filter(e => e.season === activeSeason.value)
+    : calendarHours.value;
+  return pool
     .filter(e => e.dayOfWeek === dayName)
     .map(e => ({
       key:        e.id_hours_of_operation,
-      openPx:     parseTimeToHour(e.startTime) * CELL_HEIGHT,
-      closePx:    parseTimeToHour(e.endTime)   * CELL_HEIGHT,
+      openPx:     parseTimeToHour(e.startTime) * cellHeight.value,
+      closePx:    parseTimeToHour(e.endTime)   * cellHeight.value,
       openLabel:  fmtHour(parseTimeToHour(e.startTime)),
       closeLabel: fmtHour(parseTimeToHour(e.endTime)),
     }));
@@ -1025,8 +2406,8 @@ function eventsForDate(date) {
 function eventBlockStyle(ev) {
   return {
     position: "absolute",
-    top:    `${ev.startHour * CELL_HEIGHT}px`,
-    height: `${Math.max((ev.endHour - ev.startHour) * CELL_HEIGHT - 3, 22)}px`,
+    top:    `${ev.startHour * cellHeight.value}px`,
+    height: `${Math.max((ev.endHour - ev.startHour) * cellHeight.value - 3, 22)}px`,
     left: "3px", right: "3px",
     background: "rgba(74,144,164,0.18)",
     border: "1px solid rgba(74,144,164,0.5)",
@@ -1035,7 +2416,9 @@ function eventBlockStyle(ev) {
     padding: "4px 8px",
     overflow: "hidden",
     zIndex: 1,
-    pointerEvents: "none",
+    cursor: isManager.value ? "pointer" : "default",
+    pointerEvents: isManager.value ? "auto" : "none",
+    transition: "background .12s, border-color .12s",
   };
 }
 
@@ -1044,30 +2427,124 @@ function eventsForMonthDay(day) {
   const key = dateToKey(new Date(d.getFullYear(), d.getMonth(), day));
   return deptEvents.value.filter(ev => ev.start_time && new Date(ev.start_time).toISOString().slice(0, 10) === key);
 }
-function fmtHour(h) {
-  const total  = Math.round(h * 60);
-  const hr     = Math.floor(total / 60);
-  const min    = total % 60;
-  const suffix = hr >= 12 ? "pm" : "am";
-  const disp   = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
-  return min === 0 ? `${disp}${suffix}` : `${disp}:${String(min).padStart(2,"0")}${suffix}`;
-}
 function toTimeInput(h) {
   const total = Math.round(h * 60);
   return `${String(Math.floor(total / 60)).padStart(2,"0")}:${String(total % 60).padStart(2,"0")}`;
 }
 function fromTimeInput(t) { const [h, m] = t.split(":").map(Number); return h + m / 60; }
 
+// ── Overlap layout ─────────────────────────────────────────────────────────────
+// Returns a map of entry.id → { colIndex, totalCols } for Google Calendar-style
+// side-by-side rendering of concurrent shifts within a single day column.
+// Uses entry.id (unique per assignment row) so multiple employees on the same
+// shift definition each get their own tracked position.
+function computeOverlapLayout(dayShifts) {
+  const result = {};
+  if (!dayShifts.length) return result;
+  const sorted = [...dayShifts].sort((a, b) => a.startHour - b.startHour || String(a.id).localeCompare(String(b.id)));
+  const colEnds = [];
+  const assign  = {};
+  for (const s of sorted) {
+    let col = colEnds.findIndex(end => end <= s.startHour);
+    if (col === -1) col = colEnds.length;
+    colEnds[col] = s.endHour;
+    assign[s.id] = col;
+  }
+  for (const s of sorted) {
+    const concurrent = sorted.filter(o =>
+      o.id !== s.id &&
+      o.startHour < s.endHour &&
+      o.endHour   > s.startHour
+    );
+    const maxCol = concurrent.reduce((m, o) => Math.max(m, assign[o.id]), assign[s.id]);
+    result[s.id] = { colIndex: assign[s.id], totalCols: maxCol + 1 };
+  }
+  return result;
+}
+
+// Compute overlap layout for every date that has shifts loaded
+const shiftLayoutMap = computed(() => {
+  const byDate = {};
+  for (const s of shifts.value) {
+    if (!byDate[s.date]) byDate[s.date] = [];
+    byDate[s.date].push(s);
+  }
+  const result = {};
+  for (const dayShifts of Object.values(byDate)) {
+    Object.assign(result, computeOverlapLayout(dayShifts));
+  }
+  return result;
+});
+
 // ── Style helpers ──────────────────────────────────────────────────────────────
+function hexToRgb(hex) {
+  let h = String(hex || "").replace("#", "");
+  if (h.length === 3) h = h.split("").map(c => c + c).join("");
+  if (h.length !== 6) return { r: 128, g: 128, b: 128 };
+  return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
+}
+function shiftLuminance(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+function darkenHex(hex, amt = 0.15) {
+  const { r, g, b } = hexToRgb(hex);
+  const f = 1 - amt;
+  const c = (v) => Math.max(0, Math.min(255, Math.round(v * f)));
+  return `rgb(${c(r)}, ${c(g)}, ${c(b)})`;
+}
+function shiftTextTokens(hex) {
+  return shiftLuminance(hex) > 0.62
+    ? { main: "rgba(0,0,0,0.88)", dim: "rgba(0,0,0,0.62)", badge: "rgba(0,0,0,0.10)" }
+    : { main: "rgba(255,255,255,0.96)", dim: "rgba(255,255,255,0.78)", badge: "rgba(255,255,255,0.16)" };
+}
+function isShiftActiveNow(shift) {
+  if (!shift.id_employee) return false;
+  if (shift.date !== dateToKey(new Date())) return false;
+  const now = currentTimeHour.value;
+  return now >= shift.startHour && now < shift.endHour;
+}
+function shiftProgressPct(shift) {
+  if (!isShiftActiveNow(shift)) return 0;
+  const pct = ((currentTimeHour.value - shift.startHour) / (shift.endHour - shift.startHour)) * 100;
+  return Math.max(0, Math.min(100, pct));
+}
+
 function shiftStyle(shift) {
-  const color = getEmployeeColor(shift.employee);
+  const isOpen = !shift.id_employee;
+  const color  = getEmployeeColor(shift.employee);
+  const layout = shiftLayoutMap.value[shift.id] ?? { colIndex: 0, totalCols: 1 };
+  const GAP    = 3;
+  const pct    = 100 / layout.totalCols;
+  const openBg     = isDark.value ? "rgba(240, 230, 211, 0.06)" : "transparent";
+  const openBorder = isDark.value ? "1.5px dashed rgba(240, 230, 211, 0.55)" : "1.5px dashed rgba(0, 0, 0, 0.4)";
+  const colorDark  = darkenHex(color, 0.16);
+  const tc         = shiftTextTokens(color);
+  const progress   = shiftProgressPct(shift);
+  const isSelected = selectedShift.value && selectedShift.value.id === shift.id;
   return {
     position: "absolute",
-    top:    `${(shift.startHour - CAL_START_HOUR) * CELL_HEIGHT}px`,
-    height: `${Math.max((shift.endHour - shift.startHour) * CELL_HEIGHT - 3, 18)}px`,
-    left: "3px", right: "3px", background: color,
+    top:    `${(shift.startHour - CAL_START_HOUR) * cellHeight.value}px`,
+    height: `${Math.max((shift.endHour - shift.startHour) * cellHeight.value - 3, 18)}px`,
+    left:   `calc(${layout.colIndex * pct}% + ${GAP}px)`,
+    width:  `calc(${pct}% - ${GAP * 2}px)`,
+    right:  "unset",
+    background: isOpen
+      ? openBg
+      : `linear-gradient(180deg, ${color} 0%, ${colorDark} 100%)`,
+    border:     isOpen ? openBorder : "none",
     borderRadius: "6px", padding: "4px 8px", cursor: "pointer",
-    overflow: "hidden", zIndex: 2, boxShadow: `0 2px 12px ${color}44`, transition: "filter 0.15s",
+    overflow: "hidden", zIndex: layout.colIndex + 2,
+    boxShadow: isOpen
+      ? "none"
+      : isSelected
+        ? `0 0 0 2px ${color}, 0 0 24px ${color}88, 0 4px 14px ${color}55`
+        : `0 2px 12px ${color}44`,
+    transition: "filter 0.15s, box-shadow 0.2s",
+    "--shift-text":     tc.main,
+    "--shift-text-dim": tc.dim,
+    "--shift-badge-bg": tc.badge,
+    "--shift-progress": `${progress}%`,
   };
 }
 function getEmployeeColor(name) { return employees.value.find(e => e.name === name)?.color || "#3b82f6"; }
@@ -1082,29 +2559,73 @@ function getHourFromEvent(e, colEl) {
   // so e.clientY - colRect.top gives the exact pixel offset within the column directly.
   const colRect = colEl.getBoundingClientRect();
   const relY    = e.clientY - colRect.top;
-  return snap(CAL_START_HOUR + relY / CELL_HEIGHT);
+  return snap(CAL_START_HOUR + relY / cellHeight.value);
 }
 
 // ── Drag handlers ──────────────────────────────────────────────────────────────
 function onColumnMouseDown(e, colIdx) {
   if (e.button !== 0) return;
+  if (!isManager.value) return;
+  if (e.metaKey || e.ctrlKey) {
+    rubberBand.value = { active: true, startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY };
+    return;
+  }
+  clearSelection();
   selectedShift.value       = null;
   quickCreate.value.visible = false;
   const startHour = getHourFromEvent(e, e.currentTarget);
   drag.value = { active: true, dayIndex: colIdx, startHour, currentHour: startHour, colEl: e.currentTarget };
 }
+// ── Drag-scroll (auto-scroll while dragging near edges) ────────────────────────
+let dragScrollSpeed = 0;
+let dragScrollRAF   = null;
+function runDragScroll() {
+  if (!calBody.value || dragScrollSpeed === 0) { dragScrollRAF = null; return; }
+  calBody.value.scrollTop += dragScrollSpeed;
+  dragScrollRAF = requestAnimationFrame(runDragScroll);
+}
+function setDragScroll(speed) {
+  dragScrollSpeed = speed;
+  if (speed !== 0 && !dragScrollRAF) dragScrollRAF = requestAnimationFrame(runDragScroll);
+}
+function stopDragScroll() { dragScrollSpeed = 0; if (dragScrollRAF) { cancelAnimationFrame(dragScrollRAF); dragScrollRAF = null; } }
+
 function onGlobalMouseMove(e) {
-  if (!drag.value.active || !drag.value.colEl) return;
+  if (rubberBand.value.active) {
+    rubberBand.value = { ...rubberBand.value, x: e.clientX, y: e.clientY };
+    return;
+  }
+  if (!drag.value.active || !drag.value.colEl) { stopDragScroll(); return; }
   drag.value.currentHour = getHourFromEvent(e, drag.value.colEl);
+
+  // Auto-scroll when cursor is within 60px of the top/bottom of calBody
+  if (calBody.value) {
+    const { top, bottom } = calBody.value.getBoundingClientRect();
+    const ZONE = 60;
+    const fromTop    = e.clientY - top;
+    const fromBottom = bottom - e.clientY;
+    if (fromTop < ZONE && fromTop >= 0)         setDragScroll(-Math.max(2, Math.round((ZONE - fromTop)    / 10)));
+    else if (fromBottom < ZONE && fromBottom >= 0) setDragScroll( Math.max(2, Math.round((ZONE - fromBottom) / 10)));
+    else                                           setDragScroll(0);
+  }
 }
 function onGlobalMouseUp(e) {
+  stopDragScroll();
+  if (rubberBand.value.active) {
+    finalizeDashRubberBand();
+    return;
+  }
   if (!drag.value.active) return;
   const startHour = Math.min(drag.value.startHour, drag.value.currentHour);
   const endHour   = Math.max(drag.value.startHour, drag.value.currentHour) + SNAP_MINUTES / 60;
   const colIdx    = drag.value.dayIndex;
   drag.value.active = false;
 
-  if (endHour - startHour < SNAP_MINUTES / 60 + 0.001) return;
+  if (endHour - startHour < SNAP_MINUTES / 60 + 0.001) {
+    // Too short to be a drag — was a click. Let the click handler handle it (e.g. multi-select).
+    dragStartedFromShiftBlock = false;
+    return;
+  }
 
   // Resolve actual date from view
   let date;
@@ -1112,8 +2633,23 @@ function onGlobalMouseUp(e) {
   else                           date = weekDates.value[colIdx];
 
   const dateLabel = date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-  const px = Math.min(e.clientX + 14, window.innerWidth  - 300);
-  const py = Math.min(e.clientY - 24, window.innerHeight - 430);
+
+  if (createMode.value === "event") {
+    const { left, top } = clampPopoverPos(e, 300, 420, { dx: 14, dy: -24 });
+    eventQuickCreate.value = {
+      visible: true,
+      date,
+      startHour, endHour,
+      startLabel: fmtHour(startHour), endLabel: fmtHour(endHour),
+      startTime:  toTimeInput(startHour), endTime: toTimeInput(endHour),
+      dateLabel,
+      title: "", description: "", location: "",
+      style: { left: `${left}px`, top: `${top}px` },
+    };
+    return;
+  }
+
+  const { left, top } = clampPopoverPos(e, 300, 430, { dx: 14, dy: -24 });
 
   quickCreate.value = {
     visible: true, dayIndex: colIdx, date,
@@ -1124,20 +2660,53 @@ function onGlobalMouseUp(e) {
     id_position: positions.value[0]?.id_position ?? null,
     employee: "",
     notes: "",
-    style: { left: `${px}px`, top: `${py}px` },
+    style: { left: `${left}px`, top: `${top}px` },
   };
 }
+
+// Position a floating popover so it never gets clipped by the viewport.
+// Prefers to the right of the click; flips left if it would overflow.
+// Vertically clamps within [MARGIN, viewport - height - MARGIN].
+function clampPopoverPos(e, width, height, { dx = 14, dy = -10 } = {}) {
+  const MARGIN = 8;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  let left = e.clientX + dx;
+  if (left + width > vw - MARGIN) left = e.clientX - width - dx;
+  left = Math.max(MARGIN, Math.min(left, vw - width - MARGIN));
+  let top = e.clientY + dy;
+  top = Math.max(MARGIN, Math.min(top, vh - height - MARGIN));
+  return { left, top };
+}
 function cancelQuickCreate() { quickCreate.value.visible = false; }
+
+// Clear employee selection when the position changes if the currently
+// selected employee is not assigned to the newly selected position.
+function onQuickCreatePositionChange() {
+  const allowed = employeesForPosition(quickCreate.value.id_position);
+  if (!allowed.some(e => e.name === quickCreate.value.employee)) {
+    quickCreate.value.employee = "";
+  }
+}
+
+function onNewShiftPositionChange() {
+  const allowed = employeesForPosition(newShift.value.id_position);
+  if (!allowed.some(e => e.name === newShift.value.employee)) {
+    newShift.value.employee    = "";
+    newShift.value.id_employee = null;
+  }
+}
 
 // ── Data loading ───────────────────────────────────────────────────────────────
 async function loadAll() {
   loading.value  = true;
   apiError.value = null;
   try {
+    const deptId = selectedDeptId.value || currentUser.value?.id_department;
     const [empList, tlData, tData] = await Promise.all([
-      fetchEmployees(),
-      fetchTaskLists().catch(() => []),
-      fetchTasks().catch(() => []),
+      fetchEmployees(deptId),
+      fetchTaskLists(deptId).catch(() => []),
+      fetchTasks(deptId).catch(() => []),
     ]);
     const map = {};
     empList.forEach((e, i) => {
@@ -1153,21 +2722,82 @@ async function loadAll() {
       newShift.value.employee    = empList[0].name;
       newShift.value.id_employee = empList[0].id_employee;
     }
-    const deptId = currentUser.value?.id_department;
     // Load positions first so positionMap is ready for the shift JOIN
     if (deptId) {
       try { positions.value = (await getPositions(deptId)).data || []; } catch { /* non-critical */ }
+      // Load which employees are assigned to each position so the
+      // employee dropdowns can be filtered by the selected position.
+      try {
+        const peMap = {};
+        await Promise.all(positions.value.map(async (p) => {
+          try {
+            const res = await getPositionEmployees(p.id_position);
+            peMap[p.id_position] = (res.data || []).map(r => r.id_employee);
+          } catch {
+            peMap[p.id_position] = [];
+          }
+        }));
+        positionEmployeeIds.value = peMap;
+      } catch { /* non-critical */ }
     }
     const positionMap = Object.fromEntries(positions.value.map(p => [p.id_position, p]));
-    shifts.value = await fetchShiftsWithAssignments(map, positionMap);
+    shifts.value = await fetchShiftsWithAssignments(map, positionMap, deptId);
     pendingRequests.value = await fetchSwapRequests(map);
+    // Load time-off requests for manager sidebar (non-blocking)
+    if (isManager.value) {
+      apiClient.get("/personal-availability").then(res => {
+        const normalized = (res.data || []).map(a => ({
+          ...a,
+          status: normalizeAvailabilityStatus(a.status),
+        }));
+        approvedAvailability.value = normalized.filter(a => a.status === "Approved");
+        const deptEmpIds = new Set(empList.map(e => e.id_employee));
+        sidebarAvailability.value = normalized
+          .filter(a => deptEmpIds.has(a.id_employee) && a.status === "Pending");
+      }).catch(() => {});
+    }
+
+    // Load this employee's own request history (time-off + dept-access)
+    // for the Requests sidebar preview. Swap requests are already in
+    // pendingRequests and filtered per-user in myRequestsUnified below.
+    if (!isManager.value && currentUser.value?.id_employee) {
+      const myId = currentUser.value.id_employee;
+      apiClient.get("/personal-availability").then(res => {
+        myTimeOffRequests.value = (res.data || [])
+          .filter(a => a.id_employee === myId)
+          .map(a => ({ ...a, status: normalizeAvailabilityStatus(a.status) }));
+      }).catch(() => { myTimeOffRequests.value = []; });
+
+      getDepartmentAccessRequests({ id_employeeRequester: myId }).then(res => {
+        myDeptAccessRequests.value = res.data || [];
+      }).catch(() => { myDeptAccessRequests.value = []; });
+    }
     // Load hours of operation + events for this user's department (non-blocking)
     if (deptId) {
       getDepartment(deptId).then(r => { deptName.value = r.data?.name || ''; }).catch(() => {});
       getCalendarEntries(deptId).then(r => { calendarHours.value = r.data || []; }).catch(() => {});
       getEvents(deptId).then(r => { deptEvents.value = r.data || []; }).catch(() => {});
+      // Legacy "Active Season" setting — used for picking default
+      // hours-of-operation variants. Keeps holding short values like
+      // "Fall" that span multiple years, per dept's choice.
+      getSettingValues(deptId).then(r => {
+        const sv = (r.data || []).find(v => v.name === "Active Season" || v.key === "active_season");
+        activeSeason.value = sv?.value || "";
+      }).catch(() => {});
+      // Active Semester — derived from the Semester table whose date
+      // range contains today. Distinct from `activeSeason` above. This
+      // is what class-schedule unavailability rows are matched against.
+      getActiveSemester(deptId)
+        .then(r => { activeSemester.value = r.data?.name || ""; })
+        .catch(() => { activeSemester.value = ""; });
+      // Unavailability for everyone in this dept — powers conflict warnings
+      // in the employee dropdown and the hatched overlay on the calendar.
+      getUnavailability({ id_department: deptId }).then(r => {
+        deptUnavailability.value = r.data || [];
+      }).catch(() => { deptUnavailability.value = []; });
     }
     loadMyTasks(); // async, non-blocking — populates employee sidebar
+    loadShiftTaskSummaries(); // async, non-blocking — populates manager shift-block badges
   } catch (err) {
     apiError.value = err.message;
     console.error("Dashboard load error:", err);
@@ -1184,57 +2814,270 @@ async function confirmQuickCreate() {
   const endHour    = fromTimeInput(qc.endTime);
   const emp        = employees.value.find(e => e.name === qc.employee);
   const posName    = positions.value.find(p => p.id_position === qc.id_position)?.name || "";
+  const args = {
+    id_employee:   emp?.id_employee ?? null,
+    date:          dateToKey(qc.date),
+    startHour, endHour,
+    notes:         qc.notes,
+    positionName:  posName,
+    id_position:   qc.id_position,
+    id_department: selectedDeptId.value || currentUser.value?.id_department || null,
+  };
   try {
-    const block = await apiCreateShift({
-      id_employee:  emp?.id_employee ?? null,
-      date:         dateToKey(qc.date),
-      startHour, endHour,
-      notes:        qc.notes,
-      positionName: posName,
-      id_position:  qc.id_position,
-    });
+    const block = await apiCreateShift(args);
     block.employee     = emp?.name || "";
     block.positionName = posName;
     shifts.value.push(block);
+    pushUndo({ type: 'create', shifts: [block] });
     quickCreate.value.visible = false;
-  } catch (err) { alert("Error saving shift: " + err.message); }
+  } catch (err) {
+    const body = err.response?.data;
+    // Soft conflict — the shift was created; only the assignment failed.
+    // Confirm with the user and retry just the assignment with force=true.
+    if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY" && err.pendingAssignment) {
+      const ok = await confirmConflict(emp?.name || "This employee");
+      if (ok) {
+        try {
+          const assignment = await apiCreateAssignment(
+            err.pendingAssignment.id_shift,
+            err.pendingAssignment.id_employee,
+            err.pendingAssignment.date,
+            true,
+          );
+          // Rebuild the block from the orphan shift + the new assignment so
+          // it renders just like the happy-path return of apiCreateShift.
+          const block = {
+            id:                 assignment.id_shiftAssignment,
+            id_shift:           err.orphanShift.id_shift,
+            id_shiftAssignment: assignment.id_shiftAssignment,
+            id_employee:        emp.id_employee,
+            employee:           emp.name,
+            date:               args.date,
+            dayIndex:           err.shiftBuildArgs?.dowInt,
+            startHour, endHour,
+            startLabel:         fmtHour(startHour),
+            endLabel:           fmtHour(endHour),
+            notes:              qc.notes || "",
+            id_position:        qc.id_position,
+            positionName:       posName,
+          };
+          shifts.value.push(block);
+          pushUndo({ type: 'create', shifts: [block] });
+          quickCreate.value.visible = false;
+          return;
+        } catch (retryErr) {
+          alert("Couldn't assign the shift: " + (retryErr.response?.data?.message || retryErr.message));
+          return;
+        }
+      }
+      // User cancelled — clean up the orphan shift so we don't leave an
+      // unassigned row the manager didn't want.
+      if (err.orphanShift?.id_shift) {
+        try { await apiClient.delete(`/shifts/${err.orphanShift.id_shift}`); } catch (_) {}
+      }
+      return;
+    }
+    alert("Error saving shift: " + (body?.message || err.message));
+  }
 }
 
 function selectShift(shift, e) {
   quickCreate.value.visible = false;
   selectedShift.value       = shift;
-  const px = Math.min(e.clientX + 16, window.innerWidth  - 230);
-  const py = Math.min(e.clientY - 10, window.innerHeight - 240);
-  popoverStyle.value = { left: `${px}px`, top: `${py}px` };
+  const { left, top } = clampPopoverPos(e, 230, 240, { dx: 16, dy: -10 });
+  popoverStyle.value = { left: `${left}px`, top: `${top}px` };
 }
 function selectShiftFromMonth(shift, day, e) {
   quickCreate.value.visible = false;
   selectedShift.value       = shift;
-  const px = Math.min(e.clientX + 16, window.innerWidth  - 230);
-  const py = Math.min(e.clientY - 10, window.innerHeight - 240);
-  popoverStyle.value = { left: `${px}px`, top: `${py}px` };
+  const { left, top } = clampPopoverPos(e, 230, 240, { dx: 16, dy: -10 });
+  popoverStyle.value = { left: `${left}px`, top: `${top}px` };
 }
 function editShift() {
   const s = selectedShift.value;
   if (!s) return;
   editingShiftId.value = s.id;
-  newShift.value = { employee: s.employee, id_employee: s.id_employee, id_position: s.id_position || null, dayIndex: s.dayIndex, startTime: toTimeInput(s.startHour), endTime: toTimeInput(s.endHour), notes: s.notes || "" };
+  newShift.value = { employee: s.employee, id_employee: s.id_employee, id_position: s.id_position || null, date: s.date, startTime: toTimeInput(s.startHour), endTime: toTimeInput(s.endHour), notes: s.notes || "" };
   selectedShift.value = null;
   showAddModal.value  = true;
 }
-async function deleteShift(id) {
+async function deleteShift(id, { skipConfirm = false } = {}) {
   const s = shifts.value.find(sh => sh.id === id);
   if (!s) return;
+  if (!skipConfirm) {
+    const who = s.employee || 'Open';
+    const ok = await confirmDelete({
+      title: "Delete this shift?",
+      body: `${who} · ${formatDateShort(s.date)} · ${s.startLabel}–${s.endLabel}`,
+    });
+    if (!ok) return;
+  }
   try {
+    pushUndo({ type: 'delete', shifts: [{ ...s }] });
     await apiDeleteShift(s.id_shiftAssignment, s.id_shift);
     shifts.value        = shifts.value.filter(sh => sh.id !== id);
     selectedShift.value = null;
-  } catch (err) { alert("Error deleting shift: " + err.message); }
+    const who = s.employee || 'Open';
+    showToast({
+      message: `Shift deleted — ${who}, ${s.startLabel}–${s.endLabel}`,
+      action: "Undo",
+      onAction: undoLastAction,
+    });
+  } catch (err) {
+    undoStack.value.pop();
+    showToast({ message: "Error deleting shift: " + err.message, type: "error" });
+  }
 }
 function openBlankModal() {
+  if (createMode.value === "event") {
+    openBlankEventModal();
+    return;
+  }
   editingShiftId.value = null;
-  newShift.value = { employee: "", id_employee: null, id_position: positions.value[0]?.id_position ?? null, dayIndex: 0, startTime: "09:00", endTime: "17:00", notes: "" };
+  // Seed end time from the manager's "Default shift duration" preference
+  // (minutes). Falls back to 480 min (8h → 09:00–17:00) when no pref is set.
+  const startHHMM = "09:00";
+  const durationMin = Number(userPrefs.managerPrefs?.defaultShiftMinutes);
+  const safeDuration = Number.isFinite(durationMin) && durationMin > 0 ? durationMin : 480;
+  const [sh, sm] = startHHMM.split(":").map(Number);
+  const endTotal = Math.min(24 * 60 - 1, sh * 60 + sm + safeDuration);
+  const eh = String(Math.floor(endTotal / 60)).padStart(2, "0");
+  const em = String(endTotal % 60).padStart(2, "0");
+  newShift.value = {
+    employee: "", id_employee: null,
+    id_position: positions.value[0]?.id_position ?? null,
+    date: dateToKey(new Date()),
+    startTime: startHHMM,
+    endTime: `${eh}:${em}`,
+    notes: "",
+  };
   showAddModal.value = true;
+}
+
+function openBlankEventModal() {
+  editingEventId.value = null;
+  newEvent.value = { title: "", description: "", date: dateToKey(new Date()), startTime: "09:00", endTime: "10:00", location: "" };
+  showEventModal.value = true;
+}
+
+function openEditEventModal(ev, e) {
+  if (!isManager.value) return;
+  e?.stopPropagation?.();
+  const s = new Date(ev.start_time);
+  const en = new Date(ev.end_time);
+  editingEventId.value = ev.id_event;
+  newEvent.value = {
+    title:       ev.title || "",
+    description: ev.description || "",
+    date:        dateToKey(s),
+    startTime:   toTimeInput(s.getHours() + s.getMinutes() / 60),
+    endTime:     toTimeInput(en.getHours() + en.getMinutes() / 60),
+    location:    ev.location || "",
+  };
+  showEventModal.value = true;
+}
+
+async function deleteCurrentEvent() {
+  const id = editingEventId.value;
+  if (!id) return;
+  const snapshot = deptEvents.value.find(x => x.id_event === id);
+  const ok = await confirmDelete({
+    title: "Delete this event?",
+    body: snapshot ? `${snapshot.title}` : "",
+  });
+  if (!ok) return;
+  try {
+    await apiClient.delete(`/events/${id}`);
+    deptEvents.value = deptEvents.value.filter(x => x.id_event !== id);
+    showEventModal.value = false;
+    editingEventId.value = null;
+    showToast({
+      message: `Event deleted${snapshot ? ` — ${snapshot.title}` : ""}`,
+      action: snapshot ? "Undo" : null,
+      onAction: snapshot ? async () => {
+        try {
+          const { data } = await apiClient.post("/events", {
+            id_department: snapshot.id_department,
+            title:         snapshot.title,
+            description:   snapshot.description || "",
+            start_time:    snapshot.start_time,
+            end_time:      snapshot.end_time,
+            location:      snapshot.location || null,
+          });
+          deptEvents.value = [...deptEvents.value, data];
+        } catch (_) { /* silent */ }
+      } : null,
+    });
+  } catch (err) {
+    showToast({ message: "Couldn't delete event: " + (err.response?.data?.message || err.message), type: "error" });
+  }
+}
+
+// Convert "YYYY-MM-DD" + "HH:MM" (interpreted in the user's timezone) to an
+// absolute UTC ISO string the backend can store.
+function toLocalDateTimeIso(dateStr, timeStr) {
+  const d = new Date(`${dateStr}T${timeStr}:00`); // local time
+  return d.toISOString();
+}
+
+async function saveEvent() {
+  const { title, description, date, startTime, endTime, location } = newEvent.value;
+  if (!title || !title.trim()) { showToast({ message: "Title is required.", type: "error" }); return; }
+  if (!date || !startTime || !endTime) { showToast({ message: "Date, start, and end are required.", type: "error" }); return; }
+  const startHour = fromTimeInput(startTime);
+  const endHour   = fromTimeInput(endTime);
+  if (endHour <= startHour) { showToast({ message: "End time must be after start time.", type: "error" }); return; }
+  const deptId = selectedDeptId.value || currentUser.value?.id_department;
+  if (!deptId) { showToast({ message: "No department selected.", type: "error" }); return; }
+  const payload = {
+    id_department: deptId,
+    title:         title.trim(),
+    description:   description || "",
+    start_time:    toLocalDateTimeIso(date, startTime),
+    end_time:      toLocalDateTimeIso(date, endTime),
+    location:      location || null,
+  };
+  try {
+    if (editingEventId.value) {
+      const id = editingEventId.value;
+      await apiClient.put(`/events/${id}`, payload);
+      const idx = deptEvents.value.findIndex(x => x.id_event === id);
+      if (idx !== -1) deptEvents.value[idx] = { ...deptEvents.value[idx], ...payload };
+      showToast({ message: `Event "${payload.title}" updated`, type: "success" });
+    } else {
+      const { data } = await apiClient.post("/events", payload);
+      deptEvents.value = [...deptEvents.value, data];
+      showToast({ message: `Event "${data.title}" created`, type: "success" });
+    }
+    showEventModal.value = false;
+    editingEventId.value = null;
+    eventQuickCreate.value.visible = false;
+  } catch (err) {
+    showToast({ message: "Couldn't save event: " + (err.response?.data?.message || err.message), type: "error" });
+  }
+}
+
+async function saveEventFromQuickCreate() {
+  const qc = eventQuickCreate.value;
+  if (!qc.title || !qc.title.trim()) { showToast({ message: "Title is required.", type: "error" }); return; }
+  const deptId = selectedDeptId.value || currentUser.value?.id_department;
+  if (!deptId) { showToast({ message: "No department selected.", type: "error" }); return; }
+  const dateStr = dateToKey(qc.date);
+  try {
+    const { data } = await apiClient.post("/events", {
+      id_department: deptId,
+      title:         qc.title.trim(),
+      description:   qc.description || "",
+      start_time:    toLocalDateTimeIso(dateStr, qc.startTime),
+      end_time:      toLocalDateTimeIso(dateStr, qc.endTime),
+      location:      qc.location || null,
+    });
+    deptEvents.value = [...deptEvents.value, data];
+    eventQuickCreate.value.visible = false;
+    showToast({ message: `Event "${data.title}" created`, type: "success" });
+  } catch (err) {
+    showToast({ message: "Couldn't create event: " + (err.response?.data?.message || err.message), type: "error" });
+  }
 }
 async function addShift() {
   if (!newShift.value.id_position) { alert("Please select a position."); return; }
@@ -1245,6 +3088,7 @@ async function addShift() {
   if (editingShiftId.value) {
     const existing = shifts.value.find(s => s.id === editingShiftId.value);
     if (!existing) return;
+    pushUndo({ type: 'update', before: { ...existing } });
     try {
       await apiUpdateShift(existing.id_shift, { startHour, endHour, notes: newShift.value.notes, id_position: newShift.value.id_position });
       const idx = shifts.value.findIndex(s => s.id === editingShiftId.value);
@@ -1258,33 +3102,91 @@ async function addShift() {
       } else if (!prevEmpId && nextEmpId) {
         // Assign for the first time
         const emp = employees.value.find(e => e.id_employee === nextEmpId);
-        const assignment = await apiCreateAssignment(existing.id_shift, nextEmpId, existing.date);
+        const assignment = await createAssignmentWithConfirm(existing.id_shift, nextEmpId, existing.date, emp?.name || "This employee");
+        if (!assignment) { undoStack.value.pop(); return; }
         updated = { ...updated, id: assignment.id_shiftAssignment, id_shiftAssignment: assignment.id_shiftAssignment, id_employee: nextEmpId, employee: emp?.name || "" };
       } else if (prevEmpId && nextEmpId && prevEmpId !== nextEmpId) {
-        // Switch employee: delete old assignment, create new one
-        await apiDeleteAssignment(existing.id_shiftAssignment);
+        // Switch employee: try the new assignment first so we don't orphan
+        // the old one if the user cancels the conflict prompt.
         const emp = employees.value.find(e => e.id_employee === nextEmpId);
-        const assignment = await apiCreateAssignment(existing.id_shift, nextEmpId, existing.date);
+        // The old assignment still references the shift, so we need to
+        // free it before creating the new one. If the new one fails we
+        // re-create the old to preserve state.
+        await apiDeleteAssignment(existing.id_shiftAssignment);
+        const assignment = await createAssignmentWithConfirm(existing.id_shift, nextEmpId, existing.date, emp?.name || "This employee");
+        if (!assignment) {
+          // User cancelled — restore the prior assignment so the shift
+          // isn't left hanging unassigned.
+          try {
+            await apiCreateAssignment(existing.id_shift, prevEmpId, existing.date, true);
+          } catch (_) {}
+          undoStack.value.pop();
+          return;
+        }
         updated = { ...updated, id: assignment.id_shiftAssignment, id_shiftAssignment: assignment.id_shiftAssignment, id_employee: nextEmpId, employee: emp?.name || "" };
       }
       shifts.value[idx] = updated;
-    } catch (err) { alert("Error updating shift: " + err.message); return; }
+    } catch (err) { undoStack.value.pop(); alert("Error updating shift: " + (err.response?.data?.message || err.message)); return; }
     editingShiftId.value = null;
   } else {
     const emp = employees.value.find(e => e.name === newShift.value.employee);
+    const date = newShift.value.date;
     try {
       const block = await apiCreateShift({
-        id_employee:  emp?.id_employee ?? null,
-        date:         dateKey(weekOffset.value, Number(newShift.value.dayIndex)),
+        id_employee:   emp?.id_employee ?? null,
+        date,
         startHour, endHour,
-        notes:        newShift.value.notes,
-        positionName: posName,
-        id_position:  newShift.value.id_position,
+        notes:         newShift.value.notes,
+        positionName:  posName,
+        id_position:   newShift.value.id_position,
+        id_department: selectedDeptId.value || currentUser.value?.id_department || null,
       });
       block.employee     = emp?.name || "";
       block.positionName = posName;
       shifts.value.push(block);
-    } catch (err) { alert("Error creating shift: " + err.message); return; }
+      pushUndo({ type: 'create', shifts: [block] });
+    } catch (err) {
+      // Same dance as confirmQuickCreate: shift already persisted; retry
+      // just the assignment with force after user confirms.
+      const body = err.response?.data;
+      if (err.response?.status === 409 && body?.overridable && body?.code === "UNAVAILABILITY" && err.pendingAssignment) {
+        const ok = await confirmConflict(emp?.name || "This employee");
+        if (ok) {
+          try {
+            const assignment = await apiCreateAssignment(err.pendingAssignment.id_shift, err.pendingAssignment.id_employee, err.pendingAssignment.date, true);
+            const block = {
+              id:                 assignment.id_shiftAssignment,
+              id_shift:           err.orphanShift.id_shift,
+              id_shiftAssignment: assignment.id_shiftAssignment,
+              id_employee:        emp.id_employee,
+              employee:           emp.name,
+              date,
+              dayIndex:           err.shiftBuildArgs?.dowInt,
+              startHour, endHour,
+              startLabel:         fmtHour(startHour),
+              endLabel:           fmtHour(endHour),
+              notes:              newShift.value.notes || "",
+              id_position:        newShift.value.id_position,
+              positionName:       posName,
+            };
+            shifts.value.push(block);
+            pushUndo({ type: 'create', shifts: [block] });
+            showAddModal.value = false;
+            return;
+          } catch (retryErr) {
+            alert("Couldn't assign the shift: " + (retryErr.response?.data?.message || retryErr.message));
+            return;
+          }
+        }
+        // Cancelled — clean up the orphan shift.
+        if (err.orphanShift?.id_shift) {
+          try { await apiClient.delete(`/shifts/${err.orphanShift.id_shift}`); } catch (_) {}
+        }
+        return;
+      }
+      alert("Error creating shift: " + (body?.message || err.message));
+      return;
+    }
   }
   showAddModal.value = false;
 }
@@ -1309,13 +3211,19 @@ async function openShiftTasksModal(shift) {
     open: true,
     shift,
     shiftTaskLists: [],
+    shiftTasks:     [],
     selectedTaskListId: taskLists.value[0]?.id_taskList ?? null,
+    selectedTaskId:     null,
     loading: true,
     saving: false,
+    savingTask: false,
     error: "",
   };
   try {
-    const stls = await getShiftTaskLists(shift.id_shift);
+    const [stls, stks] = await Promise.all([
+      getShiftTaskLists(shift.id_shift),
+      getShiftTasks(shift.id_shift).catch(() => []),
+    ]);
     const enriched = await Promise.all(
       stls.map(async (stl) => {
         const statuses  = await getTaskListStatuses(stl.id_shiftTaskList);
@@ -1324,6 +3232,7 @@ async function openShiftTasksModal(shift) {
       })
     );
     shiftTasksModal.value.shiftTaskLists = enriched;
+    shiftTasksModal.value.shiftTasks     = stks;
   } catch (err) {
     shiftTasksModal.value.error = "Could not load tasks: " + (err.message || "Network error");
   } finally {
@@ -1348,6 +3257,7 @@ async function assignTaskListToCurrentShift() {
     shiftTasksModal.value.shiftTaskLists.push({ ...newStl, taskList, statuses });
     // Refresh sidebar tasks if employee
     if (!isManager.value) loadMyTasks();
+    else refreshShiftTaskSummary(shiftTasksModal.value.shift?.id_shift);
   } catch (err) {
     shiftTasksModal.value.error = err.message || "Assignment failed.";
   } finally {
@@ -1361,71 +3271,914 @@ async function removeShiftTaskListItem(stl) {
     shiftTasksModal.value.shiftTaskLists = shiftTasksModal.value.shiftTaskLists.filter(
       s => s.id_shiftTaskList !== stl.id_shiftTaskList
     );
+    if (isManager.value) refreshShiftTaskSummary(shiftTasksModal.value.shift?.id_shift);
   } catch (err) {
     shiftTasksModal.value.error = err.message || "Could not remove task list.";
+  }
+}
+
+// Tasks already attached directly to the shift (not through a list)
+// are filtered out of the picker so a manager can't double-attach.
+const taskModalAvailableTasks = computed(() => {
+  const attachedIds = new Set(shiftTasksModal.value.shiftTasks.map(t => t.id_task));
+  return allTasks.value.filter(t => !attachedIds.has(t.id_task));
+});
+
+async function assignTaskToCurrentShift() {
+  const id_task = shiftTasksModal.value.selectedTaskId;
+  if (!id_task) return;
+  shiftTasksModal.value.savingTask = true;
+  shiftTasksModal.value.error = "";
+  try {
+    const row = await attachTaskToShift(shiftTasksModal.value.shift.id_shift, id_task);
+    shiftTasksModal.value.shiftTasks.push(row);
+    shiftTasksModal.value.selectedTaskId = null;
+    if (!isManager.value) loadMyTasks();
+    else refreshShiftTaskSummary(shiftTasksModal.value.shift?.id_shift);
+  } catch (err) {
+    shiftTasksModal.value.error = err.response?.data?.message || err.message || "Could not attach task.";
+  } finally {
+    shiftTasksModal.value.savingTask = false;
+  }
+}
+
+async function removeShiftTaskItem(st) {
+  try {
+    await removeShiftTask(st.id_shiftTask);
+    shiftTasksModal.value.shiftTasks = shiftTasksModal.value.shiftTasks.filter(
+      t => t.id_shiftTask !== st.id_shiftTask
+    );
+    if (isManager.value) refreshShiftTaskSummary(shiftTasksModal.value.shift?.id_shift);
+  } catch (err) {
+    shiftTasksModal.value.error = err.message || "Could not remove task.";
+  }
+}
+
+async function toggleShiftTask(st) {
+  const newVal = !st.isCompleted;
+  try {
+    await updateShiftTaskComplete(st.id_shiftTask, newVal);
+    st.isCompleted = newVal;
+    if (isManager.value) refreshShiftTaskSummary(shiftTasksModal.value.shift?.id_shift);
+  } catch (err) {
+    shiftTasksModal.value.error = err.message || "Could not update task.";
   }
 }
 
 async function toggleTaskStatus(status) {
   const newVal = !status.isCompleted;
   try {
-    await updateTaskComplete(status.id_shiftTaskListStatus, newVal);
+    // Individual ShiftTask rows carry id_shiftTask; task-list statuses carry
+    // id_shiftTaskListStatus. Route to the right endpoint either way.
+    if (status.id_shiftTask) {
+      await updateShiftTaskComplete(status.id_shiftTask, newVal);
+    } else {
+      await updateTaskComplete(status.id_shiftTaskListStatus, newVal);
+    }
     status.isCompleted = newVal;
-    // Refresh sidebar counts
-    const stl = myShiftTasks.value.find(s => s.shiftTaskListId === status.id_shiftTaskList);
+    // Refresh sidebar counts — group by whichever shiftTaskListId key matches
+    const stl = myShiftTasks.value.find(s =>
+      s.statuses.some(st =>
+        (status.id_shiftTask && st.id_shiftTask === status.id_shiftTask) ||
+        (!status.id_shiftTask && st.id_shiftTaskListStatus === status.id_shiftTaskListStatus)
+      )
+    );
     if (stl) stl.completedCount = stl.statuses.filter(s => s.isCompleted).length;
+    // Update manager shift-block badge
+    if (isManager.value && shiftTasksModal.value.shift?.id_shift) {
+      refreshShiftTaskSummary(shiftTasksModal.value.shift.id_shift);
+    }
   } catch (err) {
     shiftTasksModal.value.error = "Could not update task: " + (err.message || "Error");
   }
 }
 
-// Employee-only: load task lists for today's own shifts (populates sidebar)
+// Employee-only: load task lists + individual tasks for today's shifts
 async function loadMyTasks() {
   if (isManager.value) return;
-  const myId     = currentUser.value?.id_employee;
-  if (!myId) return;
-  const todayKey = dateToKey(new Date());
-  const todayShifts = shifts.value.filter(s => s.date === todayKey && s.id_employee === myId);
+  const todayShifts = myTodayShifts.value;
+  if (todayShifts.length === 0) {
+    myShiftTasks.value = [];
+    return;
+  }
   const results = [];
-  for (const shift of todayShifts) {
-    try {
+  try {
+    for (const shift of todayShifts) {
       const stls = await getShiftTaskLists(shift.id_shift);
       for (const stl of stls) {
-        const statuses  = await getTaskListStatuses(stl.id_shiftTaskList);
-        const taskList  = taskLists.value.find(l => l.id_taskList === stl.id_taskList);
+        const statuses = await getTaskListStatuses(stl.id_shiftTaskList);
+        const taskList = taskLists.value.find(l => l.id_taskList === stl.id_taskList);
         if (taskList) {
+          const enriched = statuses.map(s => ({
+            ...s,
+            taskName: allTasks.value.find(t => t.id_task === s.id_task)?.name ?? `Task #${s.id_task}`,
+          }));
           results.push({
             shiftTaskListId: stl.id_shiftTaskList,
+            id_shift:        shift.id_shift,
+            shiftLabel:      shift.positionName || `${shift.startLabel}–${shift.endLabel}`,
             taskList,
-            statuses,
-            completedCount: statuses.filter(s => s.isCompleted).length,
-            totalCount:     statuses.length,
+            statuses: enriched,
+            completedCount: enriched.filter(s => s.isCompleted).length,
+            totalCount:     enriched.length,
+            kind:            "list",
           });
         }
       }
-    } catch { /* silent — sidebar is non-critical */ }
-  }
+
+      // Individual tasks attached directly to this shift
+      const stks = await getShiftTasks(shift.id_shift).catch(() => []);
+      if (stks.length) {
+        const enriched = stks.map(s => ({
+          id_shiftTaskListStatus: `st-${s.id_shiftTask}`, // pseudo-id for key stability
+          id_shiftTask:           s.id_shiftTask,
+          isCompleted:            s.isCompleted,
+          id_task:                s.id_task,
+          taskName:               allTasks.value.find(t => t.id_task === s.id_task)?.name ?? `Task #${s.id_task}`,
+        }));
+        results.push({
+          shiftTaskListId: `indiv-${shift.id_shift}`,
+          id_shift:        shift.id_shift,
+          shiftLabel:      shift.positionName || `${shift.startLabel}–${shift.endLabel}`,
+          taskList:        { name: "Tasks" },
+          statuses:        enriched,
+          completedCount:  enriched.filter(s => s.isCompleted).length,
+          totalCount:      enriched.length,
+          kind:            "tasks",
+        });
+      }
+    }
+  } catch { /* silent — sidebar is non-critical */ }
   myShiftTasks.value = results;
 }
 
-// ── Lifecycle ──────────────────────────────────────────────────────────────────
-onMounted(async () => {
-  await loadAll();
-  if (calBody.value) calBody.value.scrollTop = 7 * CELL_HEIGHT; // scroll to 7am
+// Manager-only: task completion summary per shift, shown on shift blocks.
+// Counts both task-list statuses AND individual shift tasks.
+async function refreshShiftTaskSummary(id_shift) {
+  if (!isManager.value || !id_shift) return;
+  try {
+    const [stls, stks] = await Promise.all([
+      getShiftTaskLists(id_shift),
+      getShiftTasks(id_shift).catch(() => []),
+    ]);
+    let completed = 0, total = 0;
+    await Promise.all(stls.map(async (stl) => {
+      const statuses = await getTaskListStatuses(stl.id_shiftTaskList);
+      total     += statuses.length;
+      completed += statuses.filter(s => s.isCompleted).length;
+    }));
+    total     += stks.length;
+    completed += stks.filter(t => t.isCompleted).length;
+    if (total === 0) {
+      const next = { ...shiftTaskSummary.value };
+      delete next[id_shift];
+      shiftTaskSummary.value = next;
+    } else {
+      shiftTaskSummary.value = { ...shiftTaskSummary.value, [id_shift]: { completed, total } };
+    }
+  } catch { /* silent */ }
+}
+
+async function loadShiftTaskSummaries() {
+  if (!isManager.value) return;
+  const summary = {};
+  await Promise.all(shifts.value.map(async (shift) => {
+    try {
+      const [stls, stks] = await Promise.all([
+        getShiftTaskLists(shift.id_shift),
+        getShiftTasks(shift.id_shift).catch(() => []),
+      ]);
+      let completed = 0, total = 0;
+      await Promise.all(stls.map(async (stl) => {
+        const statuses = await getTaskListStatuses(stl.id_shiftTaskList);
+        total     += statuses.length;
+        completed += statuses.filter(s => s.isCompleted).length;
+      }));
+      total     += stks.length;
+      completed += stks.filter(t => t.isCompleted).length;
+      if (total > 0) summary[shift.id_shift] = { completed, total };
+    } catch { /* silent */ }
+  }));
+  shiftTaskSummary.value = summary;
+}
+
+function shiftTaskBadge(shift) {
+  const sum = shiftTaskSummary.value[shift.id_shift];
+  if (!sum || sum.total === 0) return null;
+  const allDone = sum.completed >= sum.total;
+  return {
+    ...sum,
+    allDone,
+    label: allDone ? "Complete" : `${sum.completed}/${sum.total}`,
+  };
+}
+
+// ── Multi-select helpers ───────────────────────────────────────────────────────
+function toggleShiftSelection(id) {
+  const key = String(id);
+  const s = new Set(selectedShiftIds.value);
+  if (s.has(key)) s.delete(key); else s.add(key);
+  selectedShiftIds.value = s;
+}
+
+function clearSelection() {
+  selectedShiftIds.value = new Set();
+}
+
+// Called on mousedown over a shift block.
+// If Cmd/Ctrl is held: start a drag-to-create on the underlying column instead of selecting the shift.
+function onShiftBlockMouseDown(e, colIdx) {
+  if ((e.metaKey || e.ctrlKey) && isManager.value) {
+    e.stopPropagation();
+    dragStartedFromShiftBlock = true;
+    const colEl = e.currentTarget.closest('.day-column');
+    if (colEl) {
+      clearSelection();
+      selectedShift.value       = null;
+      quickCreate.value.visible = false;
+      const startHour = getHourFromEvent(e, colEl);
+      drag.value = { active: true, dayIndex: colIdx, startHour, currentHour: startHour, colEl };
+    }
+    return;
+  }
+  dragStartedFromShiftBlock = false;
+  e.stopPropagation();
+}
+
+function onShiftBlockClick(shift, e) {
+  e.stopPropagation();
+  if (dragStartedFromShiftBlock) {
+    // The mousedown was the start of a drag-to-create; suppress this click
+    dragStartedFromShiftBlock = false;
+    return;
+  }
+  if (e.metaKey || e.ctrlKey) {
+    toggleShiftSelection(shift.id);
+    return;
+  }
+  clearSelection();
+  selectShift(shift, e);
+}
+
+function finalizeDashRubberBand() {
+  const r      = rubberBand.value;
+  const left   = Math.min(r.startX, r.x);
+  const top    = Math.min(r.startY, r.y);
+  const right  = Math.max(r.startX, r.x);
+  const bottom = Math.max(r.startY, r.y);
+  if (right - left > 4 || bottom - top > 4) {
+    const blocks = document.querySelectorAll("[data-shift-id]");
+    const newSet = new Set(selectedShiftIds.value);
+    blocks.forEach(el => {
+      const rect = el.getBoundingClientRect();
+      if (rect.left < right && rect.right > left && rect.top < bottom && rect.bottom > top) {
+        newSet.add(el.dataset.shiftId);
+      }
+    });
+    selectedShiftIds.value = newSet;
+  }
+  rubberBand.value = { active: false, startX: 0, startY: 0, x: 0, y: 0 };
+}
+
+function copySelectedShifts() {
+  if (selectedShiftIds.value.size === 0) return;
+  const selected = shifts.value.filter(s => selectedShiftIds.value.has(String(s.id)));
+  dashClipboard.value = selected.map(s => ({
+    date:         s.date,
+    startHour:    s.startHour,
+    endHour:      s.endHour,
+    id_position:  s.id_position,
+    positionName: s.positionName,
+    id_employee:  s.id_employee,
+    notes:        s.notes || "",
+  }));
+}
+
+function pasteDashShifts() {
+  if (dashClipboard.value.length === 0) return;
+  isPasteMode.value = true;
+}
+
+function parseDateLocal(str) {
+  // Avoid UTC offset shifting by parsing YYYY-MM-DD as local time
+  const [y, m, d] = str.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+async function pasteToDay(targetDate) {
+  if (dashClipboard.value.length === 0) return;
+  isPasteMode.value = false;
+
+  // Find the anchor: earliest date in clipboard (parse as local time)
+  const anchorMs = Math.min(...dashClipboard.value.map(item => parseDateLocal(item.date).getTime()));
+  // Strip time from targetDate so we're comparing day-only
+  const targetDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+  const offsetDays = Math.round((targetDay.getTime() - anchorMs) / 86400000);
+  const pastedBlocks = [];
+
+  for (const item of dashClipboard.value) {
+    const shiftDay = parseDateLocal(item.date);
+    const newDate = new Date(shiftDay.getFullYear(), shiftDay.getMonth(), shiftDay.getDate() + offsetDays);
+    const yyyy = newDate.getFullYear();
+    const mm   = String(newDate.getMonth() + 1).padStart(2, "0");
+    const dd   = String(newDate.getDate()).padStart(2, "0");
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+    try {
+      const block = await apiCreateShift({
+        id_employee:  item.id_employee,
+        date:         dateStr,
+        startHour:    item.startHour,
+        endHour:      item.endHour,
+        notes:        item.notes,
+        positionName: item.positionName,
+        id_position:  item.id_position,
+        id_department: selectedDeptId.value || currentUser.value?.id_department || null,
+      });
+      const emp = item.id_employee ? employees.value.find(e => e.id_employee === item.id_employee) : null;
+      block.employee     = emp?.name || "";
+      block.positionName = item.positionName;
+      shifts.value.push(block);
+      pastedBlocks.push(block);
+    } catch (err) { console.error("Paste shift failed:", err); }
+  }
+  if (pastedBlocks.length > 0) pushUndo({ type: 'create', shifts: pastedBlocks });
+}
+
+async function duplicateSelectedToNextWeek() {
+  const ids = [...selectedShiftIds.value];
+  if (ids.length === 0) return;
+  const source = ids.map(id => shifts.value.find(s => String(s.id) === id)).filter(Boolean);
+  if (source.length === 0) return;
+
+  const newBlocks = [];
+  for (const s of source) {
+    const d = parseDateLocal(s.date);
+    d.setDate(d.getDate() + 7);
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    try {
+      const block = await apiCreateShift({
+        id_employee:  s.id_employee,
+        date:         dateStr,
+        startHour:    s.startHour,
+        endHour:      s.endHour,
+        notes:        s.notes,
+        positionName: s.positionName,
+        id_position:  s.id_position,
+        id_department: selectedDeptId.value || currentUser.value?.id_department || null,
+      });
+      const emp = s.id_employee ? employees.value.find(e => e.id_employee === s.id_employee) : null;
+      block.employee     = emp?.name || "";
+      block.positionName = s.positionName;
+      shifts.value.push(block);
+      newBlocks.push(block);
+    } catch (err) { console.error("Duplicate shift failed:", err); }
+  }
+  if (newBlocks.length > 0) {
+    pushUndo({ type: 'create', shifts: newBlocks });
+    showToast({
+      message: `Duplicated ${newBlocks.length} shift${newBlocks.length === 1 ? '' : 's'} to next week`,
+      action: "Undo",
+      onAction: undoLastAction,
+    });
+  }
+  clearSelection();
+}
+
+async function deleteSelectedShifts() {
+  const count = selectedShiftIds.value.size;
+  if (count === 0) return;
+  if (count > 1) {
+    const ok = await confirmDelete({
+      title: `Delete ${count} shifts?`,
+      body: "This cannot be undone from a refresh. You'll have an Undo option for a few seconds after.",
+      confirmLabel: `Delete ${count}`,
+    });
+    if (!ok) return;
+  }
+  const ids = [...selectedShiftIds.value];
+  // Snapshot all shifts before clearing selection (deleteShift also pushes individually,
+  // so we batch them into one undo entry here instead)
+  const toDelete = ids.map(idStr => shifts.value.find(s => String(s.id) === idStr)).filter(Boolean);
+  if (toDelete.length > 1) {
+    // Push one batch undo entry; suppress individual entries from deleteShift by temporarily
+    // routing through the API directly
+    pushUndo({ type: 'delete', shifts: toDelete.map(s => ({ ...s })) });
+    clearSelection();
+    for (const s of toDelete) {
+      try {
+        await apiDeleteShift(s.id_shiftAssignment, s.id_shift);
+        shifts.value = shifts.value.filter(sh => sh.id !== s.id);
+      } catch (err) { console.error("Delete failed:", err); }
+    }
+    showToast({
+      message: `Deleted ${toDelete.length} shifts`,
+      action: "Undo",
+      onAction: undoLastAction,
+    });
+  } else {
+    clearSelection();
+    for (const idStr of ids) {
+      const shift = shifts.value.find(s => String(s.id) === idStr);
+      if (shift) await deleteShift(shift.id);
+    }
+  }
+}
+
+function onDashKeydown(e) {
+  if (e.key === "Meta" || e.key === "Control") cmdHeld.value = true;
+  const meta = e.metaKey || e.ctrlKey;
+  if (meta && e.key === "a") {
+    // Only intercept if not in an input
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+    e.preventDefault();
+    // Select all shifts visible in current view
+    let visibleShifts = [];
+    if (calView.value === "Day") visibleShifts = dayViewShifts.value;
+    else if (calView.value === "Week") {
+      visibleShifts = weekDates.value.flatMap((_, i) => shiftsForWeekDay(i));
+    }
+    selectedShiftIds.value = new Set(visibleShifts.map(s => String(s.id)));
+    return;
+  }
+  if (meta && e.key === "c") {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    e.preventDefault();
+    copySelectedShifts();
+    return;
+  }
+  if (meta && e.key === "v") {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    e.preventDefault();
+    if (dashClipboard.value.length > 0) isPasteMode.value = true;
+    return;
+  }
+  if (meta && e.key === "z") {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    e.preventDefault();
+    undoLastAction();
+    return;
+  }
+  if ((e.key === "Delete" || e.key === "Backspace") && selectedShiftIds.value.size > 0 && isManager.value) {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+    e.preventDefault();
+    deleteSelectedShifts();
+    return;
+  }
+  if (e.key === "Escape") {
+    if (isPasteMode.value) { isPasteMode.value = false; return; }
+    if (selectedShiftIds.value.size > 0) { clearSelection(); return; }
+  }
+  // Navigation shortcuts — skip when focus is in an input
+  if (!meta && !e.altKey && !e.shiftKey) {
+    const tag = e.target.tagName;
+    const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || e.target.isContentEditable;
+    if (typing) return;
+    if (e.key === "ArrowLeft")  { e.preventDefault(); navigate(-1); return; }
+    if (e.key === "ArrowRight") { e.preventDefault(); navigate(1);  return; }
+    if (e.key === "t" || e.key === "T") { e.preventDefault(); goToday(); return; }
+  }
+}
+
+// ── Template quick-apply (dropdown above calendar) ─────────────────────────────
+const PERIOD_OPTIONS = [
+  { label: "1 Week",  value: "1w",  days: 7  },
+  { label: "2 Weeks", value: "2w",  days: 14 },
+  { label: "3 Weeks", value: "3w",  days: 21 },
+  { label: "1 Month", value: "1m",  days: 28 },
+  { label: "Custom",  value: "custom", days: null },
+];
+const DAY_ENUM = ["Sun", "Mon", "Tue", "Wed", "Thur", "Fri", "Sat"];
+
+const templates = ref([]);
+const templatesLoading = ref(false);
+const templateDropdownOpen = ref(false);
+const viewDropdownOpen     = ref(false);
+function toggleViewDropdown() { viewDropdownOpen.value = !viewDropdownOpen.value; }
+function pickView(v) {
+  setView(v);
+  viewDropdownOpen.value = false;
+}
+
+async function loadTemplatesForDropdown() {
+  if (!isManager.value) return;
+  templatesLoading.value = true;
+  try {
+    templates.value = await fetchTemplates(selectedDeptId.value);
+  } catch {
+    templates.value = [];
+  } finally {
+    templatesLoading.value = false;
+  }
+}
+
+function toggleTemplateDropdown() {
+  templateDropdownOpen.value = !templateDropdownOpen.value;
+  if (templateDropdownOpen.value) loadTemplatesForDropdown();
+}
+
+function hourToTimeStr(h) {
+  const totalMin = Math.round(h * 60);
+  const hh = String(Math.floor(totalMin / 60)).padStart(2, "0");
+  const mm = String(totalMin % 60).padStart(2, "0");
+  return `${hh}:${mm}:00`;
+}
+
+function localDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function defaultApplyStartDate() {
+  const today = new Date();
+  const day = today.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + diff);
+  return localDateStr(monday);
+}
+
+const applyModal = ref({
+  open: false,
+  template: null,
+  period: "2w",
+  startDate: "",
+  endDate: "",
+  applying: false,
+  error: "",
 });
-watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrollTop = 7 * CELL_HEIGHT; }, 50); });
+
+const isCustomPeriod = computed(() => applyModal.value.period === "custom");
+
+const applyRangeLabel = computed(() => {
+  const fmt = d => d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  if (isCustomPeriod.value) {
+    if (!applyModal.value.startDate || !applyModal.value.endDate) return "";
+    const start = new Date(applyModal.value.startDate + "T00:00:00");
+    const end   = new Date(applyModal.value.endDate   + "T00:00:00");
+    if (end < start) return "";
+    return `${fmt(start)} – ${fmt(end)}`;
+  }
+  if (!applyModal.value.startDate) return "";
+  const opt = PERIOD_OPTIONS.find(o => o.value === applyModal.value.period);
+  const days = opt?.days ?? 14;
+  const start = new Date(applyModal.value.startDate + "T00:00:00");
+  const end = new Date(start);
+  end.setDate(start.getDate() + days - 1);
+  return `${fmt(start)} – ${fmt(end)}`;
+});
+
+function openApplyFromDashboard(tpl) {
+  templateDropdownOpen.value = false;
+  applyModal.value = {
+    open: true,
+    template: tpl,
+    period: "2w",
+    startDate: defaultApplyStartDate(),
+    endDate: "",
+    applying: false,
+    error: "",
+  };
+}
+
+async function applyTemplate() {
+  if (!applyModal.value.startDate) {
+    applyModal.value.error = "Please select a start date.";
+    return;
+  }
+  if (isCustomPeriod.value && !applyModal.value.endDate) {
+    applyModal.value.error = "Please select an end date.";
+    return;
+  }
+  applyModal.value.applying = true;
+  applyModal.value.error = "";
+  try {
+    const start = new Date(applyModal.value.startDate + "T00:00:00");
+    let end;
+    if (isCustomPeriod.value) {
+      end = new Date(applyModal.value.endDate + "T00:00:00");
+      if (end < start) {
+        applyModal.value.error = "End date must be after start date.";
+        applyModal.value.applying = false;
+        return;
+      }
+    } else {
+      const opt = PERIOD_OPTIONS.find(o => o.value === applyModal.value.period);
+      end = new Date(start);
+      end.setDate(start.getDate() + (opt?.days ?? 14) - 1);
+    }
+
+    const tShifts = await fetchTemplateShifts(applyModal.value.template.id_template);
+    await Promise.all(tShifts.map(async ts => {
+      const [emps, tls, tks] = await Promise.all([
+        fetchTemplateShiftEmployees(ts.id_templateShift).catch(() => []),
+        fetchTemplateShiftTaskLists(ts.id_templateShift).catch(() => []),
+        getTemplateShiftTasks(ts.id_templateShift).catch(() => []),
+      ]);
+      ts._employees = emps;
+      ts._taskLists = tls;
+      ts._tasks     = tks;
+    }));
+
+    let application = null;
+    try {
+      application = await createTemplateApplication({
+        id_template: applyModal.value.template.id_template,
+        startDate:   localDateStr(start),
+        endDate:     localDateStr(end),
+      });
+    } catch { /* backend endpoint may be missing */ }
+
+    const current = new Date(start);
+    while (current <= end) {
+      const dowInt  = current.getDay();
+      const dateStr = localDateStr(current);
+      for (const ts of tShifts) {
+        if (ts.dayOfWeek !== dowInt) continue;
+        const { data: newShift } = await apiClient.post("/shifts", {
+          name:          ts.label || "Shift",
+          description:   ts.notes || "",
+          day:           DAY_ENUM[dowInt],
+          date:          dateStr,
+          startTime:     hourToTimeStr(ts.startHour),
+          endTime:       hourToTimeStr(ts.endHour),
+          id_position:   ts.id_position || null,
+          id_department: selectedDeptId.value || null,
+        });
+        for (const emp of ts._employees) {
+          await apiClient.post("/shift-assignments", {
+            id_shift:    newShift.id_shift,
+            id_employee: emp.id_employee,
+            date:        dateStr,
+          }).catch(() => {});
+        }
+        for (const tl of ts._taskLists) {
+          await apiClient.post("/shift-task-lists", {
+            id_shift:   newShift.id_shift,
+            id_taskList: tl.id_taskList,
+          }).catch(() => {});
+        }
+        for (const tk of (ts._tasks || [])) {
+          await apiClient.post("/shift-tasks", {
+            id_shift: newShift.id_shift,
+            id_task:  tk.id_task,
+          }).catch(() => {});
+        }
+        if (application) {
+          await createTemplateApplicationShift({
+            id_templateApplication: application.id_templateApplication,
+            id_templateShift:       ts.id_templateShift,
+            id_shift:               newShift.id_shift,
+            date:                   dateStr,
+          }).catch(() => {});
+        }
+      }
+      current.setDate(current.getDate() + 1);
+    }
+
+    applyModal.value.open = false;
+    await loadAll();
+  } catch (err) {
+    applyModal.value.error = err.response?.data?.message || err.message || "Apply failed.";
+  } finally {
+    applyModal.value.applying = false;
+  }
+}
+
+// ── Date picker for apply modal ────────────────────────────────────────────────
+const datePicker = ref({
+  open: false,
+  field: null,
+  viewYear: new Date().getFullYear(),
+  viewMonth: new Date().getMonth(),
+});
+
+function openPicker(field, currentValue) {
+  if (datePicker.value.open && datePicker.value.field === field) {
+    datePicker.value.open = false;
+    return;
+  }
+  const base = currentValue ? new Date(currentValue + "T00:00:00") : new Date();
+  datePicker.value = {
+    open: true,
+    field,
+    viewYear: base.getFullYear(),
+    viewMonth: base.getMonth(),
+  };
+}
+
+function closePicker() {
+  datePicker.value.open = false;
+  datePicker.value.field = null;
+}
+
+const pickerMonthLabel = computed(() => {
+  const d = new Date(datePicker.value.viewYear, datePicker.value.viewMonth, 1);
+  return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+});
+const pickerDaysInMonth = computed(() =>
+  new Date(datePicker.value.viewYear, datePicker.value.viewMonth + 1, 0).getDate()
+);
+const pickerStartPad = computed(() =>
+  new Date(datePicker.value.viewYear, datePicker.value.viewMonth, 1).getDay()
+);
+
+function prevPickerMonth() {
+  let m = datePicker.value.viewMonth - 1;
+  let y = datePicker.value.viewYear;
+  if (m < 0) { m = 11; y -= 1; }
+  datePicker.value.viewMonth = m;
+  datePicker.value.viewYear = y;
+}
+function nextPickerMonth() {
+  let m = datePicker.value.viewMonth + 1;
+  let y = datePicker.value.viewYear;
+  if (m > 11) { m = 0; y += 1; }
+  datePicker.value.viewMonth = m;
+  datePicker.value.viewYear = y;
+}
+function pad2(n) { return String(n).padStart(2, "0"); }
+function isPickerDaySelected(day) {
+  const field = datePicker.value.field;
+  const value = field === "end" ? applyModal.value.endDate : applyModal.value.startDate;
+  if (!value) return false;
+  const iso = `${datePicker.value.viewYear}-${pad2(datePicker.value.viewMonth + 1)}-${pad2(day)}`;
+  return value === iso;
+}
+function isPickerDayToday(day) {
+  const today = new Date();
+  return day === today.getDate()
+    && datePicker.value.viewMonth === today.getMonth()
+    && datePicker.value.viewYear === today.getFullYear();
+}
+function isPickerDayBeforeStart(day) {
+  if (datePicker.value.field !== "end" || !applyModal.value.startDate) return false;
+  const iso = `${datePicker.value.viewYear}-${pad2(datePicker.value.viewMonth + 1)}-${pad2(day)}`;
+  return iso < applyModal.value.startDate;
+}
+
+// Apply-template picker: highlight dates with existing shifts (dot) and
+// weeks that are completely empty (green tint) to help the manager pick
+// a clean starting slot. Uses the already-loaded `shifts` ref so no extra
+// fetch is needed.
+const existingShiftDatesSet = computed(() => {
+  const s = new Set();
+  for (const shift of shifts.value) {
+    if (shift.date) s.add(String(shift.date).slice(0, 10));
+  }
+  return s;
+});
+function isoForPickerDay(day) {
+  return `${datePicker.value.viewYear}-${pad2(datePicker.value.viewMonth + 1)}-${pad2(day)}`;
+}
+function isPickerDayBusy(day) {
+  return existingShiftDatesSet.value.has(isoForPickerDay(day));
+}
+function isPickerDayInEmptyWeek(day) {
+  if (!existingShiftDatesSet.value.size) return false;
+  const d = new Date(datePicker.value.viewYear, datePicker.value.viewMonth, day);
+  const sunday = new Date(d);
+  sunday.setDate(d.getDate() - d.getDay());
+  for (let i = 0; i < 7; i++) {
+    const cur = new Date(sunday);
+    cur.setDate(sunday.getDate() + i);
+    const iso = `${cur.getFullYear()}-${pad2(cur.getMonth() + 1)}-${pad2(cur.getDate())}`;
+    if (existingShiftDatesSet.value.has(iso)) return false;
+  }
+  return true;
+}
+function selectPickerDay(day) {
+  const iso = `${datePicker.value.viewYear}-${pad2(datePicker.value.viewMonth + 1)}-${pad2(day)}`;
+  if (datePicker.value.field === "end") applyModal.value.endDate = iso;
+  else applyModal.value.startDate = iso;
+  closePicker();
+}
+function formatDateDisplay(iso) {
+  if (!iso) return "";
+  return new Date(iso + "T00:00:00").toLocaleDateString(undefined, {
+    month: "short", day: "numeric", year: "numeric",
+  });
+}
+
+// Close dropdown / picker on outside click
+function onDocClickForTemplate() {
+  if (templateDropdownOpen.value) templateDropdownOpen.value = false;
+  if (viewDropdownOpen.value)     viewDropdownOpen.value     = false;
+  if (datePicker.value.open) closePicker();
+}
+watch(() => applyModal.value.open, v => { if (!v) closePicker(); });
+
+// ── Lifecycle ──────────────────────────────────────────────────────────────────
+watch(selectedDeptId, () => { loadAll(); loadTemplatesForDropdown(); });
+
+// Reload sidebar tasks whenever today's shifts change (e.g. after loadAll)
+watch(myTodayShifts, () => { loadMyTasks(); }, { deep: false });
+
+// When any sync (auto, manual, or bulk) completes, pull fresh dept
+// unavailability so the dropdown warnings + hatched overlay update
+// without requiring a browser refresh.
+const { lastSyncTimestamp: __unavailSyncTs } = useUnavailabilityRefresh();
+watch(__unavailSyncTs, () => {
+  const deptId = selectedDeptId.value || currentUser.value?.id_department;
+  if (!deptId) return;
+  getUnavailability({ id_department: deptId })
+    .then(r => { deptUnavailability.value = r.data || []; })
+    .catch(() => {});
+});
+
+let clockInterval = null;
+onMounted(async () => {
+  // Load department list for everyone — employees may belong to multiple
+  // departments via the employeeDepartment junction and need the switcher.
+  await loadDepts(currentUser.value);
+  await loadAll();
+  // Apply calendar display prefs as initial view. Only override the mount
+  // default (no user interaction yet), so prefs don't yank the view while
+  // someone's navigating.
+  try {
+    await prefsReady();
+    const pref = userPrefs.calendarDisplay?.defaultView;
+    if (pref === "day" || pref === "week" || pref === "month") {
+      calView.value = pref.charAt(0).toUpperCase() + pref.slice(1);
+    }
+  } catch (_) { /* non-fatal */ }
+  loadTemplatesForDropdown();
+  window.addEventListener("click", onDocClickForTemplate);
+  if (calBody.value) calBody.value.scrollTop = 7 * cellHeight.value; // scroll to 7am
+  window.addEventListener("keydown", onDashKeydown);
+  window.addEventListener("keyup", onDashKeyup);
+  window.addEventListener("blur",  onDashBlur);
+  // Tick every minute to keep the current-time line accurate
+  clockInterval = setInterval(() => {
+    currentTimeHour.value = new Date().getHours() + new Date().getMinutes() / 60;
+  }, 60_000);
+});
+function onDashKeyup(e)  { if (e.key === "Meta" || e.key === "Control") cmdHeld.value = false; }
+function onDashBlur()    { cmdHeld.value = false; } // window lost focus, key release won't fire
+
+onUnmounted(() => {
+  stopDragScroll();
+  window.removeEventListener("keydown", onDashKeydown);
+  window.removeEventListener("keyup",   onDashKeyup);
+  window.removeEventListener("blur",    onDashBlur);
+  window.removeEventListener("click",   onDocClickForTemplate);
+  clearInterval(clockInterval);
+});
+watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrollTop = 7 * cellHeight.value; }, 50); });
+
+// ── Zoom / fit ─────────────────────────────────────────────────────────────────
+function fitToView() {
+  if (!calBody.value) return;
+
+  // Subtract the sticky header height from available space
+  const headerEl = calBody.value.querySelector('.cal-header-row');
+  const headerH  = headerEl ? headerEl.offsetHeight : 0;
+  const availableH = calBody.value.clientHeight - headerH;
+
+  // Collect all defined business hour entries from calendarHours
+  const pool = activeSeason.value
+    ? calendarHours.value.filter(h => h.season === activeSeason.value)
+    : calendarHours.value;
+
+  let minHour = 24, maxHour = 0;
+  for (const entry of pool) {
+    const start = fromTimeInput(entry.startTime);
+    const end   = fromTimeInput(entry.endTime);
+    if (start < minHour) minHour = start;
+    if (end   > maxHour) maxHour = end;
+  }
+
+  // Fallback: no business hours configured — infer from visible shifts
+  if (maxHour <= minHour) {
+    const dates   = calView.value === 'Day' ? [dayViewDate.value] : weekDates.value;
+    const dateSet = new Set(dates.map(d => dateToKey(d)));
+    const visible = shifts.value.filter(s => dateSet.has(s.date));
+    if (visible.length) {
+      minHour = Math.min(...visible.map(s => s.startHour));
+      maxHour = Math.max(...visible.map(s => s.endHour));
+    } else {
+      minHour = 7; maxHour = 19;
+    }
+  }
+
+  const spanHours = maxHour - minHour;
+  cellHeight.value = Math.max(20, Math.min(160, Math.floor(availableH / spanHours)));
+  nextTick(() => { if (calBody.value) calBody.value.scrollTop = minHour * cellHeight.value; });
+}
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,600,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap');
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 .app {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Satoshi', sans-serif;
   background: var(--bg-page);
   color: var(--tx-primary);
-  height: 100vh;
+  flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1436,24 +4189,29 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .loading-overlay { position: fixed; inset: 0; background: var(--bg-overlay); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; z-index: 999; backdrop-filter: blur(4px); }
 .loading-spinner { width: 36px; height: 36px; border: 3px solid var(--bdr-subtle); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.loading-text { font-size: 13px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
-.api-error-banner { background: var(--err-bg); border-bottom: 1px solid var(--err-border); color: var(--err-text); font-size: 12px; padding: 8px 20px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.retry-btn { background: none; border: 1px solid var(--err-text); color: var(--err-text); padding: 2px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-family: 'DM Sans', sans-serif; }
+.loading-text { font-size: 16px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
+.api-error-banner { background: var(--err-bg); border-bottom: 1px solid var(--err-border); color: var(--err-text); font-size: 15px; padding: 8px 20px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.retry-btn { background: none; border: 1px solid var(--err-text); color: var(--err-text); padding: 2px 10px; border-radius: 4px; cursor: pointer; font-size: 14px; font-family: 'Satoshi', sans-serif; }
 .retry-btn:hover { background: var(--err-text); color: #fff; }
 
 /* ── Nav ── */
 .topnav { display: flex; align-items: center; gap: 24px; padding: 0 24px; height: 56px; background: var(--bg-surface); border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0; z-index: 10; }
 .nav-logo { display: flex; align-items: center; gap: 8px; }
-.logo-icon { font-size: 20px; color: var(--accent); }
-.logo-text { font-family: 'DM Mono', monospace; font-size: 15px; font-weight: 500; letter-spacing: 0.05em; }
-.nav-tabs { display: flex; gap: 2px; flex: 1; }
-.nav-tab { padding: 6px 16px; background: transparent; border: none; color: var(--tx-muted); font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer; border-radius: 6px; transition: background 0.15s, color 0.15s; }
-.nav-tab:hover  { background: var(--bdr-subtle); color: var(--tx-secondary); }
-.nav-tab.active { background: var(--bg-active); color: var(--accent); font-weight: 600; }
+.nav-logo-img { height: 44px; width: auto; object-fit: contain; }
+.logo-icon { font-size: 23px; color: var(--accent); }
+.logo-text { font-family: 'DM Mono', monospace; font-size: 18px; font-weight: 500; letter-spacing: 0.05em; }
+.nav-tabs { display: flex; gap: 4px; flex: 1; }
+.nav-tab { position: relative; padding: 8px 16px; background: none; border: none; color: var(--tx-muted); font-family: 'Satoshi', sans-serif; font-size: 16px; cursor: pointer; border-radius: 0; transition: color 0.15s; }
+.nav-tab::after { content: ''; position: absolute; bottom: -1px; left: 8px; right: 8px; height: 2px; background: transparent; border-radius: 2px; transition: background 0.15s; }
+.nav-tab:hover  { color: var(--tx-secondary); }
+.nav-tab:hover::after { background: var(--bdr-medium); }
+.nav-tab.active { color: var(--accent); font-weight: 600; }
+.nav-tab.active::after { background: var(--accent); }
+.nav-divider { width: 1px; height: 20px; background: var(--bdr-subtle); flex-shrink: 0; }
 .nav-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
-.icon-btn { position: relative; background: none; border: none; cursor: pointer; font-size: 16px; color: var(--tx-muted); }
+.icon-btn { position: relative; background: none; border: none; cursor: pointer; font-size: 19px; color: var(--tx-muted); }
 .notif-dot { position: absolute; top: 0; right: 0; width: 7px; height: 7px; background: var(--err-text); border-radius: 50%; border: 1px solid var(--bg-surface); }
-.avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #FF1744, #F0E6D3); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #000; cursor: pointer; }
+.avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #FF1744, #F0E6D3); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: #000; cursor: pointer; }
 
 /* ── Theme toggle ── */
 .theme-toggle { background: none; border: 1px solid var(--bdr-subtle); color: var(--tx-muted); width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s; flex-shrink: 0; }
@@ -1463,30 +4221,82 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .layout { display: flex; flex: 1; overflow: hidden; }
 
 /* ── Sidebar ── */
-.sidebar { width: 220px; flex-shrink: 0; background: var(--bg-surface); border-right: 1px solid var(--bdr-subtle); overflow-y: auto; padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; }
+.sidebar { width: 220px; flex-shrink: 0; background: var(--bg-surface); border-right: 1px solid var(--bdr-subtle); overflow-y: auto; padding: 16px 8px; display: flex; flex-direction: column; gap: 8px; }
 .sidebar::-webkit-scrollbar { width: 4px; }
 .sidebar::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
 .mini-cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; padding: 0 2px; }
-.cal-nav-btn { background: none; border: none; color: var(--tx-dim); cursor: pointer; font-size: 16px; padding: 2px 6px; border-radius: 4px; transition: color 0.15s; }
+.cal-nav-btn { background: none; border: none; color: var(--tx-dim); cursor: pointer; font-size: 19px; padding: 2px 6px; border-radius: 4px; transition: color 0.15s; }
 .cal-nav-btn:hover { color: var(--accent); }
-.mini-cal-month { font-size: 11px; color: var(--tx-secondary); font-family: 'DM Mono', monospace; }
+.mini-cal-month {
+  font-size: 15px; font-weight: 500;
+  color: var(--tx-heading);
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  letter-spacing: -0.015em;
+  font-feature-settings: 'ss01', 'cv11';
+}
 .mini-calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--bdr-subtle); }
-.mini-cal-day-label { text-align: center; font-size: 10px; color: var(--tx-label-dim); padding: 3px 0; font-family: 'DM Mono', monospace; }
-.mini-cal-cell { text-align: center; font-size: 11px; padding: 3px 1px; border-radius: 4px; cursor: pointer; color: var(--tx-dim); font-family: 'DM Mono', monospace; transition: background 0.12s; }
+.mini-cal-day-label {
+  text-align: center; font-size: 12px; font-weight: 600;
+  color: var(--tx-label-dim); padding: 3px 0;
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  letter-spacing: 0.02em;
+}
+.mini-cal-cell {
+  text-align: center; font-size: 14px; font-weight: 500;
+  padding: 3px 1px; border-radius: 4px; cursor: pointer;
+  color: var(--tx-dim);
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  transition: background 0.12s;
+}
 .mini-cal-cell:hover { background: var(--bdr-subtle); color: var(--tx-secondary); }
 .mini-cal-cell.in-week { background: var(--bg-active); color: var(--tasks-tx); }
 .mini-cal-cell.selected-day { background: var(--accent-bg); color: var(--accent); font-weight: 600; outline: 1px solid var(--accent-border); }
 .mini-cal-cell.today { background: var(--accent) !important; color: var(--today-badge-tx) !important; font-weight: 700; }
 .mini-cal-cell.empty { cursor: default; }
-.sidebar-section { margin-bottom: 20px; }
-.sidebar-label { font-size: 11px; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 8px; }
+.sidebar-section { margin-bottom: 0; padding: 0 10px 12px; background: var(--bg-card); border: 1px solid var(--bdr-faint); border-radius: 8px; }
+
+/* Section header — used by both manager and employee sections */
+.sidebar-sec-header { display: flex; align-items: center; justify-content: space-between; padding: 11px 0 9px; margin-bottom: 8px; border-bottom: 1px solid var(--bdr-faint); }
+.sidebar-sec-title { font-size: 16px; font-weight: 700; color: var(--tx-primary); letter-spacing: 0.01em; font-family: 'Satoshi', sans-serif; }
+.sidebar-sec-sub { font-size: 13px; color: var(--tx-faintest); font-style: italic; }
+.sidebar-sec-count { font-size: 13px; font-family: 'DM Mono', monospace; color: var(--tx-ghost); background: var(--bg-hover); border: 1px solid var(--bdr-faint); border-radius: 10px; padding: 1px 7px; flex-shrink: 0; }
+.sidebar-sec-header.clickable { cursor: pointer; }
+.sidebar-sec-header.clickable:hover .sidebar-sec-title { color: var(--accent); }
+
+/* Legacy sidebar label — kept for any remaining usages */
+.sidebar-label { font-size: 14px; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 8px; }
 .sidebar-label.underline-link { cursor: pointer; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
-.employee-chip { border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 600; color: #000; margin-bottom: 5px; text-align: center; cursor: pointer; transition: opacity 0.15s; }
+.employee-chip { border-radius: 6px; padding: 6px 10px; font-size: 15px; font-weight: 600; color: #000; margin-bottom: 5px; text-align: center; cursor: pointer; transition: opacity 0.15s; }
+
+.wh-row { margin-bottom: 10px; }
+.wh-head {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 4px;
+}
+.wh-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.wh-name {
+  flex: 1; min-width: 0;
+  font-size: 13px; color: var(--tx-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wh-hours { font-size: 12px; color: var(--tx-secondary); flex-shrink: 0; }
+.wh-bar {
+  height: 4px; border-radius: 3px;
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+.wh-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width .25s ease;
+}
 .employee-chip:hover { opacity: 0.85; }
-.sidebar-empty { font-size: 11px; color: var(--tx-faintest); font-style: italic; }
+.sidebar-empty { font-size: 14px; color: var(--tx-faintest); font-style: italic; padding: 2px 0 4px; }
 .open-shifts-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
 .open-shifts-header .sidebar-label { margin-bottom: 0; }
-.open-shifts-week { font-size: 10px; color: var(--tx-faintest); font-style: italic; }
+.open-shifts-week { font-size: 13px; color: var(--tx-faintest); font-style: italic; }
 
 .open-shift-item {
   display: flex;
@@ -1496,16 +4306,20 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
   align-items: flex-start;
 }
 .open-shift-day {
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--tx-secondary);
   width: 28px;
   flex-shrink: 0;
   padding-top: 1px;
 }
-.open-shift-gaps { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.open-shift-gaps { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.open-shift-gap-row { display: flex; }
 .open-shift-gap {
-  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
   font-family: 'DM Mono', monospace;
   color: var(--tx-dim);
   background: var(--bg-hover);
@@ -1514,70 +4328,442 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
   padding: 1px 5px;
   white-space: nowrap;
 }
+.open-shift-pos {
+  font-size: 12px;
+  font-family: 'Satoshi', sans-serif;
+  color: var(--tx-faintest);
+}
 
-.request-item { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--bdr-subtle); color: var(--tx-muted); }
-.request-name { color: var(--tx-secondary); font-weight: 500; }
-.request-type { font-size: 11px; color: var(--accent); }
+.request-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; padding: 8px 0;
+  border-bottom: 1px solid var(--bdr-subtle);
+  color: var(--tx-muted);
+}
+.request-type-tag {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--tx-faint);
+  background: var(--bdr-subtle); border-radius: 4px;
+  padding: 2px 6px; flex-shrink: 0; font-family: 'DM Mono', monospace;
+}
+.request-label {
+  flex: 1; color: var(--tx-secondary); font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-family: 'DM Mono', monospace; font-size: 12px;
+}
+.request-status-pill {
+  font-size: 10px; font-weight: 700; padding: 2px 8px;
+  border-radius: 100px; flex-shrink: 0; text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.request-status-pill.status--pending  { background: var(--warn-bg); color: var(--warn-text); }
+.request-status-pill.status--approved { background: var(--ok-bg); color: var(--ok-text); }
+.request-status-pill.status--denied   { background: var(--deny-bg); color: var(--err-text); }
+.request-status-pill.status--open     { background: var(--bdr-subtle); color: var(--tx-muted); }
+.request-status-pill.status--claimed  { background: var(--accent-bg); color: var(--accent); }
+
+.sidebar-view-all {
+  font-size: 12px; color: var(--accent); cursor: pointer;
+  padding: 8px 0 2px; text-align: center; font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.sidebar-view-all:hover { text-decoration: underline; }
+
+/* Sidebar tradeboard items (manager) */
+.sb-trade-item {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--bdr-subtle);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.sb-trade-row { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.sb-trade-name { font-size: 15px; font-weight: 600; color: var(--tx-secondary); }
+.sb-trade-time { font-size: 13px; font-family: 'DM Mono', monospace; color: var(--tx-dim); white-space: nowrap; }
+.sb-trade-meta { display: flex; gap: 6px; align-items: center; }
+.sb-trade-date { font-size: 13px; color: var(--tx-faintest); font-family: 'DM Mono', monospace; }
+.sb-trade-pos  { font-size: 12px; color: var(--tx-faintest); background: var(--bg-hover); border-radius: 3px; padding: 0 4px; }
+.sb-trade-claim { display: flex; justify-content: space-between; align-items: center; margin-top: 2px; }
+.sb-trade-claimer { font-size: 13px; color: var(--accent); }
+.sb-trade-actions { display: flex; gap: 4px; }
+.sb-approve-btn, .sb-deny-btn {
+  font-size: 14px; font-weight: 700; border: none; border-radius: 4px; padding: 2px 7px; cursor: pointer; transition: opacity 0.15s;
+}
+.sb-approve-btn { background: #1a7a3a; color: #d6f5e0; }
+.sb-approve-btn:hover { opacity: 0.85; }
+.sb-deny-btn    { background: #6b1a1a; color: #f5d6d6; }
+.sb-deny-btn:hover    { opacity: 0.85; }
+
+/* Sidebar requests items (manager) */
+.sb-req-item {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--bdr-subtle);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.sb-req-row { display: flex; justify-content: space-between; align-items: baseline; }
+.sb-req-name { font-size: 15px; font-weight: 600; color: var(--tx-secondary); }
+.sb-req-type { font-size: 13px; color: var(--accent); }
+.sb-req-dates { font-size: 13px; font-family: 'DM Mono', monospace; color: var(--tx-dim); }
+.sb-req-actions { display: flex; gap: 4px; margin-top: 3px; }
+.sb-req-status { font-size: 13px; font-weight: 600; margin-top: 2px; text-transform: capitalize; }
+.sb-req-status.approved { color: #4caf50; }
+.sb-req-status.denied   { color: var(--accent); }
+
+.my-shift-item { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--bdr-subtle); }
+.my-shift-pos { font-size: 15px; font-weight: 600; color: var(--tx-secondary); }
+.my-shift-time {
+  font-size: 13px; font-weight: 500;
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--tx-dim);
+}
+
+.trade-preview-item { padding: 6px 0; border-bottom: 1px solid var(--bdr-subtle); cursor: pointer; transition: background 0.12s; border-radius: 4px; }
+.trade-preview-item:hover { background: var(--bg-hover); }
+.trade-preview-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
+.trade-preview-name { font-size: 15px; font-weight: 600; color: var(--tx-secondary); }
+.trade-preview-day { font-size: 13px; font-weight: 700; color: var(--tx-dim); }
+.trade-preview-time { font-size: 13px; font-family: 'DM Mono', monospace; color: var(--accent); }
 
 /* ── Main ── */
 .cal-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.dept-name-bar { padding: 10px 20px 0; font-size: 18px; font-weight: 700; letter-spacing: 0.02em; color: var(--tx-heading); font-family: 'DM Sans', sans-serif; flex-shrink: 0; }
+.dept-name-bar { padding: 10px 20px 0; font-size: 21px; font-weight: 700; letter-spacing: 0.02em; color: var(--tx-heading); font-family: 'Satoshi', sans-serif; flex-shrink: 0; }
 .cal-toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0; }
-.cal-nav-group { display: flex; align-items: center; gap: 8px; flex: 1; }
-.toolbar-btn { background: var(--bdr-subtle); border: none; color: var(--tx-secondary); width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; transition: background 0.15s; }
+.cal-nav-group { display: flex; align-items: center; gap: 8px; }
+.toolbar-btn { background: var(--bdr-subtle); border: none; color: var(--tx-secondary); width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 19px; display: flex; align-items: center; justify-content: center; transition: background 0.15s; }
 .toolbar-btn:hover { background: var(--bg-active); color: var(--accent); }
-.cal-range-label { font-size: 14px; font-weight: 600; color: var(--tx-primary); font-family: 'DM Mono', monospace; white-space: nowrap; }
-.today-btn { background: none; border: 1px solid var(--bdr-accent); color: var(--tx-muted); padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s, color 0.15s; }
+.cal-range-label {
+  font-size: 18px; font-weight: 500;
+  color: var(--tx-heading);
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+  font-feature-settings: 'ss01', 'cv11';
+}
+.today-btn { background: none; border: 1px solid var(--bdr-accent); color: var(--tx-muted); padding: 4px 12px; border-radius: 6px; font-size: 15px; cursor: pointer; font-family: 'Satoshi', sans-serif; transition: border-color 0.15s, color 0.15s; }
 .today-btn:hover { border-color: var(--accent); color: var(--accent); }
 .cal-view-group { display: flex; gap: 2px; background: var(--bdr-subtle); border-radius: 8px; padding: 3px; }
-.view-btn { background: none; border: none; color: var(--tx-muted); padding: 4px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: background 0.15s, color 0.15s; }
+.cal-view-group.push-right { margin-left: auto; }
+.view-btn { background: none; border: none; color: var(--tx-muted); padding: 4px 14px; border-radius: 6px; font-size: 15px; cursor: pointer; font-family: 'Satoshi', sans-serif; transition: background 0.15s, color 0.15s; }
 .view-btn.active { background: var(--bg-active); color: var(--accent); font-weight: 600; }
-.add-shift-btn { background: var(--accent); border: none; color: #fff; padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px; font-family: 'DM Sans', sans-serif; transition: background 0.15s, transform 0.12s; white-space: nowrap; }
+.add-split-btn {
+  position: relative;
+  display: inline-flex; align-items: stretch;
+  font-family: 'Satoshi', 'Inter', sans-serif;
+}
+.add-split-main,
+.add-split-toggle {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background .15s, transform .12s;
+}
+.add-split-main {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px 7px 12px;
+  border-radius: 8px 0 0 8px;
+  font-size: 15px; font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  border-right: 1px solid rgba(255, 255, 255, 0.22);
+}
+.add-split-plus { font-size: 16px; line-height: 1; }
+.add-split-main:hover { background: var(--accent-hover); }
+.add-split-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px;
+  border-radius: 0 8px 8px 0;
+}
+.add-split-toggle svg { transition: transform .15s; }
+.add-split-toggle:hover,
+.add-split-toggle--open { background: var(--accent-hover); }
+
+.add-split-menu {
+  position: absolute; top: calc(100% + 6px); right: 0;
+  min-width: 170px;
+  background: var(--bg-modal);
+  border: 1px solid var(--bdr-medium);
+  border-radius: 10px;
+  padding: 5px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.45), 0 4px 12px rgba(0,0,0,0.25);
+  z-index: 200;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.add-split-option {
+  display: flex; align-items: center; gap: 8px;
+  background: none; border: none;
+  color: var(--tx-primary);
+  font-family: inherit; font-size: 14px; font-weight: 500;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: background .1s, color .1s;
+  letter-spacing: -0.01em;
+}
+.add-split-option:hover { background: var(--bg-hover); color: var(--tx-heading); }
+.add-split-option.active { color: var(--accent); }
+.add-split-check {
+  width: 14px; display: inline-flex; align-items: center; justify-content: center;
+  color: var(--accent); font-weight: 700;
+}
+.qc-event-tag {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px; font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(74,144,164,0.18);
+  color: #4A90A4;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.add-shift-btn { background: var(--accent); border: none; color: #fff; padding: 7px 16px; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px; font-family: 'Satoshi', sans-serif; transition: background 0.15s, transform 0.12s; white-space: nowrap; }
+
+.zoom-group { display: flex; align-items: center; gap: 6px; padding: 0 4px; }
+.zoom-icon { color: var(--tx-dim); flex-shrink: 0; }
+.zoom-slider {
+  -webkit-appearance: none; appearance: none;
+  width: 80px; height: 4px;
+  background: var(--bdr-subtle); border-radius: 2px; outline: none; cursor: pointer;
+}
+.zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 13px; height: 13px; border-radius: 50%;
+  background: var(--accent); cursor: pointer; transition: transform 0.1s;
+}
+.zoom-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+.fit-btn {
+  background: none; border: 1px solid var(--bdr-accent); color: var(--tx-muted);
+  padding: 3px 10px; border-radius: 6px; font-size: 14px; cursor: pointer;
+  font-family: 'Satoshi', sans-serif; transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.fit-btn:hover { border-color: var(--accent); color: var(--accent); }
 .add-shift-btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
 
 /* ── Shared time-grid (Day + Week) ── */
 .cal-grid-wrapper { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .cal-body { flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; }
-.cal-header-row { display: flex; border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0; background: var(--bg-surface); position: sticky; top: 0; z-index: 2; }
+.cal-header-row {
+  display: flex; flex-shrink: 0;
+  background: var(--bg-modal);
+  border-bottom: 2px solid var(--bdr-strong);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+  position: sticky; top: 0; z-index: 20;
+}
+[data-theme="light"] .cal-header-row {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  border-bottom-color: var(--bdr-medium);
+}
 .time-gutter { width: 60px; flex-shrink: 0; }
 
 .day-header {
   flex: 1; text-align: center; padding: 10px 4px;
   display: flex; flex-direction: column; align-items: center; gap: 3px;
-  border-left: 1px solid var(--bdr-subtle);
+  border-left: 1px solid var(--bdr-strong);
   cursor: pointer; transition: background 0.15s;
 }
 .day-header:hover { background: var(--bg-hover); }
 .day-header.single-day { cursor: default; }
 .day-header.single-day:hover { background: transparent; }
-.day-letter { font-size: 11px; color: var(--tx-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
-.day-number { font-size: 18px; font-family: 'DM Mono', monospace; color: var(--tx-muted); width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-weight: 500; }
-.day-month-label { font-size: 11px; color: var(--tx-dim); font-style: italic; }
+.day-letter { font-size: 14px; color: var(--tx-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+.day-number { font-size: 21px; font-family: 'DM Mono', monospace; color: var(--tx-muted); width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-weight: 500; }
 .day-header.today .day-letter { color: var(--accent); }
 .day-header.today .day-number { background: var(--accent); color: var(--today-badge-tx); font-weight: 700; }
 
 .cal-body::-webkit-scrollbar { width: 6px; }
 .cal-body::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
-.cal-inner { display: flex; min-height: fit-content; }
-.time-column { width: 60px; flex-shrink: 0; }
-.time-slot-label { height: 60px; padding: 4px 8px 0; font-size: 10px; color: var(--tx-faintest); font-family: 'DM Mono', monospace; display: flex; align-items: flex-start; justify-content: flex-end; }
+.cal-inner { display: flex; min-height: fit-content; position: relative; }
+.time-column { width: 60px; flex-shrink: 0; position: relative; }
+.coverage-strip {
+  position: absolute; top: 0; right: 0;
+  width: 3px; height: 100%;
+  pointer-events: none;
+  z-index: 2;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.coverage-seg {
+  position: absolute; left: 0; right: 0;
+  background: var(--accent);
+  transition: opacity .25s ease;
+}
+.time-slot-label { height: var(--cell-h, 60px); padding: 4px 8px 0; font-size: 13px; color: var(--tx-faintest); font-family: 'DM Mono', monospace; display: flex; align-items: flex-start; justify-content: flex-end; }
 
-.day-column { flex: 1; position: relative; border-left: 1px solid var(--bdr-strong); cursor: crosshair; }
+.day-column {
+  flex: 1; position: relative;
+  border-left: 1px solid var(--bdr-strong);
+  cursor: crosshair;
+  background:
+    linear-gradient(180deg,
+      rgba(96, 130, 180, 0.055)  0%,    /* early morning — cool blue */
+      rgba(255, 190, 130, 0.050) 25%,   /* sunrise — peach */
+      rgba(255, 220, 155, 0.038) 42%,   /* midday — warm gold */
+      rgba(255, 190, 130, 0.050) 60%,   /* afternoon — peach */
+      rgba(110, 115, 180, 0.060) 85%,   /* evening — indigo */
+      rgba(60,  70, 130, 0.075) 100%    /* night — deep blue */
+    );
+}
+[data-theme="light"] .day-column {
+  background:
+    linear-gradient(180deg,
+      rgba(100, 145, 200, 0.08) 0%,
+      rgba(255, 200, 150, 0.07) 28%,
+      rgba(255, 225, 170, 0.05) 45%,
+      rgba(255, 190, 140, 0.07) 62%,
+      rgba(130, 120, 195, 0.08) 85%,
+      rgba(85,  95, 150, 0.09)  100%
+    );
+}
 .day-column.is-dragging-col { background: var(--accent-drag); }
-.hour-cell { height: 60px; border-bottom: 1px solid var(--bdr-faint); }
+.day-column.no-edit { cursor: default; }
+.hour-cell { height: var(--cell-h, 60px); border-bottom: 1px solid var(--bdr-faint); }
 .hour-cell:nth-child(even) { background: var(--hour-even); }
 
 .ghost-block { border: 2px solid var(--accent); background: var(--accent-bg); border-radius: 6px; display: flex; align-items: flex-start; padding: 4px 8px; pointer-events: none; }
-.ghost-label { font-size: 11px; color: var(--accent); font-family: 'DM Mono', monospace; font-weight: 500; white-space: nowrap; }
+.ghost-label { font-size: 14px; color: var(--accent); font-family: 'DM Mono', monospace; font-weight: 500; white-space: nowrap; }
 
-.shift-block { position: absolute; left: 3px; right: 3px; border-radius: 6px; padding: 5px 8px; cursor: pointer; overflow: hidden; z-index: 2; transition: filter 0.15s; }
+.shift-block { position: absolute; border-radius: 6px; padding: 5px 8px; cursor: pointer; overflow: hidden; z-index: 2; transition: filter 0.15s; }
+
+/* Hatched unavailability overlay — shown on the day column for the
+   selected shift's assignee. Sits behind shift blocks (z-index 1) so the
+   active shift still reads on top. */
+.unavailability-overlay {
+  position: absolute; left: 2px; right: 2px;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 23, 68, 0.14), rgba(255, 23, 68, 0.14) 6px,
+    transparent 6px, transparent 12px
+  );
+  border: 1px dashed rgba(255, 23, 68, 0.45);
+  border-radius: 5px;
+  /* z-index 1 sits below shift-block (z-index 2). `!important` on
+     pointer-events is deliberate — any future rule must not accidentally
+     make this block mousedown, or drag-to-create / shift clicks break. */
+  z-index: 1;
+  pointer-events: none !important;
+  display: flex; align-items: flex-start;
+}
+.unavailability-overlay-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
+  color: rgba(255, 23, 68, 0.9);
+  background: rgba(255,255,255,0.75);
+  padding: 1px 6px; border-radius: 3px;
+  margin: 3px 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: calc(100% - 8px);
+  font-family: 'DM Mono', monospace;
+  pointer-events: none !important;
+}
 .shift-block:hover { filter: brightness(1.12); }
-.shift-employee { font-size: 12px; font-weight: 700; color: rgba(0,0,0,0.85); line-height: 1.2; }
-.shift-time { font-size: 10px; color: rgba(0,0,0,0.6); font-family: 'DM Mono', monospace; }
+.shift-action-btn {
+  margin-top: auto;
+  width: 100%;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: .02em;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: background .12s ease, border-color .12s ease, transform .08s ease;
+}
+.shift-action-btn svg { flex-shrink: 0; opacity: .85; }
+.shift-action-btn:active { transform: translateY(1px); }
+
+.shift-action-btn--take {
+  background: rgba(255, 255, 255, 0.92);
+  color: #0a0a14;
+  border-color: rgba(0, 0, 0, 0.08);
+}
+.shift-action-btn--take:hover {
+  background: #fff;
+  border-color: rgba(0, 0, 0, 0.14);
+}
+
+.shift-action-btn--post {
+  background: rgba(12, 12, 18, 0.55);
+  color: rgba(255, 255, 255, 0.96);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+.shift-action-btn--post:hover {
+  background: rgba(12, 12, 18, 0.72);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+.cmd-create-mode .shift-block { cursor: crosshair !important; }
+.shift-block { position: relative; display: flex; flex-direction: column; }
+.shift-block > * { position: relative; z-index: 1; }
+.shift-block--active::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(to right, rgba(0,0,0,0.18) 0%, rgba(0,0,0,0.18) var(--shift-progress, 0%), transparent var(--shift-progress, 0%));
+  pointer-events: none; z-index: 0;
+}
+.shift-block--active { animation: shift-pulse 2.4s ease-in-out infinite; }
+@keyframes shift-pulse {
+  0%, 100% { filter: brightness(1); }
+  50%      { filter: brightness(1.06); }
+}
+.shift-employee {
+  font-size: 14px; font-weight: 600;
+  color: var(--shift-text, rgba(0,0,0,0.9));
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.shift-time {
+  font-size: 11px; font-weight: 500;
+  color: var(--shift-text-dim, rgba(0,0,0,0.55));
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  margin-top: 1px;
+  opacity: .85;
+}
+.shift-pos-badge {
+  font-size: 10px; font-weight: 600;
+  color: var(--shift-text-dim, rgba(0,0,0,0.55));
+  background: var(--shift-badge-bg, rgba(0,0,0,0.08));
+  border-radius: 3px; padding: 1px 5px;
+  display: inline-block;
+  letter-spacing: 0.015em;
+}
+.shift-block--open .shift-employee { color: rgba(240, 230, 211, 0.85); font-style: italic; }
+.shift-block--open .shift-time { color: rgba(240, 230, 211, 0.55); }
+.shift-block--open .shift-pos-badge { color: rgba(240, 230, 211, 0.65); background: rgba(240, 230, 211, 0.1); }
+.shift-block--open:hover { background: rgba(240, 230, 211, 0.12) !important; filter: none; }
+
+[data-theme="light"] .shift-block--open .shift-employee { color: rgba(0, 0, 0, 0.8); }
+[data-theme="light"] .shift-block--open .shift-time { color: rgba(0, 0, 0, 0.55); }
+[data-theme="light"] .shift-block--open .shift-pos-badge { color: rgba(0, 0, 0, 0.6); background: rgba(0, 0, 0, 0.06); }
+[data-theme="light"] .shift-block--open:hover { background: rgba(0, 0, 0, 0.05) !important; }
+.shift-meta-row { display: flex; align-items: center; gap: 5px; margin-top: 3px; flex-wrap: wrap; }
+.shift-task-status {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px; font-weight: 700; line-height: 1;
+  padding: 2px 6px 2px 5px; border-radius: 100px;
+  background: rgba(220, 38, 38, 0.28);
+  color: #5a0f0f;
+  font-family: 'DM Mono', monospace;
+  letter-spacing: 0.02em;
+}
+.shift-task-status svg { flex-shrink: 0; }
+.shift-task-status--done {
+  background: rgba(22, 130, 70, 0.28);
+  color: #0f3d23;
+}
 
 .event-block { position: absolute; left: 3px; right: 3px; border-radius: 6px; overflow: hidden; z-index: 1; }
-.event-block-title { font-size: 11px; font-weight: 700; color: #4A90A4; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.event-block-time  { font-size: 9px; color: rgba(74,144,164,0.8); font-family: 'DM Mono', monospace; }
+.event-block--clickable:hover {
+  background: rgba(74,144,164,0.28) !important;
+  border-color: rgba(74,144,164,0.75) !important;
+}
+.event-block-title { font-size: 14px; font-weight: 700; color: #4A90A4; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event-block-time  { font-size: 12px; color: rgba(74,144,164,0.8); font-family: 'DM Mono', monospace; }
 
 .month-event-pill {
   display: flex; align-items: center; gap: 5px;
@@ -1585,10 +4771,44 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
   background: rgba(74,144,164,0.15); border-left: 2px solid #4A90A4;
 }
 .month-event-dot  { width: 5px; height: 5px; border-radius: 50%; background: #4A90A4; flex-shrink: 0; }
-.month-event-name { font-size: 11px; font-weight: 600; color: #4A90A4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.month-event-name { font-size: 14px; font-weight: 600; color: #4A90A4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
 
-.current-time-line { position: absolute; left: 0; right: 0; height: 2px; background: #EF4444; z-index: 5; box-shadow: 0 0 8px #EF444488; pointer-events: none; }
-.current-time-line::before { content: ''; position: absolute; left: -4px; top: -4px; width: 10px; height: 10px; background: #EF4444; border-radius: 50%; }
+.now-indicator {
+  position: absolute; left: 0; right: 0; height: 2px;
+  background: linear-gradient(to right, #EF4444 0%, rgba(239, 68, 68, 0.6) 100%);
+  z-index: 15; pointer-events: none;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.55);
+}
+.now-dot {
+  position: absolute; left: -5px; top: -5px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: #EF4444;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25), 0 0 14px rgba(239, 68, 68, 0.7);
+  animation: now-pulse 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes now-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25), 0 0 10px rgba(239, 68, 68, 0.6); transform: scale(1); }
+  50%      { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0),    0 0 18px rgba(239, 68, 68, 0.9); transform: scale(1.15); }
+}
+.now-label {
+  position: absolute; left: 10px; top: -10px;
+  font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 700;
+  padding: 2px 8px; border-radius: 4px;
+  background: #EF4444; color: #fff;
+  letter-spacing: .03em;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.45);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Week view: single indicator spanning the grid, dot/label positioned at today's column. */
+.now-indicator--week { left: 60px; right: 0; }
+.now-indicator--week .now-dot   { left: calc((100% / 7) * var(--today-col, 0) - 5px); }
+.now-indicator--week .now-label { left: calc((100% / 7) * var(--today-col, 0) + 10px); }
+@media (max-width: 959.98px) {
+  .now-indicator--week { left: 38px; }
+}
 
 /* ── Hours of operation marker lines ── */
 .hours-op-line {
@@ -1599,7 +4819,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .hours-op-line.close { background: rgba(248, 113, 113, 0.65); box-shadow: 0 0 6px rgba(248,113,113,0.3); }
 .hours-line-label {
   position: absolute; right: 6px; bottom: 4px;
-  font-size: 9px; font-family: 'DM Mono', monospace; font-weight: 600;
+  font-size: 12px; font-family: 'DM Mono', monospace; font-weight: 600;
   white-space: nowrap; padding: 1px 5px; border-radius: 3px;
   pointer-events: none; line-height: 13px;
 }
@@ -1618,7 +4838,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
   border-bottom: 1px solid var(--bdr-subtle);
   flex-shrink: 0;
 }
-.month-dow { text-align: center; padding: 10px 0; font-size: 11px; font-weight: 600; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.08em; }
+.month-dow { text-align: center; padding: 10px 0; font-size: 14px; font-weight: 600; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.08em; }
 
 .month-grid {
   display: grid;
@@ -1647,7 +4867,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .month-cell-num {
   display: inline-flex;
   font-family: 'DM Mono', monospace;
-  font-size: 13px;
+  font-size: 16px;
   color: var(--tx-dim);
   line-height: 1;
   margin-bottom: 6px;
@@ -1673,61 +4893,89 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 }
 .month-shift-pill:hover { filter: brightness(1.12); }
 .pill-dot { width: 5px; height: 5px; border-radius: 50%; background: rgba(0,0,0,0.4); flex-shrink: 0; }
-.pill-name { font-size: 11px; font-weight: 600; color: rgba(0,0,0,0.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
-.pill-time { font-size: 10px; color: rgba(0,0,0,0.6); font-family: 'DM Mono', monospace; white-space: nowrap; }
+.pill-name { font-size: 14px; font-weight: 600; color: rgba(0,0,0,0.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.pill-time { font-size: 13px; color: rgba(0,0,0,0.6); font-family: 'DM Mono', monospace; white-space: nowrap; }
 
-.month-shift-more { font-size: 11px; color: var(--tx-dim); padding: 2px 6px; cursor: pointer; }
+.month-shift-more { font-size: 14px; color: var(--tx-dim); padding: 2px 6px; cursor: pointer; }
 .month-shift-more:hover { color: var(--accent); }
 
 /* ── Shared form styles ── */
 .form-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
 .form-row { display: flex; gap: 10px; }
 .form-row .form-group { flex: 1; }
-.form-group label { font-size: 10px; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
+.form-group label { font-size: 13px; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
 .label-optional { font-weight: 400; text-transform: none; font-style: italic; letter-spacing: 0; color: var(--tx-faintest); }
 .form-group select,
 .form-group input[type="time"],
-.form-group input[type="text"] { background: var(--bg-input); border: 1px solid var(--bdr-accent); color: var(--tx-primary); padding: 7px 10px; border-radius: 8px; font-size: 12px; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; }
+.form-group input[type="text"] { background: var(--bg-input); border: 1px solid var(--bdr-accent); color: var(--tx-primary); padding: 7px 10px; border-radius: 8px; font-size: 15px; font-family: 'Satoshi', sans-serif; outline: none; transition: border-color 0.15s; }
 .form-group select:focus, .form-group input:focus { border-color: var(--accent); }
 
 /* ── Quick-create popover ── */
 .quick-create-popover { position: fixed; width: 290px; background: var(--bg-modal); border: 1px solid var(--bdr-pop); border-radius: 14px; padding: 18px 20px 20px; box-shadow: 0 20px 60px var(--bg-moverlay), 0 0 0 1px var(--accent-bg); z-index: 200; }
 .qc-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 4px; }
-.qc-time-badge { background: var(--accent-bg); color: var(--accent); font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--accent-border); }
-.qc-close { background: none; border: none; color: var(--tx-dim); cursor: pointer; font-size: 13px; transition: color 0.15s; padding: 2px 4px; }
+.qc-time-badge { background: var(--accent-bg); color: var(--accent); font-family: 'DM Mono', monospace; font-size: 16px; font-weight: 500; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--accent-border); }
+.qc-close { background: none; border: none; color: var(--tx-dim); cursor: pointer; font-size: 16px; transition: color 0.15s; padding: 2px 4px; }
 .qc-close:hover { color: var(--tx-secondary); }
-.qc-date-label { font-size: 12px; color: var(--tx-dim); margin-bottom: 16px; font-style: italic; }
+.qc-date-label { font-size: 15px; color: var(--tx-dim); margin-bottom: 16px; font-style: italic; }
 .qc-actions { display: flex; gap: 8px; margin-top: 4px; }
-.qc-cancel { flex: 1; background: none; border: 1px solid var(--bdr-accent); color: var(--tx-muted); padding: 8px; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 13px; }
+.qc-cancel { flex: 1; background: none; border: 1px solid var(--bdr-accent); color: var(--tx-muted); padding: 8px; border-radius: 8px; cursor: pointer; font-family: 'Satoshi', sans-serif; font-size: 16px; }
 .qc-cancel:hover { border-color: var(--bdr-medium); color: var(--tx-secondary); }
-.qc-confirm { flex: 2; background: var(--accent); border: none; color: #fff; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.15s, transform 0.12s; }
+.qc-confirm { flex: 2; background: var(--accent); border: none; color: #fff; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-family: 'Satoshi', sans-serif; font-size: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.15s, transform 0.12s; }
 .qc-confirm:hover { background: var(--accent-hover); transform: translateY(-1px); }
 
 /* ── Full modal ── */
 .modal-overlay { position: fixed; inset: 0; background: var(--bg-moverlay); display: flex; align-items: center; justify-content: center; z-index: 300; backdrop-filter: blur(4px); }
 .modal { background: var(--bg-modal); border: 1px solid var(--bdr-accent); border-radius: 14px; padding: 28px; width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
-.modal-title { font-size: 18px; font-weight: 700; color: var(--tx-primary); margin-bottom: 0; }
+.modal.modal-add-shift {
+  width: 520px;
+  max-width: min(520px, calc(100vw - 32px));
+  max-height: min(92vh, calc(100vh - 32px));
+  padding: 32px;
+}
+.modal-title { font-size: 21px; font-weight: 700; color: var(--tx-primary); margin-bottom: 0; }
 .modal:not(.stm-modal) .modal-title { margin-bottom: 20px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-.modal-cancel { background: none; border: 1px solid var(--bdr-accent); color: var(--tx-muted); padding: 8px 18px; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 13px; }
-.modal-confirm { background: var(--accent); border: none; color: #fff; padding: 8px 18px; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 700; transition: background 0.15s; }
+.modal-cancel { background: none; border: 1px solid var(--bdr-accent); color: var(--tx-muted); padding: 8px 18px; border-radius: 8px; cursor: pointer; font-family: 'Satoshi', sans-serif; font-size: 16px; }
+.modal-cancel--danger {
+  border-color: var(--err-border);
+  color: var(--err-text);
+  margin-right: auto; /* push Delete to the far left */
+}
+.modal-cancel--danger:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+.modal-confirm { background: var(--accent); border: none; color: #fff; padding: 8px 18px; border-radius: 8px; cursor: pointer; font-family: 'Satoshi', sans-serif; font-size: 16px; font-weight: 700; transition: background 0.15s; }
 .modal-confirm:hover { background: var(--accent-hover); }
+.modal.modal-sm { width: 360px; padding: 24px; }
+.modal-body-text { font-size: 14px; color: var(--tx-secondary); margin: 0 0 8px; line-height: 1.5; }
+.modal-confirm--danger { background: var(--danger-btn); }
+.modal-confirm--danger:hover { background: var(--danger-btn-h); }
 
 /* ── Shift detail popover ── */
 .shift-popover { position: fixed; background: var(--bg-modal); border: 1px solid var(--bdr-accent); border-radius: 12px; padding: 16px 18px; width: 220px; box-shadow: 0 12px 40px rgba(0,0,0,0.3); z-index: 150; }
-.popover-close { position: absolute; top: 10px; right: 12px; background: none; border: none; color: var(--tx-dim); cursor: pointer; font-size: 12px; }
+.popover-close { position: absolute; top: 10px; right: 12px; background: none; border: none; color: var(--tx-dim); cursor: pointer; font-size: 15px; }
 .popover-dot { width: 10px; height: 10px; border-radius: 50%; margin-bottom: 8px; }
-.popover-employee { font-size: 15px; font-weight: 700; color: var(--tx-primary); margin-bottom: 4px; }
-.popover-time { font-size: 12px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
-.popover-day { font-size: 12px; color: var(--tx-muted); margin-top: 2px; }
-.popover-notes { font-size: 11px; color: var(--tx-secondary); font-style: italic; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--bdr-accent); }
+.shift-popover--open .popover-dot {
+  background: transparent !important;
+  border: 1.5px dashed rgba(240, 230, 211, 0.6);
+}
+.shift-popover--open .popover-employee { font-style: italic; }
+[data-theme="light"] .shift-popover--open .popover-dot { border-color: rgba(0, 0, 0, 0.5); }
+.popover-employee { font-size: 18px; font-weight: 700; color: var(--tx-primary); margin-bottom: 4px; }
+.popover-time { font-size: 15px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
+.popover-day { font-size: 15px; color: var(--tx-muted); margin-top: 2px; }
+.popover-notes { font-size: 14px; color: var(--tx-secondary); font-style: italic; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--bdr-accent); }
 .popover-actions { display: flex; gap: 8px; margin-top: 14px; }
-.popover-edit { flex: 1; background: var(--bdr-accent); border: none; color: var(--tx-secondary); padding: 6px; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
+.popover-edit { flex: 1; background: var(--bdr-accent); border: none; color: var(--tx-secondary); padding: 6px; border-radius: 6px; cursor: pointer; font-size: 15px; font-family: 'Satoshi', sans-serif; transition: background 0.15s; }
 .popover-edit:hover { background: var(--bg-active); color: var(--accent); }
-.popover-tasks { flex: 1; background: var(--tasks-bg); border: none; color: var(--tasks-tx); padding: 6px; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
+.popover-tasks { flex: 1; background: var(--tasks-bg); border: none; color: var(--tasks-tx); padding: 6px; border-radius: 6px; cursor: pointer; font-size: 15px; font-family: 'Satoshi', sans-serif; transition: background 0.15s; }
 .popover-tasks:hover { background: var(--tasks-bg-h); color: var(--tasks-tx-h); }
-.popover-delete { flex: 1; background: var(--err-bg); border: none; color: var(--err-text); padding: 6px; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
+.popover-delete { flex: 1; background: var(--err-bg); border: none; color: var(--err-text); padding: 6px; border-radius: 6px; cursor: pointer; font-size: 15px; font-family: 'Satoshi', sans-serif; transition: background 0.15s; }
 .popover-delete:hover { background: var(--deny-bg-h); }
+.popover-post { flex: 1; background: var(--accent-bg); border: 1px solid var(--accent-border); color: var(--accent); padding: 6px; border-radius: 6px; cursor: pointer; font-size: 15px; font-family: 'Satoshi', sans-serif; transition: background 0.15s, border-color 0.15s; }
+.popover-post:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 .avatar { cursor: pointer; transition: opacity 0.15s, transform 0.15s; }
 .avatar:hover { opacity: 0.85; transform: scale(1.05); }
@@ -1757,7 +5005,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
   width: 80px; height: 80px; border-radius: 50%;
   background: linear-gradient(135deg, #FF1744, #F0E6D3);
   display: flex; align-items: center; justify-content: center;
-  font-size: 26px; font-weight: 700; color: #fff;
+  font-size: 29px; font-weight: 700; color: #fff;
   margin: 0 auto;
   overflow: hidden;
   border: 2px solid var(--accent-border);
@@ -1766,54 +5014,31 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .profile-close {
   position: absolute; top: 16px; right: 16px;
   background: none; border: none; color: var(--tx-faint);
-  font-size: 14px; cursor: pointer;
+  font-size: 17px; cursor: pointer;
   transition: color 0.15s;
 }
 .profile-close:hover { color: var(--accent); }
 .profile-body { padding: 0 24px 20px; text-align: center; }
-.profile-name { font-size: 20px; font-weight: 700; color: var(--tx-heading); margin-bottom: 6px; }
-.profile-email { font-size: 13px; color: var(--tx-faint); margin-bottom: 12px; font-family: 'DM Mono', monospace; }
+.profile-name { font-size: 23px; font-weight: 700; color: var(--tx-heading); margin-bottom: 6px; }
+.profile-email { font-size: 16px; color: var(--tx-faint); margin-bottom: 12px; font-family: 'DM Mono', monospace; }
 .profile-role-badge {
   display: inline-block; padding: 3px 14px; border-radius: 100px;
-  font-size: 11px; font-weight: 600;
+  font-size: 14px; font-weight: 600;
 }
 .profile-role-badge.employee { background: rgba(255,23,68,0.1);  color: #FF4569; }
 .profile-role-badge.manager  { background: rgba(240,230,211,0.1); color: #c8903a; }
 .profile-role-badge.admin    { background: rgba(74,144,164,0.15); color: #4A90A4; }
 .profile-divider { height: 1px; background: var(--bdr-subtle); margin: 0 24px; }
 .profile-info { padding: 16px 24px; }
-.profile-info-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 6px 0; }
+.profile-info-row { display: flex; justify-content: space-between; align-items: center; font-size: 16px; padding: 6px 0; }
 .info-label { color: var(--tx-faint); }
 .info-val { color: var(--tx-secondary); }
-.mono { font-family: 'DM Mono', monospace; }
-.profile-btn {
-  margin: 28px 24px 14px;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  background: none;
-  border: 1px solid var(--bdr-subtle);
-  color: var(--tx-muted);
-  padding: 12px; border-radius: 10px;
-  cursor: pointer;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 14px; font-weight: 600;
-  transition: background 0.15s, border-color 0.15s;
-  width: calc(100% - 48px);
+.mono {
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
 }
-.profile-btn:hover { background: var(--bdr-subtle); border-color: var(--bdr-strong); }
-.settings-btn {
-  margin: 14px 24px auto;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  background: none;
-  border: 1px solid var(--bdr-subtle);
-  color: var(--tx-muted);
-  padding: 12px; border-radius: 10px;
-  cursor: pointer;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 14px; font-weight: 600;
-  transition: background 0.15s, border-color 0.15s;
-  width: calc(100% - 48px);
-}
-.settings-btn:hover { background: var(--bdr-subtle); border-color: var(--bdr-strong); }
 .logout-btn {
   margin: auto 24px 28px;
   display: flex; align-items: center; justify-content: center; gap: 8px;
@@ -1822,8 +5047,8 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
   color: #EF4444;
   padding: 12px; border-radius: 10px;
   cursor: pointer;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 14px; font-weight: 600;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 17px; font-weight: 600;
   transition: background 0.15s, border-color 0.15s;
   width: calc(100% - 48px);
 }
@@ -1836,7 +5061,7 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .manage-btn {
   background: none; border: 1px solid var(--accent); color: var(--accent);
   padding: 5px 14px; border-radius: 8px; cursor: pointer;
-  font-size: 12px; font-weight: 600; font-family: 'DM Sans', sans-serif;
+  font-size: 15px; font-weight: 600; font-family: 'Satoshi', sans-serif;
   transition: background 0.15s, color 0.15s;
 }
 .manage-btn:hover { background: var(--accent); color: #fff; }
@@ -1845,11 +5070,11 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .stm-modal { width: 480px; max-height: 80vh; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
 .stm-header { display: flex; align-items: flex-start; justify-content: space-between; padding: 24px 24px 16px; border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0; }
 .stm-header .modal-title { margin-bottom: 4px; }
-.stm-sub { font-size: 12px; color: var(--tx-faint); font-family: 'DM Mono', monospace; }
-.stm-close { background: none; border: none; color: var(--tx-faint); font-size: 14px; cursor: pointer; padding: 4px 6px; border-radius: 6px; transition: color 0.15s, background 0.15s; flex-shrink: 0; margin-top: 2px; }
+.stm-sub { font-size: 15px; color: var(--tx-faint); font-family: 'DM Mono', monospace; }
+.stm-close { background: none; border: none; color: var(--tx-faint); font-size: 17px; cursor: pointer; padding: 4px 6px; border-radius: 6px; transition: color 0.15s, background 0.15s; flex-shrink: 0; margin-top: 2px; }
 .stm-close:hover { color: var(--accent); background: var(--bg-active); }
-.stm-error { margin: 12px 24px 0; padding: 8px 12px; background: var(--err-bg); border: 1px solid var(--err-border); border-radius: 8px; color: var(--err-text); font-size: 12px; }
-.stm-loading { display: flex; align-items: center; gap: 10px; padding: 32px 24px; color: var(--tx-faint); font-size: 13px; }
+.stm-error { margin: 12px 24px 0; padding: 8px 12px; background: var(--err-bg); border: 1px solid var(--err-border); border-radius: 8px; color: var(--err-text); font-size: 15px; }
+.stm-loading { display: flex; align-items: center; gap: 10px; padding: 32px 24px; color: var(--tx-faint); font-size: 16px; }
 .stm-spinner { width: 18px; height: 18px; border: 2px solid var(--bdr-subtle); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
 
 .stm-lists { flex: 1; overflow-y: auto; padding: 16px 24px; display: flex; flex-direction: column; gap: 12px; }
@@ -1859,9 +5084,9 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .stm-list-card { background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 10px; overflow: hidden; }
 .stm-list-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 8px; }
 .stm-list-meta { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.stm-list-name { font-size: 13px; font-weight: 600; color: var(--tx-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.stm-progress { font-size: 11px; font-weight: 600; font-family: 'DM Mono', monospace; color: var(--tx-faint); background: var(--bg-modal); border: 1px solid var(--bdr-medium); padding: 2px 8px; border-radius: 100px; flex-shrink: 0; }
-.stm-remove-btn { background: none; border: none; color: var(--tx-ghost); font-size: 12px; cursor: pointer; width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; flex-shrink: 0; }
+.stm-list-name { font-size: 16px; font-weight: 600; color: var(--tx-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stm-progress { font-size: 14px; font-weight: 600; font-family: 'DM Mono', monospace; color: var(--tx-faint); background: var(--bg-modal); border: 1px solid var(--bdr-medium); padding: 2px 8px; border-radius: 100px; flex-shrink: 0; }
+.stm-remove-btn { background: none; border: none; color: var(--tx-ghost); font-size: 15px; cursor: pointer; width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; flex-shrink: 0; }
 .stm-remove-btn:hover { background: var(--err-bg); color: var(--err-text); }
 
 .stm-prog-bar { height: 3px; background: var(--bdr-subtle); margin: 0 14px 10px; border-radius: 2px; overflow: hidden; }
@@ -1873,33 +5098,110 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .stm-task-disabled { cursor: default; }
 .stm-checkbox { accent-color: var(--accent); width: 14px; height: 14px; flex-shrink: 0; cursor: pointer; }
 .stm-task-disabled .stm-checkbox { cursor: default; }
-.stm-task-name { font-size: 13px; color: var(--tx-secondary); flex: 1; }
+.stm-task-name { font-size: 16px; color: var(--tx-secondary); flex: 1; }
 .stm-task-name.done { color: var(--tx-ghost); text-decoration: line-through; }
-.stm-no-tasks { padding: 10px 14px; font-size: 12px; color: var(--tx-ghost); font-style: italic; border-top: 1px solid var(--bdr-strong); }
+.stm-no-tasks { padding: 10px 14px; font-size: 15px; color: var(--tx-ghost); font-style: italic; border-top: 1px solid var(--bdr-strong); }
 
-.stm-empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 16px; gap: 6px; text-align: center; color: var(--tx-faint); font-size: 13px; }
-.stm-empty-sub { font-size: 12px; color: var(--tx-ghost); }
+.stm-empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 16px; gap: 6px; text-align: center; color: var(--tx-faint); font-size: 16px; }
+.stm-empty-sub { font-size: 15px; color: var(--tx-ghost); }
 
 .stm-assign-section { padding: 14px 24px 20px; border-top: 1px solid var(--bdr-subtle); flex-shrink: 0; background: var(--bg-surface); }
-.stm-assign-label { font-size: 10px; font-weight: 600; color: var(--tx-faint); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; }
+.stm-assign-label { font-size: 13px; font-weight: 600; color: var(--tx-faint); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; }
 .stm-assign-row { display: flex; gap: 8px; }
-.stm-select { flex: 1; background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary); padding: 8px 10px; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; }
+.stm-select { flex: 1; background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary); padding: 8px 10px; border-radius: 8px; font-size: 16px; font-family: 'Satoshi', sans-serif; outline: none; transition: border-color 0.15s; }
 .stm-select:focus { border-color: var(--accent); }
 .stm-select option { background: var(--bg-modal); }
-.stm-assign-btn { background: var(--accent); border: none; color: #fff; padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: background 0.15s; flex-shrink: 0; }
+.stm-assign-btn { background: var(--accent); border: none; color: #fff; padding: 8px 18px; border-radius: 8px; font-size: 16px; font-weight: 600; font-family: 'Satoshi', sans-serif; cursor: pointer; transition: background 0.15s; flex-shrink: 0; }
 .stm-assign-btn:hover { background: var(--accent-hover); }
 .stm-assign-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.stm-hint { font-size: 11px; color: var(--tx-faint); margin-top: 8px; font-style: italic; }
+.stm-hint { font-size: 14px; color: var(--tx-faint); margin-top: 8px; font-style: italic; }
 .stm-link { color: var(--accent-hover); cursor: pointer; text-decoration: underline; }
 .stm-link:hover { color: var(--accent); }
 
-/* ── My tasks sidebar ── */
-.my-task-item { margin-bottom: 8px; }
-.my-task-list-name { font-size: 11px; font-weight: 600; color: var(--tx-secondary); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.my-task-progress { display: flex; align-items: center; gap: 6px; }
-.my-task-bar { flex: 1; height: 4px; background: var(--bdr-subtle); border-radius: 2px; overflow: hidden; }
+/* ── Sidebar task section ── */
+.sb-tasklist-header { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; margin: 10px 0 5px; }
+.sb-tasklist-name { font-size: 14px; font-weight: 700; color: var(--tx-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.sb-tasklist-shift { font-size: 13px; font-family: 'DM Mono', monospace; color: var(--tx-ghost); flex-shrink: 0; }
+.sb-task-row { display: flex; align-items: center; gap: 7px; padding: 3px 0; }
+.sb-task-check {
+  width: 16px; height: 16px; flex-shrink: 0;
+  border-radius: 4px;
+  border: 1.5px solid var(--tx-muted);
+  background: var(--bg-input);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: transparent;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  padding: 0;
+}
+.sb-task-check:hover { border-color: var(--accent); background: var(--accent-bg); }
+.sb-task-check.done { background: var(--accent); border-color: var(--accent); color: #fff; }
+.sb-task-label { font-size: 14px; color: var(--tx-muted); line-height: 1.35; flex: 1; }
+.sb-task-label.done { color: var(--tx-faintest); text-decoration: line-through; }
+.sb-task-progress { display: flex; align-items: center; gap: 6px; margin: 6px 0 4px; }
+
+/* ── Shared progress bar (tasks) ── */
+.my-task-progress { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+.my-task-bar { flex: 1; height: 3px; background: var(--bdr-subtle); border-radius: 2px; overflow: hidden; }
 .my-task-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s ease; }
-.my-task-count { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--tx-ghost); flex-shrink: 0; }
+.my-task-count { font-size: 13px; font-family: 'DM Mono', monospace; color: var(--tx-ghost); flex-shrink: 0; }
+
+/* ── Multi-selected shift block ── */
+.shift-block--multi-selected {
+  outline: 2px solid rgba(255,255,255,0.85);
+  outline-offset: -1px;
+}
+
+/* ── Rubber-band selection rect ── */
+.rubber-band-rect {
+  position: fixed;
+  border: 1.5px dashed var(--accent);
+  background: rgba(255, 23, 68, 0.08);
+  pointer-events: none;
+  z-index: 999;
+  border-radius: 3px;
+}
+
+/* ── Selection toolbar ── */
+.selection-toolbar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-modal);
+  border: 1px solid var(--bdr-faint);
+  border-radius: 12px;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 400;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+  white-space: nowrap;
+}
+.sel-count { font-size: 16px; color: var(--tx-primary); font-weight: 600; }
+.sel-divider { width: 1px; height: 16px; background: var(--bdr-faint); margin: 0 2px; }
+.sel-btn {
+  background: var(--bg-hover); border: 1px solid var(--bdr-faint); color: var(--tx-muted);
+  border-radius: 6px; padding: 5px 12px; font-size: 15px; font-weight: 600;
+  cursor: pointer; transition: all 0.15s; font-family: 'Satoshi', sans-serif;
+}
+.sel-btn:disabled { opacity: .4; cursor: not-allowed; }
+.sel-btn:not(:disabled):hover { color: var(--tx-primary); border-color: var(--bdr-medium); }
+.sel-btn--delete { color: var(--accent); border-color: var(--accent-border); }
+.sel-btn--delete:not(:disabled):hover { background: var(--accent-bg); border-color: var(--accent); }
+.sel-btn--clear { background: none; border: none; color: var(--tx-faint); padding: 4px 8px; font-size: 18px; line-height: 1; }
+.sel-btn--clear:hover { color: var(--tx-primary); }
+.toolbar-anim-enter-active, .toolbar-anim-leave-active { transition: opacity .15s, transform .15s; }
+.toolbar-anim-enter-from, .toolbar-anim-leave-to { opacity: 0; transform: translateX(-50%) translateY(8px); }
+
+/* Paste mode */
+.selection-toolbar.paste-mode { background: rgba(30, 80, 160, 0.92); border-color: #4a90e2; }
+.selection-toolbar.paste-mode .sel-count { color: #c8deff; }
+.day-column.paste-target { cursor: copy; }
+.day-column.paste-target:hover { background: rgba(74, 144, 226, 0.08); }
+.day-header.paste-target-header { cursor: copy; }
+.day-header.paste-target-header:hover { background: rgba(74, 144, 226, 0.15); }
 
 /* ── Transitions ── */
 .modal-enter-active, .modal-leave-active { transition: opacity 0.2s, transform 0.2s; }
@@ -1912,4 +5214,398 @@ watch(calView, () => { setTimeout(() => { if (calBody.value) calBody.value.scrol
 .popover-anim-leave-to { opacity: 0; }
 .view-fade-enter-active, .view-fade-leave-active { transition: opacity 0.15s; }
 .view-fade-enter-from, .view-fade-leave-to { opacity: 0; }
+
+/* ── Template Quick-Apply Dropdown (toolbar) ── */
+.tpl-dropdown-wrap { position: relative; display: flex; align-items: center; margin: 0 auto; }
+.tpl-dropdown-btn {
+  display: flex; align-items: center; gap: 7px;
+  background: var(--accent-bg, rgba(255, 23, 68, 0.08));
+  border: 1px solid var(--accent-border, rgba(255, 23, 68, 0.35));
+  color: var(--accent);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 14px; font-weight: 600;
+  font-family: 'Satoshi', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.tpl-dropdown-btn:hover,
+.tpl-dropdown-btn.active {
+  background: var(--accent-subtle, rgba(255, 23, 68, 0.15));
+  border-color: var(--accent);
+}
+.tpl-dd-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  min-width: 260px;
+  max-width: 320px;
+  max-height: 340px;
+  overflow-y: auto;
+  background: var(--bg-modal);
+  border: 1px solid var(--bdr-faint, var(--bdr-accent));
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.25);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.tpl-dd-empty {
+  padding: 14px 12px;
+  font-size: 14px;
+  color: var(--tx-faint, var(--tx-dim));
+  text-align: center;
+  font-family: 'Satoshi', sans-serif;
+}
+.tpl-dd-link {
+  display: block;
+  margin-top: 6px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 14px;
+  cursor: pointer;
+  font-family: 'Satoshi', sans-serif;
+}
+.tpl-dd-link:hover { text-decoration: underline; }
+.tpl-dd-item {
+  background: none;
+  border: none;
+  color: var(--tx-primary);
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  display: flex; flex-direction: column; gap: 2px;
+  font-family: 'Satoshi', sans-serif;
+  transition: background 0.12s;
+}
+.tpl-dd-item:hover { background: var(--bg-hover, var(--bg-active)); }
+
+/* ── View dropdown (phone only) ── */
+.view-dropdown-wrap { position: relative; }
+.view-dropdown-btn {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--bdr-medium);
+  color: var(--tx-primary);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px; font-weight: 600;
+  font-family: 'Satoshi', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  min-height: var(--tap-target-min);
+}
+.view-dropdown-btn:hover,
+.view-dropdown-btn.active {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.view-dd-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 200;
+  min-width: 140px;
+  background: var(--bg-modal);
+  border: 1px solid var(--bdr-faint, var(--bdr-accent));
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.25);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.view-dd-item {
+  background: none;
+  border: none;
+  color: var(--tx-primary);
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px; font-weight: 500;
+  min-height: var(--tap-target-min);
+  transition: background 0.12s, color 0.12s;
+}
+.view-dd-item:hover { background: var(--bg-hover, var(--bg-active)); }
+.view-dd-item.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 600;
+}
+.tpl-dd-name { font-size: 14px; font-weight: 600; color: var(--tx-primary); }
+.tpl-dd-desc {
+  font-size: 12px;
+  color: var(--tx-faint, var(--tx-dim));
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tpl-dd-pop-enter-active, .tpl-dd-pop-leave-active { transition: opacity 0.12s, transform 0.12s; }
+.tpl-dd-pop-enter-from, .tpl-dd-pop-leave-to { opacity: 0; transform: translateX(-50%) translateY(-4px) scale(0.97); }
+
+/* ── Apply Template Modal ── */
+.tpl-apply-modal { width: 460px; max-width: calc(100vw - 32px); display: flex; flex-direction: column; gap: 16px; }
+.tpl-apply-name {
+  font-size: 15px; color: var(--accent); font-weight: 600;
+  margin: -8px 0 4px; font-family: 'DM Mono', monospace;
+}
+.tpl-form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 0; }
+.tpl-form-group label {
+  font-size: 13px; font-weight: 600;
+  color: var(--tx-muted);
+  text-transform: uppercase; letter-spacing: .1em;
+}
+.tpl-period-options { display: flex; gap: 8px; flex-wrap: wrap; }
+.tpl-period-opt {
+  flex: 1; min-width: 70px;
+  background: var(--bg-surface, var(--bg-input));
+  border: 1px solid var(--bdr-faint, var(--bdr-accent));
+  color: var(--tx-muted);
+  border-radius: 7px; padding: 8px 10px; font-size: 14px;
+  font-family: 'Satoshi', sans-serif;
+  cursor: pointer; text-align: center;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.tpl-period-opt:hover { color: var(--tx-primary); border-color: var(--accent); background: var(--bg-hover, var(--bg-active)); }
+.tpl-period-opt.active {
+  background: var(--accent-bg, rgba(255, 23, 68, 0.08));
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.tpl-form-row-dates { display: flex; align-items: flex-end; gap: 10px; }
+.tpl-form-row-dates .tpl-form-group { flex: 1; }
+.tpl-date-range-arrow { font-size: 18px; color: var(--tx-faint, var(--tx-dim)); padding-bottom: 10px; flex-shrink: 0; }
+.tpl-apply-range-preview {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg-surface, var(--bg-input));
+  border: 1px solid var(--bdr-subtle, var(--bdr-accent));
+  border-radius: 7px; padding: 10px 14px;
+  font-size: 14px; font-family: 'DM Mono', monospace;
+  color: var(--tx-primary);
+}
+.tpl-modal-error { color: var(--accent); font-size: 14px; margin: 0; }
+
+/* ── Date picker (apply modal) ── */
+.tpl-date-picker-wrap { position: relative; width: 100%; }
+.tpl-date-trigger {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  background: var(--bg-surface, var(--bg-input));
+  border: 1px solid var(--bdr-faint, var(--bdr-accent));
+  border-radius: 7px;
+  padding: 9px 12px;
+  color: var(--tx-primary);
+  font-size: 14px;
+  font-family: 'Satoshi', sans-serif;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .15s, background .15s;
+}
+.tpl-date-trigger:hover { border-color: var(--accent); background: var(--bg-hover, var(--bg-active)); }
+.tpl-date-trigger-icon { color: var(--tx-secondary); flex-shrink: 0; }
+.tpl-date-trigger:hover .tpl-date-trigger-icon { color: var(--accent); }
+
+.tpl-dpc-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  width: 280px;
+  background: var(--bg-modal);
+  border: 1px solid var(--bdr-faint, var(--bdr-accent));
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45), 0 4px 12px rgba(0, 0, 0, 0.25);
+  display: flex; flex-direction: column; gap: 10px;
+  font-family: 'Satoshi', sans-serif;
+}
+.tpl-dpc-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 0 2px 4px;
+}
+.tpl-dpc-nav {
+  background: var(--bg-surface, var(--bg-input));
+  border: 1px solid var(--bdr-subtle, var(--bdr-accent));
+  color: var(--tx-secondary);
+  border-radius: 6px;
+  width: 26px; height: 26px;
+  font-size: 18px; line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.tpl-dpc-nav:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-bg, rgba(255, 23, 68, 0.08));
+}
+.tpl-dpc-month-label {
+  font-size: 15px; font-weight: 600;
+  color: var(--tx-primary);
+  letter-spacing: .2px;
+}
+.tpl-dpc-dow-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.tpl-dpc-dow {
+  text-align: center;
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .5px;
+  color: var(--tx-faint, var(--tx-dim));
+  padding: 4px 0;
+  font-family: 'DM Mono', monospace;
+}
+.tpl-dpc-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.tpl-dpc-cell {
+  aspect-ratio: 1;
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px;
+  color: var(--tx-primary);
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background .12s, color .12s, border-color .12s;
+  user-select: none;
+}
+.tpl-dpc-cell--busy:not(.tpl-dpc-selected)::after {
+  content: "";
+  position: absolute; bottom: 3px; left: 50%;
+  transform: translateX(-50%);
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--accent);
+  opacity: .75;
+}
+.tpl-dpc-cell--open:not(.tpl-dpc-empty):not(.tpl-dpc-selected):not(.tpl-dpc-disabled) {
+  background: rgba(34, 197, 94, 0.10);
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.28);
+}
+.tpl-dpc-cell--open:not(.tpl-dpc-empty):not(.tpl-dpc-selected):not(.tpl-dpc-disabled):hover {
+  background: rgba(34, 197, 94, 0.20);
+}
+.tpl-dpc-legend {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 6px; padding: 6px 2px 0;
+  border-top: 1px solid var(--bdr-subtle);
+  font-size: 11px;
+  color: var(--tx-faint);
+  font-family: 'DM Mono', monospace;
+}
+.tpl-dpc-legend-dot { width: 8px; height: 8px; margin-left: 2px; }
+.tpl-dpc-legend-dot--open { background: rgba(34, 197, 94, 0.28); box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.55); border-radius: 3px; }
+.tpl-dpc-legend-dot--busy { border-radius: 50%; background: var(--accent); opacity: .75; }
+.tpl-dpc-cell:hover:not(.tpl-dpc-empty):not(.tpl-dpc-disabled) {
+  background: var(--bg-hover, var(--bg-active));
+}
+.tpl-dpc-empty { cursor: default; }
+.tpl-dpc-today {
+  border-color: var(--bdr-accent);
+  font-weight: 600;
+}
+.tpl-dpc-selected,
+.tpl-dpc-selected:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.tpl-dpc-disabled {
+  color: var(--tx-dim);
+  cursor: not-allowed;
+  opacity: .5;
+}
+.tpl-dpc-pop-enter-active, .tpl-dpc-pop-leave-active {
+  transition: opacity .12s ease, transform .12s ease;
+  transform-origin: top left;
+}
+.tpl-dpc-pop-enter-from, .tpl-dpc-pop-leave-to {
+  opacity: 0;
+  transform: scale(.96) translateY(-4px);
+}
+
+/* ── Mobile (phone) overrides ──
+   Keep the desktop layout untouched; only override what breaks on a 375px
+   viewport. Tablet sits between — it gets the desktop layout but with a
+   narrower sidebar and gentler toolbar padding via the smaller breakpoint. */
+@media (max-width: 599.98px) {
+  .cal-toolbar {
+    flex-wrap: wrap;
+    padding: 8px 10px;
+    gap: 8px;
+  }
+  .cal-nav-group { flex: 1 1 auto; }
+  .cal-range-label {
+    font-size: 13px;
+    flex: 1;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Row 2 layout (using CSS `order` so DOM order stays manager-friendly):
+     view dropdown + fit on the LEFT, templates in the MIDDLE, add-shift
+     on the RIGHT. Two `margin-left: auto` stops distribute slack space
+     between the left cluster / templates / add-shift so templates floats
+     near the center regardless of which items are present. */
+  .cal-toolbar { gap: 6px 8px; }
+  .cal-toolbar .cal-nav-group      { order: 1; }
+  .cal-toolbar .view-dropdown-wrap { order: 2; }
+  .cal-toolbar .zoom-group         { order: 3; }
+  .cal-toolbar .tpl-dropdown-wrap  { order: 4; margin-left: auto; }
+  .cal-toolbar .add-shift-btn      { order: 5; margin-left: auto; padding: 8px 14px; font-size: 14px; }
+
+  .tpl-dropdown-btn { padding: 8px 10px; font-size: 13px; min-height: var(--tap-target-min); }
+  .tpl-dropdown-btn span { display: none; }
+
+  /* Menu: anchor to the button's left edge (not centered) and clamp to
+     the viewport so it can't overflow either side. Without this, a
+     template name wider than the button pushed the menu off-screen. */
+  .tpl-dd-menu {
+    left: 0;
+    right: auto;
+    transform: none;
+    min-width: 180px;
+    max-width: min(280px, calc(100vw - 20px));
+  }
+
+  /* View dropdown: single-letter label (D / W / M) keeps it compact. */
+  .view-dropdown-btn { padding: 8px 10px; min-width: 54px; justify-content: space-between; }
+
+  /* Fit button: matched sizing with the view dropdown. */
+  .zoom-group .fit-btn { padding: 8px 14px; font-size: 13px; min-height: var(--tap-target-min); }
+
+  /* Week & Month views fit within phone width rather than panning:
+     shrink the time gutter, tighten typography, and compress shift-block
+     labels so seven day columns squeeze in without horizontal scroll.
+     Day view is unaffected (already full-width of a single column). */
+  .cal-grid-wrapper { overflow-x: hidden; }
+  .time-gutter, .time-column { width: 38px; }
+  .time-slot-label { font-size: 10px; padding: 2px 4px 0; }
+  .day-letter  { font-size: 11px; letter-spacing: 0.05em; }
+  .day-number  { font-size: 15px; width: 24px; height: 24px; }
+  .shift-employee { font-size: 11px; line-height: 1.1; }
+  .shift-time     { font-size: 10px; }
+  .shift-pos-badge { font-size: 9px; padding: 1px 5px; }
+  .shift-block { padding: 3px 5px; }
+
+  /* Month view: lock the 7-column grid to viewport so no horizontal scroll.
+     `minmax(0, 1fr)` lets cells shrink narrower than their content's natural
+     min-width — without it, a wide event name in any cell pushes the whole
+     grid wider than the screen. */
+  .month-dow-row,
+  .month-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .month-cell { min-height: 72px; padding: 2px; min-width: 0; }
+  .month-cell-num { font-size: 11px; }
+  .month-event-pill { font-size: 9px; padding: 1px 3px; gap: 2px; min-width: 0; }
+  .month-event-name { font-size: 9px; min-width: 0; }
+  .month-dow { font-size: 11px; padding: 6px 0; }
+}
+
+/* Tablet — narrower sidebar so the calendar gets more width. */
+@media (min-width: 600px) and (max-width: 959.98px) {
+  .sidebar { width: 180px; }
+}
 </style>
