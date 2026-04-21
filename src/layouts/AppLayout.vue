@@ -203,13 +203,13 @@ const tabs = computed(() => {
   if (role === "Manager" || role === "Admin") {
     return [
       { label: "Dashboard",  route: "/dashboard" },
-      { label: "Department", route: "/department" },
-      { label: "Templates",  route: "/templates" },
+      { label: "Scheduler",  route: "/templates" },
       { label: "Tradeboard", route: "/tradeboard" },
       { label: "Tasks",      route: "/tasks" },
       { label: "Shifts",     route: "/shifts" },
       { label: "Time",       route: "/time" },
       { label: "Requests",   route: "/requests" },
+      { label: "Department", route: "/department" },
     ];
   }
   return [

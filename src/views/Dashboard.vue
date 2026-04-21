@@ -217,7 +217,7 @@
                 <rect x="1" y="3" width="14" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/>
                 <path d="M5 1v4M11 1v4M1 7h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
               </svg>
-              <span>Apply Templates</span>
+              <span>Apply Schedule</span>
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
                 :style="{ transform: templateDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform .15s' }">
                 <path d="M2 3.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1093,7 +1093,7 @@
             :disabled="applyModal.applying || !applyModal.startDate || (isCustomPeriod && !applyModal.endDate)"
             @click="applyTemplate"
           >
-            {{ applyModal.applying ? 'Creating shifts…' : 'Apply Template' }}
+            {{ applyModal.applying ? 'Creating shifts…' : 'Apply Schedule' }}
           </button>
         </div>
       </div>
@@ -1201,7 +1201,7 @@ const router = useRouter();
 
 function handleTabClick(tab) {
   const routes = {
-    Templates:  "/templates",
+    Scheduler:  "/templates",
     Department: "/department",
     Employees:  "/manage",
     Shifts:     "/shifts",
@@ -1251,7 +1251,7 @@ const apiError = ref(null);
 const tabs = computed(() => {
   const role = currentUser.value?.role;
   if (role === "Manager" || role === "Admin") {
-    return ["Dashboard", "Department", "Templates", "Tradeboard", "Tasks", "Shifts", "Requests"];
+    return ["Dashboard", "Scheduler", "Tradeboard", "Tasks", "Shifts", "Requests", "Department"];
   }
   return ["Dashboard", "Department", "Tradeboard", "Tasks", "Shifts", "Requests"];
 });

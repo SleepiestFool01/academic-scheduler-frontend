@@ -1,5 +1,5 @@
 <template>
-  <div class="editor-root" @mousemove="onGlobalMouseMove" @mouseup="onGlobalMouseUp" :class="{ 'cmd-create-mode': cmdHeld }">
+  <div class="editor-root" @mousemove="onGlobalMouseMove" @mouseup="onGlobalMouseUp" :class="{ 'cmd-create-mode': cmdHeld, 'quick-assign-mode': !!previewEmployeeId }">
 
     <!-- ── Phone notice (editor is desktop-only) ── -->
     <div v-if="isPhone" class="phone-notice">
@@ -61,6 +61,17 @@
     <div v-if="apiError && !isPhone" class="error-banner">
       {{ apiError }}
       <button class="retry-btn" @click="loadAll">Retry</button>
+    </div>
+
+    <!-- ── Quick-assign banner (when an employee is previewed) ── -->
+    <div v-if="previewEmployeeId && !isPhone" class="quick-assign-banner">
+      <span class="qa-banner-dot"></span>
+      <span>
+        Click any shift to assign
+        <strong>{{ previewEmployeeName }}</strong>.
+        Click the same shift again to unassign.
+      </span>
+      <button class="qa-banner-close" @click="previewEmployeeId = null" title="Exit quick-assign mode">✕</button>
     </div>
 
     <!-- ── Week Tab Bar (only shown for multi-week templates) ── -->
@@ -291,8 +302,11 @@
                 :style="shiftBlockStyle(shift)"
                 :class="{
                   'shift-block--selected': selectedShift?.id_templateShift === shift.id_templateShift,
-                  'shift-block--multi-selected': selectedShiftIds.has(shift.id_templateShift)
+                  'shift-block--multi-selected': selectedShiftIds.has(shift.id_templateShift),
+                  'shift-block--qa-eligible':   !!previewEmployeeId && isShiftAssignableToPreview(shift),
+                  'shift-block--qa-ineligible': !!previewEmployeeId && !isShiftAssignableToPreview(shift)
                 }"
+                :title="!!previewEmployeeId && !isShiftAssignableToPreview(shift) ? `${previewEmployeeName} is not assigned to this position` : ''"
                 @mousedown="onShiftBlockMouseDown($event, colIdx)"
                 @click.stop="onShiftBlockClick(shift, $event)"
               >
@@ -789,6 +803,25 @@ function unavailabilityCountForEmployee(id_employee) {
 function togglePreviewEmployee(id_employee) {
   previewEmployeeId.value = previewEmployeeId.value === id_employee ? null : id_employee;
 }
+
+// Is the previewed employee allowed to fill this shift's position? Returns
+// true when there's no preview active (normal editing), or when the shift's
+// position is one the employee is linked to via PositionEmployee. Shifts
+// with no id_position are treated as ineligible while previewing — the
+// manager should set the position first before quick-assigning.
+function isShiftAssignableToPreview(shift) {
+  if (!previewEmployeeId.value) return true;
+  const posId = shift?.id_position;
+  if (!posId) return false;
+  const ids = positionEmployeeIds.value[posId];
+  if (!Array.isArray(ids) || ids.length === 0) return false;
+  return ids.some(e => Number(e) === Number(previewEmployeeId.value));
+}
+
+const previewEmployeeName = computed(() => {
+  const emp = allEmployees.value.find(e => e.id_employee === previewEmployeeId.value);
+  return emp ? `${emp.fName || ""} ${emp.lName || ""}`.trim() : "";
+});
 
 const filteredPreviewEmployees = computed(() => {
   const q = empPreviewSearch.value.trim().toLowerCase();
@@ -2056,8 +2089,75 @@ function onShiftBlockClick(shift, e) {
     toggleShiftSelection(shift.id_templateShift);
     return;
   }
+  // Quick-assign mode: when an employee is selected in the left sidebar,
+  // clicking a shift assigns them (or toggles off if this shift is
+  // already theirs). Bypasses the usual "open the right panel" flow so
+  // the manager can rattle through open shifts without clicking around.
+  if (previewEmployeeId.value) {
+    quickAssignToShift(shift);
+    return;
+  }
   clearSelection();
   selectShift(shift);
+}
+
+// Quick-assign: replaces any existing assignees on a shift with the
+// previewed employee. If the previewed employee is already the sole
+// assignee, removes them instead (toggle). Errors are swallowed with a
+// console log — templates are drafts, not live data, and the manager
+// will notice if the block label doesn't flip.
+async function quickAssignToShift(shift) {
+  const empId = previewEmployeeId.value;
+  if (!empId || !shift?.id_templateShift) return;
+  // Respect the position → employee link: Parker the Barista can't be
+  // quick-assigned to a Cashier shift. The block is also rendered
+  // grayed-out so this branch is rarely hit — it's a safety net.
+  if (!isShiftAssignableToPreview(shift)) return;
+  const emp = allEmployees.value.find(e => e.id_employee === empId);
+  if (!emp) return;
+
+  try {
+    const existing = await fetchTemplateShiftEmployees(shift.id_templateShift);
+    const rows = Array.isArray(existing) ? existing : [];
+    const alreadyAssigned = rows.some(r => Number(r.id_employee) === Number(empId));
+    const isSoleAssignee = alreadyAssigned && rows.length === 1;
+
+    // Drop everyone currently on the shift first. For the toggle-off
+    // case, we'll stop there; for assign, we'll add the new emp after.
+    for (const row of rows) {
+      try {
+        await removeTemplateShiftEmployee(row.id_templateShiftEmployee);
+        await syncRemoveEmployee(shift.id_templateShift, row.id_employee).catch(() => {});
+      } catch (err) { console.error("Quick-assign remove failed:", err); }
+    }
+
+    if (isSoleAssignee) {
+      // Toggle off — clear the visible label and exit.
+      shiftEmployeeMap.value[shift.id_templateShift] = null;
+      // Keep the right panel in sync if this shift is open in it.
+      if (selectedShift.value?.id_templateShift === shift.id_templateShift) {
+        panel.value.employees = [];
+      }
+      return;
+    }
+
+    await addTemplateShiftEmployee({
+      id_templateShift: shift.id_templateShift,
+      id_employee:      empId,
+    });
+    shiftEmployeeMap.value[shift.id_templateShift] = emp;
+    await syncAddEmployee(shift.id_templateShift, empId).catch(() => {});
+
+    if (selectedShift.value?.id_templateShift === shift.id_templateShift) {
+      panel.value.employees = [{
+        id_employee: emp.id_employee,
+        fName: emp.fName || "",
+        lName: emp.lName || "",
+      }];
+    }
+  } catch (err) {
+    console.error("Quick-assign failed:", err);
+  }
 }
 
 function finalizeRubberBand() {
@@ -2688,40 +2788,103 @@ function fromTimeInput(t) {
   background: var(--accent-bg);
 }
 
-/* Hatched unavailability overlay on the day columns. Sits below shift
-   blocks (shift-block z-index 2) and hours-op lines so shifts remain
-   click-through. `pointer-events: none` is critical — any future rule
-   must not shadow it or drag-to-create breaks. */
+/* Quick-assign hint — soft, neutral, just-informational. No color alarm. */
+.quick-assign-banner {
+  position: sticky;
+  top: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--bdr-subtle);
+  color: var(--tx-faint);
+  font-size: 12px;
+  font-family: 'Satoshi', sans-serif;
+}
+.quick-assign-banner strong {
+  color: var(--tx-secondary);
+  font-weight: 600;
+}
+.qa-banner-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--tx-faded);
+  flex-shrink: 0;
+}
+.qa-banner-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--tx-faded);
+  border-radius: 4px;
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color .12s, background .12s;
+}
+.qa-banner-close:hover { color: var(--tx-primary); background: var(--bg-hover); }
+
+/* Quick-assign mode — when an employee is previewed in the left sidebar,
+   eligible shift blocks get a copy-cursor + hover ring. Ineligible
+   blocks (position the employee isn't linked to) gray out and the
+   cursor flips to not-allowed, making it obvious they can't be used. */
+.editor-root.quick-assign-mode .shift-block--qa-eligible   { cursor: copy; }
+.editor-root.quick-assign-mode .shift-block--qa-eligible:hover {
+  box-shadow: 0 0 0 2px var(--accent), 0 4px 14px rgba(255, 23, 68, 0.35);
+  filter: brightness(1.15);
+}
+.editor-root.quick-assign-mode .shift-block--qa-ineligible {
+  cursor: not-allowed;
+  filter: grayscale(0.95) brightness(0.55);
+  opacity: 0.55;
+}
+.editor-root.quick-assign-mode .shift-block--qa-ineligible:hover {
+  filter: grayscale(0.95) brightness(0.55);
+  box-shadow: none;
+}
+
+/* Hatched unavailability overlay on the day columns. Sits ABOVE shift
+   blocks (shift-block z-index 2) so it's visible when previewing an
+   employee's schedule over a packed template. `pointer-events: none`
+   is critical — any future rule must not shadow it or drag-to-create
+   and quick-assign clicks will break. */
 .tpl-unavail-overlay {
   position: absolute;
   left: 2px;
   right: 2px;
+  background-color: rgba(255, 23, 68, 0.28);
   background-image: repeating-linear-gradient(
     45deg,
-    rgba(255, 23, 68, 0.14), rgba(255, 23, 68, 0.14) 6px,
-    transparent 6px, transparent 12px
+    rgba(255, 23, 68, 0.55), rgba(255, 23, 68, 0.55) 4px,
+    rgba(12, 0, 4, 0.55)     4px, rgba(12, 0, 4, 0.55)     9px
   );
-  border: 1px dashed rgba(255, 23, 68, 0.45);
+  border: 2px solid rgba(255, 23, 68, 0.9);
   border-radius: 5px;
-  z-index: 1;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 2px 10px rgba(255, 23, 68, 0.35);
+  z-index: 20;
   pointer-events: none !important;
   display: flex;
   align-items: flex-start;
 }
 .tpl-unavail-overlay-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .02em;
-  color: rgba(255, 23, 68, 0.9);
-  background: rgba(255, 255, 255, 0.75);
-  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  color: #fff;
+  background: rgba(180, 10, 40, 0.95);
+  padding: 2px 7px;
   border-radius: 3px;
-  margin: 3px 4px;
+  margin: 4px 4px 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: calc(100% - 8px);
   font-family: 'DM Mono', monospace;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   pointer-events: none !important;
 }
 
