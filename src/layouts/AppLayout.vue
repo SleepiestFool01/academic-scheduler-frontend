@@ -208,6 +208,7 @@ const tabs = computed(() => {
       { label: "Tradeboard", route: "/tradeboard" },
       { label: "Tasks",      route: "/tasks" },
       { label: "Shifts",     route: "/shifts" },
+      { label: "Time",       route: "/time" },
       { label: "Requests",   route: "/requests" },
     ];
   }
@@ -217,6 +218,7 @@ const tabs = computed(() => {
     { label: "Tradeboard",   route: "/tradeboard" },
     { label: "Tasks",        route: "/tasks" },
     { label: "Shifts",       route: "/shifts" },
+    { label: "Time",         route: "/time" },
     { label: "Requests",     route: "/requests" },
     { label: "Availability", route: "/availability" },
   ];

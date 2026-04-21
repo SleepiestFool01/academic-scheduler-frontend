@@ -31,6 +31,7 @@ const router = createRouter({
         { path: "templates",       component: () => import("./views/Templates.vue") },
         { path: "templates/:id",   component: () => import("./views/TemplateEditor.vue") },
         { path: "shifts",          component: () => import("./views/ShiftsPage.vue") },
+        { path: "time",            component: () => import("./views/TimeClock.vue") },
         { path: "settings",        component: () => import("./views/Settings.vue") },
         { path: "profile",         component: () => import("./views/ProfilePage.vue") },
       ],
