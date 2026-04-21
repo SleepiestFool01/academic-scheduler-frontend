@@ -51,15 +51,6 @@
             </div>
             <p class="card-desc">{{ tpl.description || 'No description' }}</p>
           </div>
-          <div class="card-meta">
-            <span class="meta-chip">
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style="opacity:.6">
-                <rect x="1" y="3" width="14" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/>
-                <path d="M5 1v4M11 1v4M1 7h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-              </svg>
-              Created {{ formatDate(tpl.createdAt) }}
-            </span>
-          </div>
           <div class="card-footer">
             <button class="outline-btn" @click="router.push('/templates/' + tpl.id_template)">
               Open Editor
@@ -698,11 +689,6 @@ if (typeof window !== "undefined") {
 }
 watch(() => applyModal.value.open, (v) => { if (!v) closePicker(); });
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
-function formatDate(iso) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
 </script>
 
 <style scoped>
@@ -862,15 +848,6 @@ function formatDate(iso) {
 .icon-action:hover { color: var(--tx-primary); border-color: var(--bdr-medium); background: var(--bg-hover); }
 .icon-action.danger:hover { color: var(--accent); border-color: var(--accent); background: var(--bg-active); }
 
-.card-meta { display: flex; gap: 8px; flex-wrap: wrap; }
-.meta-chip {
-  display: inline-flex; align-items: center; gap: 5px;
-  background: var(--bg-modal);
-  border: 1px solid var(--bdr-subtle);
-  border-radius: 20px; padding: 3px 10px;
-  font-size: 13px; color: var(--tx-faint);
-  font-family: 'DM Mono', monospace;
-}
 .card-footer {
   margin-top: auto;
   padding-top: 4px;
@@ -961,7 +938,13 @@ function formatDate(iso) {
 .modal-enter-from, .modal-leave-to { opacity: 0; transform: scale(.97); }
 
 /* ── Apply Template Modal ── */
-.modal-apply { width: 460px; }
+.modal.modal-apply {
+  width: 640px;
+  max-width: min(640px, calc(100vw - 32px));
+  max-height: min(90vh, calc(100vh - 32px));
+  padding: 32px;
+  gap: 20px;
+}
 .apply-tpl-name {
   font-size: 15px; color: var(--accent); font-weight: 600;
   margin: -8px 0 4px; font-family: 'DM Mono', monospace;

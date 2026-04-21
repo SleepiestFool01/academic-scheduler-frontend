@@ -132,11 +132,13 @@
         <!-- Phone: stacked cards -->
         <div v-if="isPhone" class="mobile-cards">
           <div v-if="filteredShifts.length === 0" class="mobile-empty">No shifts found.</div>
-          <div v-for="s in filteredShifts" :key="s.id_shiftAssignment ?? s.id_shift" class="mobile-card">
+          <div v-for="s in filteredShifts" :key="s.id_shiftAssignment ?? s.id_shift"
+            class="mobile-card"
+            :class="{ 'mobile-card--open': !s.id_employee }">
             <div class="mobile-card-top">
               <div class="emp-avatar" :style="{ background: empColorById(s.id_employee) }">{{ initialsById(s.id_employee) }}</div>
               <div class="mobile-card-title-block">
-                <div class="mobile-card-title">{{ s.employee || 'Unassigned' }}</div>
+                <div class="mobile-card-title">{{ s.employee || 'Open' }}</div>
                 <div class="mobile-card-sub">{{ s.positionName || '—' }}</div>
               </div>
               <div class="mobile-card-actions-inline">
@@ -168,14 +170,15 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="s in filteredShifts" :key="s.id_shiftAssignment ?? s.id_shift">
+              <tr v-for="s in filteredShifts" :key="s.id_shiftAssignment ?? s.id_shift"
+                :class="{ 'data-row--open': !s.id_employee }">
                 <td class="muted small">{{ s.positionName || '—' }}</td>
                 <td>
                   <div class="emp-name-cell">
                     <div class="emp-avatar" :style="{ background: empColorById(s.id_employee) }">
                       {{ initialsById(s.id_employee) }}
                     </div>
-                    {{ s.employee || 'Unassigned' }}
+                    {{ s.employee || 'Open' }}
                   </div>
                 </td>
                 <td class="mono">{{ s.date }}</td>
@@ -1109,6 +1112,17 @@ async function runBulkSync() {
 }
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tr:hover td { background: var(--bg-input); }
+.data-table tr.data-row--open td { font-style: italic; color: var(--tx-secondary); }
+.data-table tr.data-row--open .emp-avatar {
+  background: transparent !important;
+  border: 1.5px dashed rgba(240, 230, 211, 0.5);
+  color: rgba(240, 230, 211, 0.7);
+  font-style: normal;
+}
+[data-theme="light"] .data-table tr.data-row--open .emp-avatar {
+  border-color: rgba(0, 0, 0, 0.4);
+  color: rgba(0, 0, 0, 0.55);
+}
 .emp-name-cell { display: flex; align-items: center; gap: 10px; color: var(--tx-primary); font-weight: 500; }
 .emp-avatar {
   width: 30px; height: 30px; border-radius: 50%;
@@ -1220,6 +1234,22 @@ async function runBulkSync() {
   border-radius: 12px;
   padding: 12px 14px;
   display: flex; flex-direction: column; gap: 10px;
+}
+.mobile-card--open {
+  background: transparent;
+  border: 1.5px dashed rgba(240, 230, 211, 0.45);
+}
+.mobile-card--open .mobile-card-title { font-style: italic; color: var(--tx-secondary); }
+.mobile-card--open .emp-avatar {
+  background: transparent !important;
+  border: 1.5px dashed rgba(240, 230, 211, 0.5);
+  color: rgba(240, 230, 211, 0.7);
+}
+
+[data-theme="light"] .mobile-card--open { border-color: rgba(0, 0, 0, 0.35); }
+[data-theme="light"] .mobile-card--open .emp-avatar {
+  border-color: rgba(0, 0, 0, 0.4);
+  color: rgba(0, 0, 0, 0.55);
 }
 .mobile-card-top {
   display: flex; align-items: center; gap: 10px;

@@ -163,14 +163,14 @@
           </div>
 
           <div class="request-form-grid">
-            <label class="field-block">
+            <div class="field-block">
               <span class="field-label">Start date</span>
-              <input v-model="requestForm.startDate" class="field-input" type="date" />
-            </label>
-            <label class="field-block">
+              <DatePicker v-model="requestForm.startDate" placeholder="Select start date" />
+            </div>
+            <div class="field-block">
               <span class="field-label">End date</span>
-              <input v-model="requestForm.endDate" class="field-input" type="date" />
-            </label>
+              <DatePicker v-model="requestForm.endDate" :min="requestForm.startDate" placeholder="Select end date" />
+            </div>
             <label class="field-block">
               <span class="field-label">Start time</span>
               <input v-model="requestForm.startTime" class="field-input" type="time" :disabled="requestForm.fullDay" />
@@ -273,6 +273,7 @@ import { useDepartment } from "../composables/useDepartment.js";
 import { useNotifications } from "../composables/useNotifications.js";
 import apiClient from "../services/services.js";
 import { timeStrToHour, fmtHour } from "../services/employeeManagementService.js";
+import DatePicker from "../components/DatePicker.vue";
 import {
   getDepartmentAccessRequests,
   updateDepartmentAccessRequest,
@@ -373,6 +374,11 @@ async function loadAll() {
 }
 const { selectedDeptId, myDepts, loadDepts } = useDepartment();
 watch(selectedDeptId, loadAll);
+watch(() => requestForm.value.startDate, (start) => {
+  if (start && (!requestForm.value.endDate || requestForm.value.endDate < start)) {
+    requestForm.value.endDate = start;
+  }
+});
 watch(
   () => requestForm.value.fullDay,
   (isFullDay) => {

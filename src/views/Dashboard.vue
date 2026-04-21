@@ -267,11 +267,21 @@
             <div class="day-header single-day" :class="{ today: isTodayDate(dayViewDate) }">
               <span class="day-letter">{{ DAY_NAMES[dayViewDate.getDay()] }}</span>
               <span class="day-number">{{ dayViewDate.getDate() }}</span>
-              <span class="day-month-label">{{ dayViewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) }}</span>
             </div>
           </div>
             <div class="cal-inner">
               <div class="time-column">
+                <div class="coverage-strip" :title="`Peak staffing: ${coverageMax} on shift`">
+                  <div v-for="(count, i) in coverageByHour" :key="i"
+                    class="coverage-seg"
+                    :style="{
+                      top: (i * cellHeight) + 'px',
+                      height: cellHeight + 'px',
+                      opacity: count / coverageMax,
+                    }"
+                    :title="`${count} on shift at ${formatHour(hours[i])}`"
+                  ></div>
+                </div>
                 <div v-for="hour in hours" :key="hour" class="time-slot-label">{{ formatHour(hour) }}</div>
               </div>
               <div class="day-column"
@@ -314,9 +324,13 @@
                   class="shift-block"
                   :data-shift-id="String(shift.id)"
                   :style="shiftStyle(shift)"
-                  :class="{ 'shift-block--multi-selected': selectedShiftIds.has(String(shift.id)) }"
+                  :class="{
+                    'shift-block--multi-selected': selectedShiftIds.has(String(shift.id)),
+                    'shift-block--open':   !shift.id_employee,
+                    'shift-block--active': isShiftActiveNow(shift),
+                  }"
                   @mousedown="onShiftBlockMouseDown($event, 0)" @click.stop="onShiftBlockClick(shift, $event)">
-                  <div class="shift-employee">{{ shift.employee || 'Unassigned' }}</div>
+                  <div class="shift-employee">{{ shift.employee || 'Open' }}</div>
                   <div class="shift-time">{{ shift.startLabel }} – {{ shift.endLabel }}</div>
                   <div v-if="shift.positionName || (isManager && shiftTaskBadge(shift))" class="shift-meta-row">
                     <span v-if="shift.positionName" class="shift-pos-badge">{{ shift.positionName }}</span>
@@ -334,7 +348,10 @@
                     @mousedown.stop
                     title="Take this shift">Take</button>
                 </div>
-                <div v-if="isTodayDate(dayViewDate)" class="current-time-line" :style="{ top: currentTimePx + 'px' }"></div>
+                <div v-if="isTodayDate(dayViewDate)" class="now-indicator" :style="{ top: currentTimePx + 'px' }">
+                  <div class="now-dot"></div>
+                  <div class="now-label">{{ currentTimeLabel }}</div>
+                </div>
               </div>
             </div>
           </div>
@@ -356,6 +373,17 @@
           </div>
             <div class="cal-inner">
               <div class="time-column">
+                <div class="coverage-strip" :title="`Peak staffing: ${coverageMax} on shift`">
+                  <div v-for="(count, i) in coverageByHour" :key="i"
+                    class="coverage-seg"
+                    :style="{
+                      top: (i * cellHeight) + 'px',
+                      height: cellHeight + 'px',
+                      opacity: count / coverageMax,
+                    }"
+                    :title="`${count} on shift at ${formatHour(hours[i])}`"
+                  ></div>
+                </div>
                 <div v-for="hour in hours" :key="hour" class="time-slot-label">{{ formatHour(hour) }}</div>
               </div>
               <div v-for="(date, colIdx) in weekDates" :key="colIdx" class="day-column"
@@ -398,9 +426,13 @@
                   class="shift-block"
                   :data-shift-id="String(shift.id)"
                   :style="shiftStyle(shift)"
-                  :class="{ 'shift-block--multi-selected': selectedShiftIds.has(String(shift.id)) }"
+                  :class="{
+                    'shift-block--multi-selected': selectedShiftIds.has(String(shift.id)),
+                    'shift-block--open':   !shift.id_employee,
+                    'shift-block--active': isShiftActiveNow(shift),
+                  }"
                   @mousedown="onShiftBlockMouseDown($event, colIdx)" @click.stop="onShiftBlockClick(shift, $event)">
-                  <div class="shift-employee">{{ shift.employee || 'Unassigned' }}</div>
+                  <div class="shift-employee">{{ shift.employee || 'Open' }}</div>
                   <div class="shift-time">{{ shift.startLabel }} – {{ shift.endLabel }}</div>
                   <div v-if="shift.positionName || (isManager && shiftTaskBadge(shift))" class="shift-meta-row">
                     <span v-if="shift.positionName" class="shift-pos-badge">{{ shift.positionName }}</span>
@@ -418,7 +450,11 @@
                     @mousedown.stop
                     title="Take this shift">Take</button>
                 </div>
-                <div v-if="isTodayDate(date)" class="current-time-line" :style="{ top: currentTimePx + 'px' }"></div>
+              </div>
+              <div v-if="todayWeekIndex !== -1" class="now-indicator now-indicator--week"
+                :style="{ top: currentTimePx + 'px', '--today-col': todayWeekIndex }">
+                <div class="now-dot"></div>
+                <div class="now-label">{{ currentTimeLabel }}</div>
               </div>
             </div>
           </div>
@@ -663,10 +699,12 @@
 
     <!-- ── Shift Detail Popover ── -->
     <Transition name="fade">
-      <div v-if="selectedShift" class="shift-popover" :style="popoverStyle" @mousedown.stop>
+      <div v-if="selectedShift" class="shift-popover" :style="popoverStyle" @mousedown.stop
+        :class="{ 'shift-popover--open': !selectedShift.id_employee }">
         <button class="popover-close" @click="selectedShift = null">✕</button>
-        <div class="popover-dot" :style="{ background: getEmployeeColor(selectedShift.employee) }"></div>
-        <div class="popover-employee">{{ [selectedShift.positionName, selectedShift.employee].filter(Boolean).join(' – ') }}</div>
+        <div class="popover-dot"
+          :style="!selectedShift.id_employee ? {} : { background: getEmployeeColor(selectedShift.employee) }"></div>
+        <div class="popover-employee">{{ [selectedShift.positionName, selectedShift.employee || 'Open'].filter(Boolean).join(' – ') }}</div>
         <div class="popover-time">{{ selectedShift.startLabel }} – {{ selectedShift.endLabel }}</div>
         <div class="popover-day">{{ selectedShiftDateLabel }}</div>
         <div v-if="selectedShift.notes" class="popover-notes">{{ selectedShift.notes }}</div>
@@ -1607,9 +1645,36 @@ function sidebarRequestAction(item, status) {
 }
 
 const currentTimePx = computed(() => {
+  const _ = currentTimeHour.value; // trigger reactivity on the minute tick
   const now = new Date();
   return (now.getHours() + now.getMinutes() / 60 - CAL_START_HOUR) * cellHeight.value;
 });
+const currentTimeLabel = computed(() => {
+  const _ = currentTimeHour.value;
+  const now = new Date();
+  return now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+});
+
+// ── Coverage heatmap (staffing density per hour) ────────────────────────────
+const coverageByHour = computed(() => {
+  const dates = calView.value === "Day"
+    ? [dateToKey(dayViewDate.value)]
+    : weekDates.value.map(dateToKey);
+  const counts = new Array(hours.length).fill(0);
+  for (const date of dates) {
+    const dayShifts = shifts.value.filter(s => s.date === date && s.id_employee);
+    for (let i = 0; i < hours.length; i++) {
+      const h = hours[i];
+      const count = dayShifts.filter(s => s.startHour <= h && s.endHour > h).length;
+      counts[i] = calView.value === "Day" ? counts[i] + count : Math.max(counts[i], count);
+    }
+  }
+  return counts;
+});
+const coverageMax = computed(() => Math.max(1, ...coverageByHour.value));
+
+// Index 0-6 of today's column in weekDates; -1 if today isn't in the visible week.
+const todayWeekIndex = computed(() => weekDates.value.findIndex(d => isTodayDate(d)));
 
 const ghostStyle = computed(() => {
   if (!drag.value.active) return {};
@@ -2054,11 +2119,51 @@ const shiftLayoutMap = computed(() => {
 });
 
 // ── Style helpers ──────────────────────────────────────────────────────────────
+function hexToRgb(hex) {
+  let h = String(hex || "").replace("#", "");
+  if (h.length === 3) h = h.split("").map(c => c + c).join("");
+  if (h.length !== 6) return { r: 128, g: 128, b: 128 };
+  return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
+}
+function shiftLuminance(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+function darkenHex(hex, amt = 0.15) {
+  const { r, g, b } = hexToRgb(hex);
+  const f = 1 - amt;
+  const c = (v) => Math.max(0, Math.min(255, Math.round(v * f)));
+  return `rgb(${c(r)}, ${c(g)}, ${c(b)})`;
+}
+function shiftTextTokens(hex) {
+  return shiftLuminance(hex) > 0.62
+    ? { main: "rgba(0,0,0,0.88)", dim: "rgba(0,0,0,0.62)", badge: "rgba(0,0,0,0.10)" }
+    : { main: "rgba(255,255,255,0.96)", dim: "rgba(255,255,255,0.78)", badge: "rgba(255,255,255,0.16)" };
+}
+function isShiftActiveNow(shift) {
+  if (!shift.id_employee) return false;
+  if (shift.date !== dateToKey(new Date())) return false;
+  const now = currentTimeHour.value;
+  return now >= shift.startHour && now < shift.endHour;
+}
+function shiftProgressPct(shift) {
+  if (!isShiftActiveNow(shift)) return 0;
+  const pct = ((currentTimeHour.value - shift.startHour) / (shift.endHour - shift.startHour)) * 100;
+  return Math.max(0, Math.min(100, pct));
+}
+
 function shiftStyle(shift) {
+  const isOpen = !shift.id_employee;
   const color  = getEmployeeColor(shift.employee);
   const layout = shiftLayoutMap.value[shift.id] ?? { colIndex: 0, totalCols: 1 };
   const GAP    = 3;
   const pct    = 100 / layout.totalCols;
+  const openBg     = isDark.value ? "rgba(240, 230, 211, 0.06)" : "transparent";
+  const openBorder = isDark.value ? "1.5px dashed rgba(240, 230, 211, 0.55)" : "1.5px dashed rgba(0, 0, 0, 0.4)";
+  const colorDark  = darkenHex(color, 0.16);
+  const tc         = shiftTextTokens(color);
+  const progress   = shiftProgressPct(shift);
+  const isSelected = selectedShift.value && selectedShift.value.id === shift.id;
   return {
     position: "absolute",
     top:    `${(shift.startHour - CAL_START_HOUR) * cellHeight.value}px`,
@@ -2066,10 +2171,22 @@ function shiftStyle(shift) {
     left:   `calc(${layout.colIndex * pct}% + ${GAP}px)`,
     width:  `calc(${pct}% - ${GAP * 2}px)`,
     right:  "unset",
-    background: color,
+    background: isOpen
+      ? openBg
+      : `linear-gradient(180deg, ${color} 0%, ${colorDark} 100%)`,
+    border:     isOpen ? openBorder : "none",
     borderRadius: "6px", padding: "4px 6px", cursor: "pointer",
     overflow: "hidden", zIndex: layout.colIndex + 2,
-    boxShadow: `0 2px 12px ${color}44`, transition: "filter 0.15s",
+    boxShadow: isOpen
+      ? "none"
+      : isSelected
+        ? `0 0 0 2px ${color}, 0 0 24px ${color}88, 0 4px 14px ${color}55`
+        : `0 2px 12px ${color}44`,
+    transition: "filter 0.15s, box-shadow 0.2s",
+    "--shift-text":     tc.main,
+    "--shift-text-dim": tc.dim,
+    "--shift-badge-bg": tc.badge,
+    "--shift-progress": `${progress}%`,
   };
 }
 function getEmployeeColor(name) { return employees.value.find(e => e.name === name)?.color || "#3b82f6"; }
@@ -2158,8 +2275,7 @@ function onGlobalMouseUp(e) {
   else                           date = weekDates.value[colIdx];
 
   const dateLabel = date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-  const px = Math.min(e.clientX + 14, window.innerWidth  - 300);
-  const py = Math.min(e.clientY - 24, window.innerHeight - 430);
+  const { left, top } = clampPopoverPos(e, 300, 430, { dx: 14, dy: -24 });
 
   quickCreate.value = {
     visible: true, dayIndex: colIdx, date,
@@ -2170,8 +2286,23 @@ function onGlobalMouseUp(e) {
     id_position: positions.value[0]?.id_position ?? null,
     employee: "",
     notes: "",
-    style: { left: `${px}px`, top: `${py}px` },
+    style: { left: `${left}px`, top: `${top}px` },
   };
+}
+
+// Position a floating popover so it never gets clipped by the viewport.
+// Prefers to the right of the click; flips left if it would overflow.
+// Vertically clamps within [MARGIN, viewport - height - MARGIN].
+function clampPopoverPos(e, width, height, { dx = 14, dy = -10 } = {}) {
+  const MARGIN = 8;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  let left = e.clientX + dx;
+  if (left + width > vw - MARGIN) left = e.clientX - width - dx;
+  left = Math.max(MARGIN, Math.min(left, vw - width - MARGIN));
+  let top = e.clientY + dy;
+  top = Math.max(MARGIN, Math.min(top, vh - height - MARGIN));
+  return { left, top };
 }
 function cancelQuickCreate() { quickCreate.value.visible = false; }
 
@@ -2379,16 +2510,14 @@ async function confirmQuickCreate() {
 function selectShift(shift, e) {
   quickCreate.value.visible = false;
   selectedShift.value       = shift;
-  const px = Math.min(e.clientX + 16, window.innerWidth  - 230);
-  const py = Math.min(e.clientY - 10, window.innerHeight - 240);
-  popoverStyle.value = { left: `${px}px`, top: `${py}px` };
+  const { left, top } = clampPopoverPos(e, 230, 240, { dx: 16, dy: -10 });
+  popoverStyle.value = { left: `${left}px`, top: `${top}px` };
 }
 function selectShiftFromMonth(shift, day, e) {
   quickCreate.value.visible = false;
   selectedShift.value       = shift;
-  const px = Math.min(e.clientX + 16, window.innerWidth  - 230);
-  const py = Math.min(e.clientY - 10, window.innerHeight - 240);
-  popoverStyle.value = { left: `${px}px`, top: `${py}px` };
+  const { left, top } = clampPopoverPos(e, 230, 240, { dx: 16, dy: -10 });
+  popoverStyle.value = { left: `${left}px`, top: `${top}px` };
 }
 function editShift() {
   const s = selectedShift.value;
@@ -3569,13 +3698,23 @@ function fitToView() {
 /* ── Shared time-grid (Day + Week) ── */
 .cal-grid-wrapper { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .cal-body { flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; }
-.cal-header-row { display: flex; border-bottom: 1px solid var(--bdr-subtle); flex-shrink: 0; background: var(--bg-surface); position: sticky; top: 0; z-index: 20; }
+.cal-header-row {
+  display: flex; flex-shrink: 0;
+  background: var(--bg-modal);
+  border-bottom: 2px solid var(--bdr-strong);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+  position: sticky; top: 0; z-index: 20;
+}
+[data-theme="light"] .cal-header-row {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  border-bottom-color: var(--bdr-medium);
+}
 .time-gutter { width: 60px; flex-shrink: 0; }
 
 .day-header {
   flex: 1; text-align: center; padding: 10px 4px;
   display: flex; flex-direction: column; align-items: center; gap: 3px;
-  border-left: 1px solid var(--bdr-subtle);
+  border-left: 1px solid var(--bdr-strong);
   cursor: pointer; transition: background 0.15s;
 }
 .day-header:hover { background: var(--bg-hover); }
@@ -3583,17 +3722,53 @@ function fitToView() {
 .day-header.single-day:hover { background: transparent; }
 .day-letter { font-size: 14px; color: var(--tx-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
 .day-number { font-size: 21px; font-family: 'DM Mono', monospace; color: var(--tx-muted); width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-weight: 500; }
-.day-month-label { font-size: 14px; color: var(--tx-dim); font-style: italic; }
 .day-header.today .day-letter { color: var(--accent); }
 .day-header.today .day-number { background: var(--accent); color: var(--today-badge-tx); font-weight: 700; }
 
 .cal-body::-webkit-scrollbar { width: 6px; }
 .cal-body::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
-.cal-inner { display: flex; min-height: fit-content; }
-.time-column { width: 60px; flex-shrink: 0; }
+.cal-inner { display: flex; min-height: fit-content; position: relative; }
+.time-column { width: 60px; flex-shrink: 0; position: relative; }
+.coverage-strip {
+  position: absolute; top: 0; right: 0;
+  width: 3px; height: 100%;
+  pointer-events: none;
+  z-index: 2;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.coverage-seg {
+  position: absolute; left: 0; right: 0;
+  background: var(--accent);
+  transition: opacity .25s ease;
+}
 .time-slot-label { height: var(--cell-h, 60px); padding: 4px 8px 0; font-size: 13px; color: var(--tx-faintest); font-family: 'DM Mono', monospace; display: flex; align-items: flex-start; justify-content: flex-end; }
 
-.day-column { flex: 1; position: relative; border-left: 1px solid var(--bdr-strong); cursor: crosshair; }
+.day-column {
+  flex: 1; position: relative;
+  border-left: 1px solid var(--bdr-strong);
+  cursor: crosshair;
+  background:
+    linear-gradient(180deg,
+      rgba(96, 130, 180, 0.055)  0%,    /* early morning — cool blue */
+      rgba(255, 190, 130, 0.050) 25%,   /* sunrise — peach */
+      rgba(255, 220, 155, 0.038) 42%,   /* midday — warm gold */
+      rgba(255, 190, 130, 0.050) 60%,   /* afternoon — peach */
+      rgba(110, 115, 180, 0.060) 85%,   /* evening — indigo */
+      rgba(60,  70, 130, 0.075) 100%    /* night — deep blue */
+    );
+}
+[data-theme="light"] .day-column {
+  background:
+    linear-gradient(180deg,
+      rgba(100, 145, 200, 0.08) 0%,
+      rgba(255, 200, 150, 0.07) 28%,
+      rgba(255, 225, 170, 0.05) 45%,
+      rgba(255, 190, 140, 0.07) 62%,
+      rgba(130, 120, 195, 0.08) 85%,
+      rgba(85,  95, 150, 0.09)  100%
+    );
+}
 .day-column.is-dragging-col { background: var(--accent-drag); }
 .day-column.no-edit { cursor: default; }
 .hour-cell { height: var(--cell-h, 60px); border-bottom: 1px solid var(--bdr-faint); }
@@ -3646,9 +3821,30 @@ function fitToView() {
 .take-shift-btn:hover { background: #f0f0f0; transform: translateY(-1px); }
 .take-shift-btn:active { transform: translateY(0); }
 .cmd-create-mode .shift-block { cursor: crosshair !important; }
-.shift-employee { font-size: 15px; font-weight: 700; color: rgba(0,0,0,0.85); line-height: 1.2; }
-.shift-time { font-size: 13px; color: rgba(0,0,0,0.6); font-family: 'DM Mono', monospace; }
-.shift-pos-badge { font-size: 12px; color: rgba(0,0,0,0.5); background: rgba(0,0,0,0.1); border-radius: 3px; padding: 1px 4px; display: inline-block; }
+.shift-block { position: relative; }
+.shift-block > * { position: relative; z-index: 1; }
+.shift-block--active::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(to right, rgba(0,0,0,0.18) 0%, rgba(0,0,0,0.18) var(--shift-progress, 0%), transparent var(--shift-progress, 0%));
+  pointer-events: none; z-index: 0;
+}
+.shift-block--active { animation: shift-pulse 2.4s ease-in-out infinite; }
+@keyframes shift-pulse {
+  0%, 100% { filter: brightness(1); }
+  50%      { filter: brightness(1.06); }
+}
+.shift-employee { font-size: 15px; font-weight: 700; color: var(--shift-text, rgba(0,0,0,0.85)); line-height: 1.2; }
+.shift-time { font-size: 13px; color: var(--shift-text-dim, rgba(0,0,0,0.6)); font-family: 'DM Mono', monospace; }
+.shift-pos-badge { font-size: 12px; color: var(--shift-text-dim, rgba(0,0,0,0.5)); background: var(--shift-badge-bg, rgba(0,0,0,0.1)); border-radius: 3px; padding: 1px 4px; display: inline-block; }
+.shift-block--open .shift-employee { color: rgba(240, 230, 211, 0.85); font-style: italic; }
+.shift-block--open .shift-time { color: rgba(240, 230, 211, 0.55); }
+.shift-block--open .shift-pos-badge { color: rgba(240, 230, 211, 0.65); background: rgba(240, 230, 211, 0.1); }
+.shift-block--open:hover { background: rgba(240, 230, 211, 0.12) !important; filter: none; }
+
+[data-theme="light"] .shift-block--open .shift-employee { color: rgba(0, 0, 0, 0.8); }
+[data-theme="light"] .shift-block--open .shift-time { color: rgba(0, 0, 0, 0.55); }
+[data-theme="light"] .shift-block--open .shift-pos-badge { color: rgba(0, 0, 0, 0.6); background: rgba(0, 0, 0, 0.06); }
+[data-theme="light"] .shift-block--open:hover { background: rgba(0, 0, 0, 0.05) !important; }
 .shift-meta-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; flex-wrap: wrap; }
 .shift-task-status {
   display: inline-flex; align-items: center; gap: 3px;
@@ -3677,8 +3873,40 @@ function fitToView() {
 .month-event-dot  { width: 5px; height: 5px; border-radius: 50%; background: #4A90A4; flex-shrink: 0; }
 .month-event-name { font-size: 14px; font-weight: 600; color: #4A90A4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
 
-.current-time-line { position: absolute; left: 0; right: 0; height: 2px; background: #EF4444; z-index: 5; box-shadow: 0 0 8px #EF444488; pointer-events: none; }
-.current-time-line::before { content: ''; position: absolute; left: -4px; top: -4px; width: 10px; height: 10px; background: #EF4444; border-radius: 50%; }
+.now-indicator {
+  position: absolute; left: 0; right: 0; height: 2px;
+  background: linear-gradient(to right, #EF4444 0%, rgba(239, 68, 68, 0.6) 100%);
+  z-index: 15; pointer-events: none;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.55);
+}
+.now-dot {
+  position: absolute; left: -5px; top: -5px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: #EF4444;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25), 0 0 14px rgba(239, 68, 68, 0.7);
+  animation: now-pulse 1.8s ease-in-out infinite;
+}
+@keyframes now-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25), 0 0 10px rgba(239, 68, 68, 0.6); transform: scale(1); }
+  50%      { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0),    0 0 18px rgba(239, 68, 68, 0.9); transform: scale(1.15); }
+}
+.now-label {
+  position: absolute; left: 10px; top: -10px;
+  font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 700;
+  padding: 2px 8px; border-radius: 4px;
+  background: #EF4444; color: #fff;
+  letter-spacing: .03em;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.45);
+  white-space: nowrap;
+}
+
+/* Week view: single indicator spanning the grid, dot/label positioned at today's column. */
+.now-indicator--week { left: 60px; right: 0; }
+.now-indicator--week .now-dot   { left: calc((100% / 7) * var(--today-col, 0) - 5px); }
+.now-indicator--week .now-label { left: calc((100% / 7) * var(--today-col, 0) + 10px); }
+@media (max-width: 959.98px) {
+  .now-indicator--week { left: 38px; }
+}
 
 /* ── Hours of operation marker lines ── */
 .hours-op-line {
@@ -3807,6 +4035,12 @@ function fitToView() {
 .shift-popover { position: fixed; background: var(--bg-modal); border: 1px solid var(--bdr-accent); border-radius: 12px; padding: 16px 18px; width: 220px; box-shadow: 0 12px 40px rgba(0,0,0,0.3); z-index: 150; }
 .popover-close { position: absolute; top: 10px; right: 12px; background: none; border: none; color: var(--tx-dim); cursor: pointer; font-size: 15px; }
 .popover-dot { width: 10px; height: 10px; border-radius: 50%; margin-bottom: 8px; }
+.shift-popover--open .popover-dot {
+  background: transparent !important;
+  border: 1.5px dashed rgba(240, 230, 211, 0.6);
+}
+.shift-popover--open .popover-employee { font-style: italic; }
+[data-theme="light"] .shift-popover--open .popover-dot { border-color: rgba(0, 0, 0, 0.5); }
 .popover-employee { font-size: 18px; font-weight: 700; color: var(--tx-primary); margin-bottom: 4px; }
 .popover-time { font-size: 15px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
 .popover-day { font-size: 15px; color: var(--tx-muted); margin-top: 2px; }

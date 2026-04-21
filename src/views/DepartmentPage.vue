@@ -815,7 +815,7 @@
       ══════════════════════════════════════ -->
       <Transition name="modal">
         <div v-if="empModal2.open" class="modal-overlay" @click.self="empModal2.open = false">
-          <div class="modal">
+          <div class="modal modal-emp">
             <h3 class="modal-title">{{ empModal2.isEdit ? 'Edit Employee' : 'Add Employee' }}</h3>
             <div class="form-group">
               <label>First Name</label>
@@ -836,6 +836,16 @@
                 <option value="Manager">Manager</option>
                 <option value="Admin">Admin</option>
               </select>
+            </div>
+            <div class="form-group">
+              <label>Shift Color</label>
+              <ColorPicker v-model="empModal2.data.color" />
+              <div class="emp-color-preview" v-if="empModal2.data.color">
+                <div class="emp-avatar-preview" :style="{ background: empModal2.data.color }">
+                  {{ (empModal2.data.fName?.[0] || '?') + (empModal2.data.lName?.[0] || '') }}
+                </div>
+                <span class="emp-color-hex">Preview</span>
+              </div>
             </div>
             <p v-if="empModal2.error" class="modal-error">{{ empModal2.error }}</p>
             <div class="modal-actions">
@@ -925,11 +935,12 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import Utils from "../config/utils.js";
 import { useDepartment } from "../composables/useDepartment.js";
 import { useBreakpoint } from "../composables/useBreakpoint.js";
 import DeptSwitcher from "../components/DeptSwitcher.vue";
+import ColorPicker from "../components/ColorPicker.vue";
 import {
   getAllDepartments,
   getDepartment,
@@ -977,6 +988,7 @@ import { parseSemestersFromText } from "../utils/parseSemestersFromText.js";
 import apiClient from "../services/services.js";
 
 const router      = useRouter();
+const route       = useRoute();
 const currentUser = ref(Utils.getStore("user"));
 
 const isManager = computed(() =>
@@ -1342,7 +1354,19 @@ watch(selectedDeptId, (id) => {
   loadDeptData(id);
 });
 
-onMounted(initLoad);
+function maybeOpenCreateFromQuery() {
+  if (route.query.create === "1" && isManager.value && !noDeptsYet.value) {
+    openCreateDeptModal();
+    router.replace({ query: { ...route.query, create: undefined } });
+  }
+}
+
+onMounted(async () => {
+  await initLoad();
+  maybeOpenCreateFromQuery();
+});
+
+watch(() => route.query.create, () => maybeOpenCreateFromQuery());
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtTime(t) {
@@ -1571,14 +1595,14 @@ const deleteEmpConfirm = ref({ open: false, emp: null, saving: false });
 function openCreateEmployee() {
   empModal2.value = {
     open: true, isEdit: false, editId: null,
-    data: { fName: "", lName: "", email: "", role: "Employee" },
+    data: { fName: "", lName: "", email: "", role: "Employee", color: null },
     saving: false, error: "",
   };
 }
 function openEditEmployee(emp) {
   empModal2.value = {
     open: true, isEdit: true, editId: emp.id_employee,
-    data: { fName: emp.fName, lName: emp.lName, email: emp.email, role: emp.role },
+    data: { fName: emp.fName, lName: emp.lName, email: emp.email, role: emp.role, color: emp.color || null },
     saving: false, error: "",
   };
 }
@@ -2456,6 +2480,11 @@ async function saveBufferTime() {
 .modal-overlay { position: fixed; inset: 0; background: var(--bg-moverlay); display: flex; align-items: center; justify-content: center; z-index: 300; backdrop-filter: blur(4px); }
 .modal { background: var(--bg-modal); border: 1px solid var(--bdr-medium); border-radius: 14px; padding: 28px; width: 420px; max-width: 96vw; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
 .modal-sm { width: 320px; }
+.modal.modal-emp {
+  width: 520px;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 32px;
+}
 .modal-title { font-size: 20px; font-weight: 700; color: var(--tx-primary); margin-bottom: 8px; }
 .modal-desc  { font-size: 15px; color: var(--tx-muted); margin-bottom: 20px; }
 .modal-body-text { font-size: 16px; color: var(--tx-muted); margin-bottom: 20px; }
@@ -2471,6 +2500,14 @@ async function saveBufferTime() {
 .form-group select:focus { border-color: var(--accent); }
 .form-group select option { background: var(--bg-modal); }
 .modal-error { font-size: 14px; color: var(--err-text); margin-bottom: 12px; }
+
+.emp-color-preview { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.emp-avatar-preview {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; color: #fff;
+}
+.emp-color-hex { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--tx-muted); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 .cancel-btn { background: none; border: 1px solid var(--bdr-medium); color: var(--tx-muted); padding: 8px 18px; border-radius: 8px; cursor: pointer; font-family: 'Satoshi', sans-serif; font-size: 15px; transition: border-color 0.15s; }
 .cancel-btn:hover { border-color: var(--bdr-subtle); color: var(--tx-secondary); }

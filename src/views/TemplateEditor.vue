@@ -303,15 +303,6 @@
         </div>
         <div class="qc-day-label">{{ DAY_NAMES_FULL[quickCreate.dayIndex] }}</div>
         <div class="form-group">
-          <label>Label <span class="optional">(optional)</span></label>
-          <input
-            v-model="quickCreate.label"
-            type="text"
-            placeholder="e.g. Morning, Opener, Closer…"
-            ref="qcLabelInput"
-          />
-        </div>
-        <div class="form-group">
           <label>Position <span class="req-star">*</span></label>
           <select v-model="quickCreate.id_position" @change="onQuickCreatePositionChange">
             <option value="">— Select position —</option>
@@ -319,6 +310,15 @@
               {{ pos.name }}
             </option>
           </select>
+        </div>
+        <div class="form-group">
+          <label>Label <span class="optional">(optional)</span></label>
+          <input
+            v-model="quickCreate.label"
+            type="text"
+            placeholder="e.g. Morning, Opener, Closer…"
+            ref="qcLabelInput"
+          />
         </div>
         <div class="form-group">
           <label>Employee <span class="optional">(optional)</span></label>
