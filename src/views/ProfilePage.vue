@@ -19,7 +19,7 @@
         <h1 class="page-title">Profile</h1>
       </div>
       <div class="nav-right">
-        <button class="primary-btn" @click="openEditProfile">
+        <button class="primary-btn" @click="openEditProfile(currentUser)">
           Edit Profile
         </button>
       </div>
@@ -62,7 +62,7 @@
             <input v-model="modal.data.lName" type="string" placeholder="Last Name" />
           </div>
           <div class="form-group">
-            <label>Bio</label>
+            <label>Bio (Optional)</label>
             <input v-model="modal.data.bio" type="text" placeholder="Write something about yourself" />
           </div>
           <p v-if="modal.error" class="modal-error">{{ modal.error }}</p>
@@ -79,125 +79,61 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed } from "vue";
 import { useRouter } from "vue-router";
 import Utils from "../config/utils.js";
 import apiClient from "../services/services.js";
-import { timeStrToHour, fmtHour } from "../services/employeeManagementService.js";
 
 const router      = useRouter();
-const currentUser = Utils.getStore("user") || {};
-const isManager   = computed(() => currentUser.role === "Manager" || currentUser.role === "Admin");
-const isEmployee  = computed(() => currentUser.role === "Employee" || isManager.value);
-
-const loading  = ref(false);
-const apiError = ref("");
-
-const employees    = ref([]);
-const swapRequests = ref([]);
-const myShifts     = ref([]);
-
-const COLORS = ["#FF1744","#C0392B","#E8724A","#9B6B9B","#4A90A4","#C8973A","#D4756B","#6C8EAD"];
-const empMap  = ref({});
-
-function colorFor(id)   { return COLORS[(id || 0) % COLORS.length]; }
-function nameFor(id)    { const e = empMap.value[id]; return e ? `${e.fName} ${e.lName}` : `Employee #${id}`; }
-function initialsFor(id){ const e = empMap.value[id]; return e ? `${e.fName[0]}${e.lName[0]}` : "?"; }
-
-async function loadAll() {
-  loading.value = true; apiError.value = "";
-  try {
-    const [empRes, swapRes, shiftRes, assignRes] = await Promise.all([
-      apiClient.get("/employees"),
-      apiClient.get("/swap-requests"),
-      apiClient.get("/shifts"),
-      apiClient.get("/shift-assignments"),
-    ]);
-
-    employees.value = empRes.data;
-    empMap.value = {};
-    for (const e of empRes.data) empMap.value[e.id_employee] = e;
-
-    // Join shifts for display
-    const shiftById = {};
-    for (const s of shiftRes.data) shiftById[s.id_shift] = s;
-
-    // Enrich swap requests with shift info
-    swapRequests.value = swapRes.data.map(r => {
-      const s = shiftById[r.id_shift];
-      return {
-        ...r,
-        shiftDate: s?.date || "—",
-        shiftTime: s ? `${fmtHour(timeStrToHour(s.startTime))}–${fmtHour(timeStrToHour(s.endTime))}` : "—",
-      };
-    });
-
-    // My shifts (for posting a trade)
-    myShifts.value = assignRes.data
-      .filter(a => a.id_employee === currentUser.id_employee)
-      .map(a => {
-        const s = shiftById[a.id_shift];
-        if (!s) return null;
-        const startHour = timeStrToHour(s.startTime);
-        const endHour   = timeStrToHour(s.endTime);
-        return {
-          id_shift: a.id_shift,
-          id_shiftAssignment: a.id_shiftAssignment,
-          date: a.date,
-          startLabel: fmtHour(startHour),
-          endLabel:   fmtHour(endHour),
-        };
-      }).filter(Boolean);
-
-  } catch (err) {
-    apiError.value = "Could not load data: " + (err.message || "Network error");
-  } finally {
-    loading.value = false;
+const currentUser = ref(Utils.getStore("user") || {});
+const isManager   = computed(() => currentUser.value.role === "Manager" || currentUser.value.role === "Admin");
+const isEmployee  = computed(() => currentUser.value.role === "Employee" || isManager.value);
+const userInitials = computed(() => {
+  if (currentUser.value?.fName && currentUser.value?.lName) {
+    return `${currentUser.value.fName[0]}${currentUser.value.lName[0]}`;
   }
-}
+  return "?";
+});
 
-onMounted(loadAll);
 
-const pendingRequests = computed(() => swapRequests.value.filter(r => r.status === "Pending"));
-const allRequests     = computed(() => swapRequests.value);
-const openTrades      = computed(() => swapRequests.value.filter(r => r.status === "Pending"));
-const myRequests      = computed(() => swapRequests.value.filter(r => r.id_employeeRequester === currentUser.id_employee));
-const otherEmployees  = computed(() => employees.value.filter(e => e.id_employee !== currentUser.id_employee));
 
-// ── Post shift modal ──
+// ── Profile edit modal ──
 const modal = ref({ open: false, data: {}, editId: null, saving: false, error: "" });
 
-function openEditProfile() {
-  modal.value = { open: true, data: {}, editId: null, saving: false, error: "" };
+function openEditProfile(employee) {
+  modal.value = {
+    open: true,
+    data: {
+      fName: employee?.fName || "",
+      lName: employee?.lName || "",
+      bio: employee?.bio || "",
+    },
+    editId: employee?.id_employee || null,
+    saving: false,
+    error: "",
+  };
 }
 
 function closeModal() { modal.value.open = false; }
 
 async function saveModal() {
-  modal.value.saving = true; modal.value.error = "";
+  modal.value.saving = true;
+  modal.value.error = "";
   const { data, editId } = modal.value;
   try {
-    if (type === "list") {
-      if (!data.name) throw new Error("Name is required.");
-      if (isEdit) {
-        await apiClient.put(`/task-lists/${editId}`, data);
-        const idx = taskLists.value.findIndex(l => l.id_taskList === editId);
-        if (idx !== -1) taskLists.value[idx] = { ...taskLists.value[idx], ...data };
-      } else {
-        const res = await apiClient.post("/task-lists", data);
-        taskLists.value.push(res.data);
-      }
-    } else {
-      if (!data.name || !data.description) throw new Error("Name and description are required.");
-      if (isEdit) {
-        await apiClient.put(`/tasks/${editId}`, data);
-        const idx = tasks.value.findIndex(t => t.id_task === editId);
-        if (idx !== -1) tasks.value[idx] = { ...tasks.value[idx], ...data };
-      } else {
-        const res = await apiClient.post("/tasks", data);
-        tasks.value.push(res.data);
-      }
-    }
+    // Throw error if first and last name fields are empty
+    if (!data.fName || !data.lName)
+      throw new Error("First and last name are required.");
+    const payload = { ...data };
+    await apiClient.put(`/employees/${editId}`, payload);
+    // Fetch the updated employee data
+    const updatedRes = await apiClient.get(`/employees/${editId}`);
+    const updatedUser = updatedRes.data;
+    // Preserve existing user fields like picture, token, etc.
+    const mergedUser = { ...currentUser.value, ...updatedUser };
+    // Update store and local ref
+    Utils.setStore("user", mergedUser);
+    currentUser.value = mergedUser;
     closeModal();
   } catch (err) {
     modal.value.error = err.message || "Save failed.";
@@ -206,28 +142,7 @@ async function saveModal() {
   }
 }
 
-async function takeShift(r) {
-  try {
-    await apiClient.put(`/swap-requests/${r.id_swapRequest}`, {
-      ...r,
-      id_employeeRequested: currentUser.id_employee,
-      status: "Pending",
-    });
-    await loadAll();
-  } catch (err) {
-    apiError.value = "Failed to take shift: " + err.message;
-  }
-}
 
-async function updateStatus(r, status) {
-  try {
-    await apiClient.put(`/swap-requests/${r.id_swapRequest}`, { ...r, status });
-    const idx = swapRequests.value.findIndex(s => s.id_swapRequest === r.id_swapRequest);
-    if (idx !== -1) swapRequests.value[idx] = { ...swapRequests.value[idx], status };
-  } catch (err) {
-    apiError.value = "Failed to update request: " + err.message;
-  }
-}
 </script>
 
 <style scoped>
@@ -245,32 +160,7 @@ async function updateStatus(r, status) {
 .primary-btn { background: var(--accent); border: none; color: #fff; padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
 .primary-btn:hover { background: var(--accent-hover); }
 
-.loading-overlay { position: fixed; inset: 0; background: var(--bg-overlay); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; z-index: 999; backdrop-filter: blur(4px); }
-.loading-spinner { width: 36px; height: 36px; border: 3px solid var(--bdr-subtle); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.loading-text { font-size: 13px; color: var(--tx-muted); font-family: 'DM Mono', monospace; }
-.error-banner { background: var(--err-bg); border-bottom: 1px solid var(--err-border); color: var(--err-text); font-size: 12px; padding: 8px 20px; display: flex; align-items: center; gap: 10px; }
-.retry-btn { background: none; border: 1px solid var(--err-text); color: var(--err-text); padding: 2px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; }
-
-.content { flex: 1; overflow-y: auto; padding: 32px 36px; display: flex; flex-direction: column; gap: 36px; }
-.content::-webkit-scrollbar { width: 6px; }
-.content::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
-
-.section { max-width: 1000px; width: 100%; }
-.section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-.section-title { font-size: 18px; font-weight: 700; color: var(--tx-heading); margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
-.section-sub { font-size: 13px; color: var(--tx-faint); margin-bottom: 16px; margin-top: -10px; }
-.badge { background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 100px; }
-
-.table-wrap { border-radius: 12px; border: 1px solid var(--bdr-subtle); overflow: hidden; }
-.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.data-table thead { background: var(--bg-surface); }
-.data-table th { text-align: left; padding: 12px 16px; font-size: 11px; font-weight: 600; color: var(--tx-faint); text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 1px solid var(--bdr-subtle); }
-.data-table td { padding: 12px 16px; border-bottom: 1px solid var(--bdr-strong); color: var(--tx-secondary); vertical-align: middle; }
-.data-table tr:last-child td { border-bottom: none; }
-.data-table tr:hover td { background: var(--bg-input); }
-.empty-row { text-align: center; color: var(--tx-ghost); font-style: italic; padding: 32px 0 !important; }
-.mono { font-family: 'DM Mono', monospace; font-size: 12px; }
+.content { flex: 1; overflow-y: auto; padding: 32px 36px; display: flex; flex-direction: column; align-items: center; }
 
 .avatar-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
 
@@ -293,45 +183,16 @@ async function updateStatus(r, status) {
 .profile-role-badge.employee { background: rgba(255,23,68,0.1);  color: #FF4569; }
 .profile-role-badge.manager  { background: rgba(240,230,211,0.1); color: #c8903a; }
 .profile-role-badge.admin    { background: rgba(74,144,164,0.15); color: #4A90A4; }
-.profile-bio { font-size: 15px; font-weight: 600; color: var(--tx-secondary); margin-bottom: 6px; }
-
-.emp-cell { display: flex; align-items: center; gap: 8px; }
-.emp-avatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; flex-shrink: 0; }
-
-.status-badge { display: inline-block; padding: 2px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; }
-.status-badge.pending  { background: var(--warn-bg);  color: var(--warn-text); }
-.status-badge.approved { background: var(--ok-bg);    color: var(--ok-text); }
-.status-badge.denied   { background: var(--deny-bg);  color: var(--err-text); }
-
-.action-btns { display: flex; gap: 6px; }
-.approve-btn { background: var(--ok-bg); border: none; color: var(--ok-text); padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
-.approve-btn:hover { background: var(--ok-bg-h); }
-.deny-btn { background: var(--deny-bg); border: none; color: var(--err-text); padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
-.deny-btn:hover { background: var(--deny-bg-h); }
-
-.trade-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
-.trade-card { background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 12px; padding: 18px; transition: border-color 0.15s; }
-.trade-card:hover { border-color: var(--accent); }
-.trade-card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
-.trade-name { font-size: 14px; font-weight: 600; color: var(--tx-primary); }
-.trade-label { font-size: 11px; color: var(--tx-faint); }
-.trade-details { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
-.trade-detail-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--tx-muted); }
-.detail-label { color: var(--tx-ghost); }
-.take-btn { width: 100%; background: var(--accent-bg); border: 1px solid var(--accent-border); color: var(--accent); padding: 8px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
-.take-btn:hover { background: var(--accent-subtle); }
-.your-post { font-size: 12px; color: var(--tx-ghost); text-align: center; font-style: italic; }
-
-.empty-card { background: var(--bg-surface); border: 1px solid var(--bdr-subtle); border-radius: 12px; padding: 48px; text-align: center; }
-.empty-icon { font-size: 32px; margin-bottom: 12px; }
-.empty-title { font-size: 16px; font-weight: 600; color: var(--tx-faint); margin-bottom: 6px; }
-.empty-sub { font-size: 13px; color: var(--tx-ghost); }
+.profile-bio { font-size: 15px; font-weight: 600; color: var(--tx-secondary); margin-top: 24px; margin-bottom: 6px; }
 
 .modal-overlay { position: fixed; inset: 0; background: var(--bg-moverlay); display: flex; align-items: center; justify-content: center; z-index: 300; backdrop-filter: blur(4px); }
 .modal { background: var(--bg-modal); border: 1px solid var(--bdr-medium); border-radius: 14px; padding: 28px; width: 400px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
 .modal-title { font-size: 18px; font-weight: 700; color: var(--tx-primary); margin-bottom: 20px; }
 .form-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
 .form-group label { font-size: 10px; color: var(--tx-dim); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
+.form-group input { background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary);
+  padding: 8px 10px; border-radius: 8px; font-size: 13px;
+  font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; width: 100%; }
 .optional { font-weight: 400; text-transform: none; font-style: italic; letter-spacing: 0; }
 .form-group select { background: var(--bg-input); border: 1px solid var(--bdr-medium); color: var(--tx-primary); padding: 8px 10px; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; outline: none; width: 100%; }
 .form-group select:focus { border-color: var(--accent); }
