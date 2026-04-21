@@ -50,6 +50,14 @@
               </div>
             </div>
             <p class="card-desc">{{ tpl.description || 'No description' }}</p>
+            <div class="card-badge-row">
+              <span v-if="(tpl.durationWeeks || 1) > 1" class="card-badge">
+                {{ tpl.durationWeeks }}-week cycle
+              </span>
+              <span v-if="semesterNameFor(tpl)" class="card-badge card-badge-semester">
+                {{ semesterNameFor(tpl) }}
+              </span>
+            </div>
           </div>
           <div class="card-footer">
             <button class="outline-btn" @click="router.push('/templates/' + tpl.id_template)">
@@ -85,6 +93,50 @@
               placeholder="Describe when or how this template is used…"
               rows="3"
             />
+          </div>
+          <div class="form-group">
+            <label>Link to Semester <span class="optional">(optional)</span></label>
+            <select
+              v-model="modal.data.id_semester"
+              class="semester-select"
+              @change="onSemesterPick"
+            >
+              <option :value="null">— No semester (custom length) —</option>
+              <option
+                v-for="s in semesters"
+                :key="s.id_semester"
+                :value="s.id_semester"
+              >
+                {{ s.name }} ({{ formatDateShort(s.startDate) }} – {{ formatDateShort(s.endDate) }})
+              </option>
+            </select>
+            <p v-if="pickedSemester" class="field-hint">
+              Template length auto-set to {{ pickedSemester._weeks }} weeks to match
+              <strong>{{ pickedSemester.name }}</strong>.
+              Applying will default to the semester's start date.
+            </p>
+            <p v-else class="field-hint">
+              Pick a semester to auto-size this template, or leave blank and set a custom length below.
+            </p>
+          </div>
+          <div class="form-group">
+            <label>Template Length</label>
+            <div class="duration-row">
+              <input
+                v-model.number="modal.data.durationWeeks"
+                type="number"
+                min="1"
+                max="52"
+                class="duration-input"
+                :disabled="!!modal.data.id_semester"
+              />
+              <span class="duration-suffix">week{{ modal.data.durationWeeks === 1 ? '' : 's' }}</span>
+              <span v-if="modal.data.id_semester" class="semester-lock-note">locked to semester</span>
+            </div>
+            <p class="field-hint">
+              How many weeks of schedule this template covers. 1 = the classic repeating weekly pattern.
+              Use 2 for bi-weekly cycles, 16 for a full semester.
+            </p>
           </div>
 
           <p v-if="modal.error" class="modal-error">{{ modal.error }}</p>
@@ -304,6 +356,7 @@ import {
 } from "../services/templateService.js";
 import apiClient from "../services/services.js";
 import { getTemplateShiftTasks } from "../services/taskService.js";
+import { getSemesters } from "../services/semesterService.js";
 
 const PERIOD_OPTIONS = [
   { label: "1 Week",  value: "1w",  days: 7  },
@@ -329,6 +382,25 @@ const apiError = ref("");
 const search   = ref("");
 
 const templates = ref([]);
+const semesters = ref([]); // full list for the selected department; drives the picker in the Add Template modal
+
+// Integer weeks covered by a semester's [startDate, endDate] inclusive range
+// (date arithmetic rounds up a partial trailing week so short semesters read
+// as at least 1 week). Used to auto-set durationWeeks when a semester is picked.
+function weeksBetween(startStr, endStr) {
+  if (!startStr || !endStr) return 1;
+  const start = new Date(startStr + "T00:00:00");
+  const end   = new Date(endStr   + "T00:00:00");
+  const days  = Math.floor((end - start) / 86400000) + 1;
+  return Math.max(1, Math.ceil(days / 7));
+}
+
+async function loadSemesters() {
+  try {
+    const res = await getSemesters(selectedDeptId.value);
+    semesters.value = res.data || [];
+  } catch { semesters.value = []; }
+}
 
 const filteredTemplates = computed(() => {
   const q = search.value.trim().toLowerCase();
@@ -353,10 +425,11 @@ async function loadTemplates() {
   }
 }
 
-watch(selectedDeptId, loadTemplates);
+watch(selectedDeptId, () => { loadTemplates(); loadSemesters(); });
 onMounted(async () => {
   if (!myDepts.value.length) await loadDepts(Utils.getStore("user"));
   loadTemplates();
+  loadSemesters();
 });
 
 // ── Modal ──────────────────────────────────────────────────────────────────────
@@ -370,7 +443,11 @@ const modal = ref({
 });
 
 function openCreate() {
-  modal.value = { open: true, isEdit: false, id: null, data: { name: "", description: "" }, saving: false, error: "" };
+  modal.value = {
+    open: true, isEdit: false, id: null,
+    data: { name: "", description: "", durationWeeks: 1, id_semester: null },
+    saving: false, error: "",
+  };
 }
 
 function openEdit(tpl) {
@@ -378,10 +455,44 @@ function openEdit(tpl) {
     open: true,
     isEdit: true,
     id: tpl.id_template,
-    data: { name: tpl.name, description: tpl.description || "" },
+    data: {
+      name: tpl.name,
+      description: tpl.description || "",
+      durationWeeks: tpl.durationWeeks || 1,
+      id_semester: tpl.id_semester || null,
+    },
     saving: false,
     error: "",
   };
+}
+
+// Picked-semester lookup exposed to the modal so the hint can show name + weeks
+const pickedSemester = computed(() => {
+  const sid = modal.value.data?.id_semester;
+  if (!sid) return null;
+  const s = semesters.value.find(x => x.id_semester === sid);
+  if (!s) return null;
+  return { ...s, _weeks: weeksBetween(s.startDate, s.endDate) };
+});
+
+// When the user picks a semester, auto-lock durationWeeks to its span. When
+// they clear the semester, leave the current durationWeeks as-is so they can
+// just fine-tune.
+function onSemesterPick() {
+  const s = pickedSemester.value;
+  if (s) modal.value.data.durationWeeks = s._weeks;
+}
+
+function semesterNameFor(tpl) {
+  if (!tpl?.id_semester) return "";
+  const s = semesters.value.find(x => x.id_semester === tpl.id_semester);
+  return s?.name || "";
+}
+
+function formatDateShort(iso) {
+  if (!iso) return "";
+  const d = new Date(String(iso).slice(0, 10) + "T00:00:00");
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
 function closeModal() {
@@ -393,15 +504,22 @@ async function saveModal() {
     modal.value.error = "Name is required.";
     return;
   }
+  const weeks = Math.max(1, Math.min(52, Math.floor(+modal.value.data.durationWeeks || 1)));
   modal.value.saving = true;
   modal.value.error = "";
   try {
+    const payload = {
+      name: modal.value.data.name,
+      description: modal.value.data.description,
+      durationWeeks: weeks,
+      id_semester: modal.value.data.id_semester || null,
+    };
     if (modal.value.isEdit) {
-      const updated = await updateTemplate(modal.value.id, modal.value.data);
+      const updated = await updateTemplate(modal.value.id, payload);
       const idx = templates.value.findIndex(t => t.id_template === modal.value.id);
-      if (idx !== -1) templates.value[idx] = updated;
+      if (idx !== -1) templates.value[idx] = { ...templates.value[idx], ...payload, ...updated };
     } else {
-      const created = await createTemplate({ ...modal.value.data, id_department: selectedDeptId.value || null });
+      const created = await createTemplate({ ...payload, id_department: selectedDeptId.value || null });
       router.push('/templates/' + created.id_template);
       return;
     }
@@ -486,12 +604,18 @@ const applyRangeLabel = computed(() => {
 });
 
 function openApply(tpl) {
+  // If the template is linked to a semester, default to applying across the
+  // full semester range — picking a semester at creation time is the whole
+  // point, so the Apply step should just confirm rather than re-pick dates.
+  const linked = tpl.id_semester
+    ? semesters.value.find(s => s.id_semester === tpl.id_semester)
+    : null;
   applyModal.value = {
     open: true,
     template: tpl,
-    period: "2w",
-    startDate: defaultStartDate(),
-    endDate: "",
+    period: linked ? "custom" : "2w",
+    startDate: linked ? String(linked.startDate).slice(0, 10) : defaultStartDate(),
+    endDate:   linked ? String(linked.endDate).slice(0, 10)   : "",
     applying: false,
     error: "",
   };
@@ -548,14 +672,21 @@ async function applyTemplate() {
       });
     } catch { /* live-sync link unavailable until backend adds endpoint */ }
 
-    // 4. Walk every date in the range
+    // 4. Walk every date in the range. For multi-week templates, cycle the
+    //    pattern: week N of the range maps to weekOffset (N mod durationWeeks).
+    const durationWeeks = Math.max(1, +applyModal.value.template?.durationWeeks || 1);
+    const MS_PER_DAY = 86400000;
+    const assignmentFailures = []; // [{ name, date, reason }] — surfaced after apply
     const current = new Date(start);
     while (current <= end) {
       const dowInt  = current.getDay();
       const dateStr = localDateStr(current);
+      const daysSinceStart = Math.floor((current - start) / MS_PER_DAY);
+      const weekOffset = Math.floor(daysSinceStart / 7) % durationWeeks;
 
       for (const ts of tShifts) {
         if (ts.dayOfWeek !== dowInt) continue;
+        if ((ts.weekOffset || 0) !== weekOffset) continue;
 
         // Create the Shift row
         const { data: newShift } = await apiClient.post("/shifts", {
@@ -569,13 +700,29 @@ async function applyTemplate() {
           id_department: selectedDeptId.value || null,
         });
 
-        // Create ShiftAssignments for each employee (if any)
+        // Create ShiftAssignments for each employee (if any). Pass force:true
+        // to bypass the unavailability soft-block — the manager explicitly
+        // put this employee on this shift in the template, so a recurring
+        // unavailability (class schedule, manual block) shouldn't silently
+        // drop the assignment. Approved time-off still hard-blocks and is
+        // collected so we can show a warning.
         for (const emp of ts._employees) {
-          await apiClient.post("/shift-assignments", {
-            id_shift:    newShift.id_shift,
-            id_employee: emp.id_employee,
-            date:        dateStr,
-          }).catch(() => {});
+          try {
+            await apiClient.post("/shift-assignments", {
+              id_shift:    newShift.id_shift,
+              id_employee: emp.id_employee,
+              date:        dateStr,
+              force:       true,
+            });
+          } catch (err) {
+            const reason = err.response?.data?.message || err.message || "Assignment failed";
+            assignmentFailures.push({
+              id_employee: emp.id_employee,
+              name: `${emp.fName || ""} ${emp.lName || ""}`.trim() || `#${emp.id_employee}`,
+              date: dateStr,
+              reason,
+            });
+          }
         }
 
         // Assign task lists (if any)
@@ -608,7 +755,19 @@ async function applyTemplate() {
       current.setDate(current.getDate() + 1);
     }
 
-    applyModal.value.open = false;
+    if (assignmentFailures.length) {
+      // Hard-blocks (e.g. approved time-off) can't be overridden. Keep the
+      // modal open and show the list so the manager can see what didn't
+      // stick and decide how to handle it manually.
+      const preview = assignmentFailures.slice(0, 5)
+        .map(f => `• #${f.id_employee} on ${f.date}: ${f.reason}`).join("\n");
+      const more = assignmentFailures.length > 5 ? `\n…and ${assignmentFailures.length - 5} more` : "";
+      applyModal.value.error =
+        `Shifts were created, but ${assignmentFailures.length} assignment${assignmentFailures.length === 1 ? '' : 's'} could not be made ` +
+        `(usually approved time-off):\n${preview}${more}`;
+    } else {
+      applyModal.value.open = false;
+    }
   } catch (err) {
     applyModal.value.error = err.response?.data?.message || err.message || "Apply failed.";
   } finally {
@@ -990,7 +1149,7 @@ watch(() => applyModal.value.open, (v) => { if (!v) closePicker(); });
 .form-group input::placeholder,
 .form-group textarea::placeholder { color: var(--tx-faded); }
 .optional { color: var(--tx-faint); font-weight: 400; text-transform: none; letter-spacing: 0; }
-.modal-error { color: var(--accent); font-size: 14px; margin: 0; }
+.modal-error { color: var(--accent); font-size: 14px; margin: 0; white-space: pre-line; line-height: 1.5; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
 .cancel-btn {
   background: none;
@@ -1058,6 +1217,57 @@ watch(() => applyModal.value.open, (v) => { if (!v) closePicker(); });
 .form-row-dates { display: flex; align-items: flex-end; gap: 10px; }
 .form-row-dates .form-group { flex: 1; }
 .date-range-arrow { font-size: 18px; color: var(--tx-faint); padding-bottom: 10px; flex-shrink: 0; }
+.semester-select {
+  background: var(--bg-surface);
+  border: 1px solid var(--bdr-faint);
+  border-radius: 7px;
+  padding: 9px 12px;
+  color: var(--tx-primary);
+  font-size: 15px;
+  font-family: 'Satoshi', sans-serif;
+  outline: none;
+  transition: border-color .15s;
+  width: 100%;
+  cursor: pointer;
+}
+.semester-select:focus { border-color: var(--accent); }
+.semester-lock-note {
+  font-size: 12px;
+  color: var(--accent);
+  font-family: 'DM Mono', monospace;
+  letter-spacing: .3px;
+}
+.duration-row { display: flex; align-items: center; gap: 10px; }
+.duration-input {
+  background: var(--bg-surface);
+  border: 1px solid var(--bdr-faint);
+  border-radius: 7px; padding: 9px 12px;
+  color: var(--tx-primary);
+  font-size: 15px; font-family: 'Satoshi', sans-serif;
+  outline: none; transition: border-color .15s;
+  width: 80px;
+}
+.duration-input:focus { border-color: var(--accent); }
+.duration-input:disabled { opacity: .55; cursor: not-allowed; }
+.duration-suffix { font-size: 15px; color: var(--tx-faint); font-family: 'DM Mono', monospace; }
+.field-hint { font-size: 13px; color: var(--tx-faint); margin: 0; line-height: 1.4; }
+.card-badge-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.card-badge {
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'DM Mono', monospace;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--accent-border);
+  letter-spacing: .3px;
+}
+.card-badge-semester {
+  background: var(--bg-hover);
+  color: var(--tx-secondary);
+  border-color: var(--bdr-subtle);
+}
 .apply-range-preview {
   display: flex; align-items: center; gap: 8px;
   background: var(--bg-surface);
