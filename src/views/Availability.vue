@@ -15,20 +15,54 @@
         <div>
           <h2 class="panel-title">My Availability</h2>
           <p class="panel-sub">
-            Class schedule and other recurring commitments. Managers see this when building schedules —
-            turn on <strong>Hide reason</strong> on any block you'd rather keep private.
+            Pick a semester, then add your class schedule and other recurring commitments for it.
+            Managers see this when building schedules for that semester.
+            Turn on <strong>Hide reason</strong> on any block you'd rather keep private.
           </p>
         </div>
         <div class="header-actions">
-          <button class="secondary-btn" :disabled="syncing" @click="syncClassSchedule">
+          <button class="secondary-btn" :disabled="syncing || !selectedSemesterId" @click="syncClassSchedule">
             <svg v-if="!syncing" width="14" height="14" viewBox="0 0 16 16" fill="none" style="margin-right:6px">
               <path d="M3 8a5 5 0 0 1 8.5-3.5M13 8a5 5 0 0 1-8.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
               <path d="M11 2v3h-3M5 14v-3h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             <span v-else class="sync-spinner"></span>
-            {{ syncing ? 'Syncing…' : 'Sync class schedule' }}
+            {{ syncing ? 'Syncing…' : `Sync class schedule${selectedSemester ? ` (${selectedSemester.name})` : ''}` }}
           </button>
           <button class="primary-btn" @click="openAddModal">+ Add Unavailability</button>
+        </div>
+      </div>
+
+      <!-- ── Semester Picker Bar ── -->
+      <div class="semester-bar">
+        <label class="semester-bar-label">Editing for:</label>
+        <div v-if="semesters.length === 0" class="semester-bar-empty">
+          No semesters configured for your department.
+          <span class="semester-bar-hint">Ask your manager to set up Semesters under Department settings.</span>
+        </div>
+        <div v-else class="semester-chip-row">
+          <button
+            v-for="s in semesters"
+            :key="s.id_semester"
+            class="semester-chip"
+            :class="{ active: selectedSemesterId === s.id_semester, 'semester-chip--current': isCurrentSemester(s) }"
+            @click="selectedSemesterId = s.id_semester"
+          >
+            <span class="semester-chip-name">{{ s.name }}</span>
+            <span class="semester-chip-range">{{ formatSemesterRange(s) }}</span>
+          </button>
+        </div>
+        <div v-if="selectedSemester" class="semester-bar-note">
+          Showing <strong>{{ visibleRows.length }}</strong>
+          {{ visibleRows.length === 1 ? 'entry' : 'entries' }} for
+          <strong>{{ selectedSemester.name }}</strong>.
+          <button
+            v-if="hasLegacyRowsForSemester"
+            class="semester-bar-link"
+            @click="showLegacyRows = !showLegacyRows"
+          >
+            {{ showLegacyRows ? 'Hide' : 'Show' }} legacy rows ({{ legacyRowCount }})
+          </button>
         </div>
       </div>
       <p v-if="syncMessage" class="sync-status" :class="{ 'sync-status--error': syncMessage.startsWith('Sync') && syncMessage.includes('fail') || syncMessage.startsWith('Sync unavailable') }">
@@ -115,7 +149,7 @@
       </div>
 
       <!-- ── Entry list (for editing/deleting) ── -->
-      <div v-if="rows.length === 0" class="empty-card">
+      <div v-if="visibleRows.length === 0" class="empty-card">
         <p class="empty-title">No unavailability yet</p>
         <p class="empty-sub">
           Your class schedule will appear here automatically once imports are set up.
@@ -173,8 +207,8 @@
             <label>Scope</label>
             <div class="scope-radio-row">
               <label class="scope-opt">
-                <input type="radio" value="season" v-model="modal.data.scopeType" />
-                <span>This semester ({{ activeSeason || 'no season set' }})</span>
+                <input type="radio" value="season" v-model="modal.data.scopeType" :disabled="!selectedSemester" />
+                <span>{{ selectedSemester ? selectedSemester.name : (activeSeason || 'No semester selected') }}</span>
               </label>
               <label class="scope-opt">
                 <input type="radio" value="dateRange" v-model="modal.data.scopeType" />
@@ -236,7 +270,7 @@ import { useBreakpoint } from "../composables/useBreakpoint.js";
 import { usePreferences } from "../composables/usePreferences.js";
 import apiClient from "../services/services.js";
 import { getSettingValues } from "../services/departmentService.js";
-import { getActiveSemester } from "../services/semesterService.js";
+import { getActiveSemester, getSemesters, pickActiveSemester } from "../services/semesterService.js";
 import {
   getUnavailability,
   createUnavailability,
@@ -261,8 +295,42 @@ const selectedDayIdx = ref(new Date().getDay());
 
 const loading   = ref(false);
 const apiError  = ref("");
-const rows      = ref([]);
-const activeSeason = ref("");
+const rows      = ref([]); // every unavailability row for this employee
+const activeSeason = ref(""); // legacy string fallback for display when no semester rows exist
+const semesters = ref([]); // all semesters for the employee's dept — drives the picker
+const selectedSemesterId = ref(null); // id_semester the user is currently editing; null = "Custom / no semester"
+// When true, the page also shows legacy rows (scopeType="dateRange" and
+// season-string rows without an id_semester FK). Defaults off so editing
+// for Fall 2026 doesn't surface Spring 2026 string-scoped blocks.
+const showLegacyRows = ref(false);
+
+const selectedSemester = computed(() => {
+  if (!selectedSemesterId.value) return null;
+  return semesters.value.find(s => s.id_semester === selectedSemesterId.value) || null;
+});
+
+// Rows visible to the user for the *currently selected* semester: every
+// row with the matching id_semester FK, plus dateRange rows that overlap
+// the semester's window (so an "out of town Aug 3-10" block shows up when
+// editing the Fall semester that contains those dates).
+const visibleRows = computed(() => {
+  if (!selectedSemesterId.value) {
+    // "No semester picked" → show only dateRange + legacy string-scoped rows
+    return rows.value.filter(r => r.scopeType === "dateRange" || !r.id_semester);
+  }
+  const sem = selectedSemester.value;
+  return rows.value.filter(r => {
+    if (r.scopeType === "season") {
+      if (r.id_semester) return Number(r.id_semester) === Number(selectedSemesterId.value);
+      // Legacy string-scoped row: include only if user asks to see legacy
+      if (!showLegacyRows.value) return false;
+      return (r.season || "") === (sem?.name || "");
+    }
+    // dateRange row: show if it overlaps the semester window
+    if (!sem?.startDate || !sem?.endDate || !r.startDate || !r.endDate) return false;
+    return r.startDate <= sem.endDate && r.endDate >= sem.startDate;
+  });
+});
 
 const modal = ref({ open: false, isEdit: false, saving: false, error: "", data: {}, editId: null });
 const deleteConfirm = ref({ open: false, saving: false, item: null });
@@ -298,7 +366,7 @@ function scopeLabel(row) {
 // ── Weekly grid layout ──
 function dayIdx(name) { return DAY_NAMES_FULL.indexOf(name); }
 function rowsForDay(colIdx) {
-  return rows.value.filter(r => dayIdx(r.dayOfWeek) === colIdx);
+  return visibleRows.value.filter(r => dayIdx(r.dayOfWeek) === colIdx);
 }
 function blockStyle(row) {
   const start = timeStrToHour(row.startTime);
@@ -375,7 +443,7 @@ const ghostLabel = computed(() => {
 });
 
 const sortedRows = computed(() => {
-  const copy = rows.value.slice();
+  const copy = visibleRows.value.slice();
   copy.sort((a, b) => {
     const da = dayIdx(a.dayOfWeek) - dayIdx(b.dayOfWeek);
     if (da !== 0) return da;
@@ -393,13 +461,22 @@ async function loadAll() {
   try {
     const res = await getUnavailability({ id_employee: empId });
     rows.value = res.data || [];
-    // Pull the active semester for the selected dept so the modal can
-    // label the "this semester" option with e.g. "Spring 2026". Falls
-    // back to the legacy Active Season setting when the dept hasn't yet
-    // configured Semester rows — that way the modal still works on
-    // departments that never set up the new model.
     const deptId = selectedDeptId.value || currentUser.value?.id_department;
     if (deptId) {
+      // Load the full semester list so the user can pick past/future
+      // semesters, not just whatever's active today. Default the picker
+      // to today's active semester for the common case.
+      try {
+        const sems = await getSemesters(deptId);
+        semesters.value = sems.data || [];
+        if (!selectedSemesterId.value) {
+          const active = pickActiveSemester(semesters.value);
+          if (active) selectedSemesterId.value = active.id_semester;
+          else if (semesters.value.length) selectedSemesterId.value = semesters.value[0].id_semester;
+        }
+      } catch { semesters.value = []; }
+
+      // Legacy fallback used for display when no Semester rows exist.
       try {
         const sem = await getActiveSemester(deptId);
         activeSeason.value = sem.data?.name || "";
@@ -417,6 +494,33 @@ async function loadAll() {
     loading.value = false;
   }
 }
+
+// UI helpers for the semester picker bar
+function formatSemesterRange(s) {
+  if (!s?.startDate || !s?.endDate) return "";
+  const f = iso => new Date(String(iso).slice(0, 10) + "T00:00:00")
+    .toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return `${f(s.startDate)} – ${f(s.endDate)}`;
+}
+function isCurrentSemester(s) {
+  if (!s?.startDate || !s?.endDate) return false;
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  return s.startDate <= today && today <= s.endDate;
+}
+
+// Legacy = string-scoped rows (no id_semester FK) whose season name matches
+// the currently-picked semester. Hidden by default so the user focuses on
+// the clean, FK-linked set; togglable for anyone who imported before the
+// FK existed.
+const legacyRowCount = computed(() => {
+  const sem = selectedSemester.value;
+  if (!sem) return 0;
+  return rows.value.filter(r =>
+    r.scopeType === "season" && !r.id_semester && (r.season || "") === sem.name
+  ).length;
+});
+const hasLegacyRowsForSemester = computed(() => legacyRowCount.value > 0);
 
 onMounted(async () => {
   if (!currentUser.value) return;
@@ -436,7 +540,7 @@ function defaultModalData() {
     startTime: "09:00",
     endTime:   "10:00",
     label:     "",
-    scopeType: activeSeason.value ? "season" : "dateRange",
+    scopeType: selectedSemester.value ? "season" : "dateRange",
     startDate: "",
     endDate:   "",
     hideReason: false,
@@ -478,8 +582,8 @@ async function saveModal() {
     modal.value.error = "End time must be after start time.";
     return;
   }
-  if (d.scopeType === "season" && !activeSeason.value) {
-    modal.value.error = "No active season is set for your department — use a custom date range instead.";
+  if (d.scopeType === "season" && !selectedSemester.value) {
+    modal.value.error = "Pick a semester above (or use a custom date range instead).";
     return;
   }
   if (d.scopeType === "dateRange" && (!d.startDate || !d.endDate)) {
@@ -495,7 +599,8 @@ async function saveModal() {
     startTime:   d.startTime,
     endTime:     d.endTime,
     scopeType:   d.scopeType,
-    season:      d.scopeType === "season"    ? activeSeason.value : null,
+    season:      d.scopeType === "season"    ? (selectedSemester.value?.name || null) : null,
+    id_semester: d.scopeType === "season"    ? (selectedSemester.value?.id_semester || null) : null,
     startDate:   d.scopeType === "dateRange" ? d.startDate : null,
     endDate:     d.scopeType === "dateRange" ? d.endDate   : null,
     label:       d.label || null,
@@ -541,10 +646,16 @@ async function executeDelete() {
 async function syncClassSchedule() {
   const empId = currentUser.value?.id_employee;
   if (!empId || syncing.value) return;
+  if (!selectedSemester.value) {
+    syncMessage.value = "Pick a semester first — imports are scoped per semester.";
+    return;
+  }
   syncing.value = true;
   syncMessage.value = "";
   try {
-    const res = await importUnavailabilityForEmployee(empId);
+    // Pass the readable name — backend maps it to id_semester and stamps
+    // every imported row, so a Fall-semester sync never overwrites Spring.
+    const res = await importUnavailabilityForEmployee(empId, selectedSemester.value.name);
     // Backend returns { inserted, semester } — refresh the grid so the
     // new rows show immediately, then flash a success note.
     await loadAll();
@@ -581,6 +692,93 @@ async function syncClassSchedule() {
 }
 .panel-title { font-size: 22px; font-weight: 700; color: var(--tx-heading); margin-bottom: 4px; }
 .panel-sub   { font-size: 14px; color: var(--tx-faint); max-width: 640px; line-height: 1.5; }
+
+/* ── Semester picker bar ── */
+.semester-bar {
+  margin: -8px 0 20px;
+  padding: 14px 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--bdr-subtle);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.semester-bar-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  color: var(--tx-faint);
+  font-family: 'DM Mono', monospace;
+}
+.semester-chip-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.semester-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  background: var(--bg-modal);
+  border: 1px solid var(--bdr-faint);
+  color: var(--tx-muted);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-family: 'Satoshi', sans-serif;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.semester-chip:hover { color: var(--tx-primary); border-color: var(--bdr-medium); }
+.semester-chip.active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.semester-chip--current::before {
+  content: "●";
+  color: #22c55e;
+  font-size: 9px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.semester-chip-name { font-size: 14px; font-weight: 600; }
+.semester-chip-range {
+  font-size: 11px;
+  font-family: 'DM Mono', monospace;
+  opacity: .75;
+  letter-spacing: .3px;
+}
+.semester-bar-empty {
+  font-size: 13px;
+  color: var(--tx-faint);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.semester-bar-hint { font-size: 12px; opacity: .75; }
+.semester-bar-note {
+  font-size: 13px;
+  color: var(--tx-secondary);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.semester-bar-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-family: 'DM Mono', monospace;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.semester-bar-link:hover { opacity: .8; }
 .primary-btn {
   background: var(--accent); border: none; color: #fff; padding: 9px 18px;
   border-radius: 8px; cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 600;

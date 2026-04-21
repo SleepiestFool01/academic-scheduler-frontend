@@ -63,10 +63,71 @@
       <button class="retry-btn" @click="loadAll">Retry</button>
     </div>
 
+    <!-- ── Week Tab Bar (only shown for multi-week templates) ── -->
+    <div v-if="!loading && !isPhone && durationWeeks > 1" class="week-tab-bar">
+      <div class="week-tab-list">
+        <button
+          v-for="i in durationWeeks"
+          :key="i - 1"
+          class="week-tab"
+          :class="{ active: activeWeek === i - 1 }"
+          @click="setActiveWeek(i - 1)"
+        >
+          <span class="week-tab-label">Week {{ i }}</span>
+          <span class="week-tab-count">{{ shiftsPerWeek[i - 1] || 0 }} shift{{ shiftsPerWeek[i - 1] === 1 ? '' : 's' }}</span>
+        </button>
+      </div>
+      <div class="week-tab-actions">
+        <div class="multi-week-menu-wrap">
+          <button
+            class="week-action-btn"
+            :class="{ active: multiWeekMenuOpen }"
+            :disabled="shiftsForWeek(activeWeek).length === 0"
+            :title="shiftsForWeek(activeWeek).length === 0 ? 'Add some shifts to this week first' : 'Copy this week to other weeks'"
+            @click.stop="multiWeekMenuOpen = !multiWeekMenuOpen"
+          >
+            Copy Week {{ activeWeek + 1 }} to…
+          </button>
+          <div v-if="multiWeekMenuOpen" class="multi-week-menu" @click.stop>
+            <div class="multi-week-menu-label">Pick target weeks:</div>
+            <div class="multi-week-menu-days">
+              <label
+                v-for="i in durationWeeks"
+                :key="i - 1"
+                v-show="i - 1 !== activeWeek"
+                class="multi-week-check"
+              >
+                <input
+                  type="checkbox"
+                  :checked="copyWeekTargets.has(i - 1)"
+                  @change="toggleCopyWeekTarget(i - 1)"
+                />
+                Week {{ i }}
+              </label>
+            </div>
+            <div class="multi-week-menu-sep"></div>
+            <button class="multi-week-menu-opt" @click="selectRemainingWeeks">Fill remaining weeks</button>
+            <button class="multi-week-menu-opt" @click="selectAllOtherWeeks">All other weeks</button>
+            <div class="multi-week-menu-sep"></div>
+            <div class="multi-week-menu-foot">
+              <button class="cancel-btn-sm" @click="cancelCopyWeek">Cancel</button>
+              <button
+                class="confirm-btn-sm"
+                :disabled="copyWeekTargets.size === 0 || copyingWeek"
+                @click="confirmCopyWeek"
+              >
+                {{ copyingWeek ? 'Copying…' : `Copy → ${copyWeekTargets.size} week${copyWeekTargets.size === 1 ? '' : 's'}` }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ── Main body: hours sidebar + calendar + right panel ── -->
     <div v-if="!isPhone" class="editor-body">
 
-      <!-- ── Hours of Operation Sidebar (visual overlay only) ── -->
+      <!-- ── Left Sidebar: Hours of Operation + Employees ── -->
       <aside class="hours-sidebar">
         <div class="hours-sidebar-head">
           <span class="hours-sidebar-title">Hours of Operation</span>
@@ -93,6 +154,48 @@
         <div v-if="selectedHoursKey" class="hours-sidebar-legend">
           <div class="legend-row"><span class="legend-swatch open"></span>Open</div>
           <div class="legend-row"><span class="legend-swatch close"></span>Close</div>
+        </div>
+
+        <!-- ── Employees: click to preview their unavailability on the grid ── -->
+        <div class="emp-preview-section">
+          <div class="hours-sidebar-head">
+            <span class="hours-sidebar-title">Employees</span>
+            <span class="hours-sidebar-sub">Click to preview availability</span>
+          </div>
+          <div class="emp-preview-search-wrap">
+            <input
+              v-model="empPreviewSearch"
+              class="emp-preview-search"
+              placeholder="Search employees…"
+            />
+          </div>
+          <div v-if="filteredPreviewEmployees.length === 0" class="hours-sidebar-empty">
+            {{ empPreviewSearch ? 'No matches.' : 'No employees in this department.' }}
+          </div>
+          <div v-else class="emp-preview-list">
+            <button
+              v-for="emp in filteredPreviewEmployees"
+              :key="emp.id_employee"
+              class="emp-preview-opt"
+              :class="{ active: previewEmployeeId === emp.id_employee }"
+              @click="togglePreviewEmployee(emp.id_employee)"
+            >
+              <span class="emp-preview-avatar" :style="{ background: empColor(emp.id_employee) }">
+                {{ (emp.fName?.[0] || '') + (emp.lName?.[0] || '') }}
+              </span>
+              <span class="emp-preview-name">{{ emp.fName }} {{ emp.lName }}</span>
+              <span
+                v-if="unavailabilityCountForEmployee(emp.id_employee) > 0"
+                class="emp-preview-count"
+                :title="`${unavailabilityCountForEmployee(emp.id_employee)} unavailability block${unavailabilityCountForEmployee(emp.id_employee) === 1 ? '' : 's'}`"
+              >
+                {{ unavailabilityCountForEmployee(emp.id_employee) }}
+              </span>
+            </button>
+          </div>
+          <div v-if="previewEmployeeId" class="emp-preview-footer">
+            <button class="emp-preview-clear" @click="previewEmployeeId = null">Clear preview</button>
+          </div>
         </div>
       </aside>
 
@@ -164,6 +267,17 @@
                   <span class="hours-line-label">Close {{ entry.closeLabel }}</span>
                 </div>
               </template>
+
+              <!-- Employee unavailability overlay (only when previewing) -->
+              <div
+                v-for="u in previewUnavailabilityForDay(colIdx)"
+                :key="'u' + u.id_employeeUnavailability"
+                class="tpl-unavail-overlay"
+                :style="unavailabilityBlockStyle(u)"
+                :title="unavailabilityTitle(u)"
+              >
+                <span class="tpl-unavail-overlay-label">{{ u.label || 'Unavailable' }}</span>
+              </div>
 
               <div v-if="drag.active && drag.dayIndex === colIdx" class="ghost-block" :style="ghostStyle">
                 <span class="ghost-label">{{ ghostLabel }}</span>
@@ -482,7 +596,7 @@ import {
 import { getPositions, getEmployees, getCalendarEntries, getSettingValues, getPositionEmployees } from "../services/departmentService.js";
 import { fetchTaskLists, fetchTasks, assignTaskListToShift, getShiftTaskLists, removeShiftTaskList, getPositionTaskLists, getTemplateShiftTasks, attachTaskToTemplateShift, removeTemplateShiftTask } from "../services/taskService.js";
 import { getUnavailability } from "../services/unavailabilityService.js";
-import { getActiveSemester } from "../services/semesterService.js";
+import { getActiveSemester, getSemesters } from "../services/semesterService.js";
 import { useUnavailabilityRefresh } from "../composables/useUnavailabilityRefresh.js";
 import apiClient from "../services/services.js";
 
@@ -510,6 +624,10 @@ const templateName = ref("");
 const saveStatus   = ref("");
 
 const templateShifts   = ref([]);
+const durationWeeks    = ref(1);      // number of weeks this template spans
+const activeWeek       = ref(0);      // 0-indexed — which week is visible in the editor
+const multiWeekMenuOpen = ref(false); // "Copy week to…" dropdown state
+const copyWeekTargets  = ref(new Set()); // week indices checked in the copy-to picker
 const positions        = ref([]);
 const allEmployees     = ref([]);
 const allTaskLists     = ref([]);
@@ -518,8 +636,16 @@ const allTasks         = ref([]);
 const positionEmployeeIds = ref({});
 
 // Dept-wide EmployeeUnavailability rows — annotates the template's
-// employee dropdown with a ⚠ + reason when the shift time overlaps.
+// employee dropdown with a ⚠ + reason when the shift time overlaps, and
+// drives the manager's "preview employee availability" overlay below.
 const deptUnavailability = ref([]);
+
+// Left-sidebar preview state. When non-null, every day column paints a
+// hatched overlay for that employee's recurring unavailability for the
+// template's semester — lets a manager scan "can Parker cover Tuesday
+// afternoons in Fall?" without opening the shift panel.
+const previewEmployeeId = ref(null);
+const empPreviewSearch  = ref("");
 const DAY_NAMES_FULL_UNAVAIL = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
 // Compare activeSeason setting ("Fall" or "Fall 2026") to a row's season
@@ -570,7 +696,16 @@ function templateConflictFor(id_employee, dayIdx, startHour, endHour) {
     if (Number(row.id_employee) !== targetId) continue;
     if (row.dayOfWeek !== dayName) continue;
     if (row.scopeType === "season") {
-      if (!seasonsMatch(activeSemester.value, row.season)) continue;
+      // Prefer FK-based match when the row has an id_semester set — it's
+      // authoritative. Fall back to string comparison for legacy rows
+      // created before the FK existed.
+      if (row.id_semester != null) {
+        const targetId = templateSemester.value?.id_semester;
+        if (!targetId || Number(row.id_semester) !== Number(targetId)) continue;
+      } else {
+        const targetSeason = templateSemester.value?.name || activeSemester.value;
+        if (!seasonsMatch(targetSeason, row.season)) continue;
+      }
     } else if (row.scopeType === "dateRange") {
       if (!row.startDate || !row.endDate) continue;
       if (todayKey < row.startDate || todayKey > row.endDate) continue;
@@ -583,10 +718,108 @@ function templateConflictFor(id_employee, dayIdx, startHour, endHour) {
 }
 function parseTime(t) { if (!t) return 0; const [h, m] = t.split(":").map(Number); return h + m / 60; }
 
+// ── Employee unavailability preview ───────────────────────────────────────────
+// Mirrors templateConflictFor's filtering rules so the overlay shows the
+// exact set of rows the backend will enforce at apply time. Takes a day
+// index (0=Sun..6=Sat) and returns rows for the currently-previewed
+// employee on that day.
+function previewUnavailabilityForDay(dayIdx) {
+  const empId = previewEmployeeId.value;
+  if (!empId) return [];
+  const dayName = DAY_NAMES_FULL_UNAVAIL[dayIdx];
+  const target = Number(empId);
+  const out = [];
+  for (const row of deptUnavailability.value) {
+    if (Number(row.id_employee) !== target) continue;
+    if (row.dayOfWeek !== dayName) continue;
+    if (!row.startTime || !row.endTime) continue;
+    if (row.scopeType === "season") {
+      if (row.id_semester != null) {
+        const tId = templateSemester.value?.id_semester;
+        if (!tId || Number(row.id_semester) !== Number(tId)) continue;
+      } else {
+        const targetSeason = templateSemester.value?.name || activeSemester.value;
+        if (!seasonsMatch(targetSeason, row.season)) continue;
+      }
+    } else if (row.scopeType === "dateRange") {
+      // Templates are abstract — no concrete date — so date-range rows
+      // only make sense to preview if the template is bound to a
+      // semester whose window overlaps. Otherwise skip.
+      const sem = templateSemester.value;
+      if (!sem?.startDate || !sem?.endDate || !row.startDate || !row.endDate) continue;
+      if (row.endDate < sem.startDate || row.startDate > sem.endDate) continue;
+    }
+    out.push(row);
+  }
+  return out;
+}
+
+// Total count for the current template's semester — shown as a chip on
+// each employee in the preview list so managers can see at a glance who
+// has conflicts without clicking.
+function unavailabilityCountForEmployee(id_employee) {
+  let count = 0;
+  for (let d = 0; d < 7; d++) {
+    // Temporarily look up "as if" this employee were previewed. Avoid
+    // reusing the helper to keep its signature simple.
+    const dayName = DAY_NAMES_FULL_UNAVAIL[d];
+    for (const row of deptUnavailability.value) {
+      if (Number(row.id_employee) !== Number(id_employee)) continue;
+      if (row.dayOfWeek !== dayName) continue;
+      if (!row.startTime || !row.endTime) continue;
+      if (row.scopeType === "season") {
+        if (row.id_semester != null) {
+          const tId = templateSemester.value?.id_semester;
+          if (!tId || Number(row.id_semester) !== Number(tId)) continue;
+        } else {
+          const targetSeason = templateSemester.value?.name || activeSemester.value;
+          if (!seasonsMatch(targetSeason, row.season)) continue;
+        }
+      } else if (row.scopeType === "dateRange") {
+        const sem = templateSemester.value;
+        if (!sem?.startDate || !sem?.endDate || !row.startDate || !row.endDate) continue;
+        if (row.endDate < sem.startDate || row.startDate > sem.endDate) continue;
+      }
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function togglePreviewEmployee(id_employee) {
+  previewEmployeeId.value = previewEmployeeId.value === id_employee ? null : id_employee;
+}
+
+const filteredPreviewEmployees = computed(() => {
+  const q = empPreviewSearch.value.trim().toLowerCase();
+  const list = allEmployees.value || [];
+  if (!q) return list;
+  return list.filter(e => {
+    const name = `${e.fName || ""} ${e.lName || ""}`.toLowerCase();
+    return name.includes(q);
+  });
+});
+
+function unavailabilityBlockStyle(row) {
+  const startH = parseTime(row.startTime);
+  const endH   = parseTime(row.endTime);
+  const top    = Math.max(0, (startH - CAL_START_HOUR) * CELL_HEIGHT);
+  const height = Math.max(18, (endH - startH) * CELL_HEIGHT);
+  return { top: top + "px", height: height + "px" };
+}
+
+function unavailabilityTitle(row) {
+  const label = row.label || "Unavailable";
+  const s = typeof row.startTime === "string" ? row.startTime.slice(0, 5) : "";
+  const e = typeof row.endTime   === "string" ? row.endTime.slice(0, 5)   : "";
+  return s && e ? `${label} — ${s}–${e}` : label;
+}
+
 // ── Hours of Operation (visual overlay only — does not modify real HOO) ───────
 const calendarHours      = ref([]); // raw rows from /calendar
 const activeSeason       = ref("");  // currently saved active season for the dept (legacy — used for hours-of-operation variants)
-const activeSemester     = ref("");  // Semester row whose date range contains today — used for class-schedule conflict matching
+const activeSemester     = ref("");  // Fallback — today's active semester, used only when the template has no id_semester linked
+const templateSemester   = ref(null); // The semester this template is scoped to (if any) — drives unavailability filtering so, e.g., a Fall template only warns about Fall-scoped blocks
 const selectedHoursKey   = ref(null); // key of the season the user is currently viewing
 const HOURS_NONE_KEY     = "__none__";
 
@@ -680,6 +913,7 @@ async function undoLastAction() {
         const created = await createTemplateShift({
           id_template: id.value,
           dayOfWeek:   s.dayOfWeek,
+          weekOffset:  s.weekOffset || 0,
           startHour:   s.startHour,
           endHour:     s.endHour,
           label:       s.label || "",
@@ -703,6 +937,7 @@ async function undoLastAction() {
         label:       before.label,
         id_position: before.id_position,
         dayOfWeek:   before.dayOfWeek,
+        weekOffset:  before.weekOffset || 0,
         startHour:   before.startHour,
         endHour:     before.endHour,
         notes:       before.notes || "",
@@ -819,6 +1054,8 @@ async function loadAll() {
     ]);
 
     templateName.value = tpl.name;
+    durationWeeks.value = Math.max(1, Number(tpl.durationWeeks) || 1);
+    activeWeek.value = Math.min(activeWeek.value, durationWeeks.value - 1);
     templateShifts.value = shifts;
     allTaskLists.value   = Array.isArray(tls) ? tls : (tls.data || []);
     allTasks.value       = Array.isArray(tks) ? tks : (tks.data || []);
@@ -897,6 +1134,20 @@ async function loadAll() {
       getActiveSemester(id_department)
         .then(r => { activeSemester.value = r.data?.name || ""; })
         .catch(() => { activeSemester.value = ""; });
+
+      // If this template is linked to a specific semester, resolve it so
+      // conflict checks filter season-scoped unavailability against *that*
+      // semester (not today's).
+      if (tpl.id_semester) {
+        getSemesters(id_department)
+          .then(r => {
+            const list = r.data || [];
+            templateSemester.value = list.find(s => s.id_semester === tpl.id_semester) || null;
+          })
+          .catch(() => { templateSemester.value = null; });
+      } else {
+        templateSemester.value = null;
+      }
     }
   } catch (err) {
     apiError.value = "Could not load template: " + (err.message || "Network error");
@@ -1287,19 +1538,127 @@ async function deleteSelectedShift() {
 
 // ── Shift helpers ─────────────────────────────────────────────────────────────
 function shiftsForDay(dayOfWeek) {
-  return templateShifts.value.filter(s => s.dayOfWeek === dayOfWeek);
+  return templateShifts.value.filter(
+    s => s.dayOfWeek === dayOfWeek && (s.weekOffset || 0) === activeWeek.value
+  );
 }
+
+// Shifts for an arbitrary week index (used by the copy-week action).
+function shiftsForWeek(weekIdx) {
+  return templateShifts.value.filter(s => (s.weekOffset || 0) === weekIdx);
+}
+
+// How many shifts live in each week — drives the "• N shifts" chip on each tab.
+const shiftsPerWeek = computed(() => {
+  const counts = new Array(durationWeeks.value).fill(0);
+  for (const s of templateShifts.value) {
+    const w = s.weekOffset || 0;
+    if (w < counts.length) counts[w] += 1;
+  }
+  return counts;
+});
 
 // ── Copy-Day menu ────────────────────────────────────────────────────────────
 const copyMenuOpen = ref(null); // day index with an open menu, or null
 function onCopyMenuDocClick(e) {
-  if (copyMenuOpen.value === null) return;
-  if (!e.target.closest?.(".day-copy-menu") && !e.target.closest?.(".day-copy-btn")) {
+  if (copyMenuOpen.value === null && !multiWeekMenuOpen.value) return;
+  if (copyMenuOpen.value !== null &&
+      !e.target.closest?.(".day-copy-menu") &&
+      !e.target.closest?.(".day-copy-btn")) {
     copyMenuOpen.value = null;
+  }
+  if (multiWeekMenuOpen.value &&
+      !e.target.closest?.(".multi-week-menu") &&
+      !e.target.closest?.(".week-action-btn")) {
+    multiWeekMenuOpen.value = false;
   }
 }
 onMounted(() => document.addEventListener("click", onCopyMenuDocClick));
 onUnmounted(() => document.removeEventListener("click", onCopyMenuDocClick));
+
+// ── Multi-week pagination + copy shortcuts ─────────────────────────────────────
+function setActiveWeek(w) {
+  const clamped = Math.max(0, Math.min(durationWeeks.value - 1, w));
+  if (clamped === activeWeek.value) return;
+  activeWeek.value = clamped;
+  selectedShift.value = null;
+  clearSelection();
+  quickCreate.value.visible = false;
+  multiWeekMenuOpen.value = false;
+}
+
+function toggleCopyWeekTarget(w) {
+  const next = new Set(copyWeekTargets.value);
+  if (next.has(w)) next.delete(w);
+  else next.add(w);
+  copyWeekTargets.value = next;
+}
+
+function selectRemainingWeeks() {
+  // All week indices strictly *after* the active week — use case: fill out the
+  // rest of the semester from whatever the manager built so far.
+  const next = new Set();
+  for (let w = activeWeek.value + 1; w < durationWeeks.value; w++) next.add(w);
+  copyWeekTargets.value = next;
+}
+
+function selectAllOtherWeeks() {
+  const next = new Set();
+  for (let w = 0; w < durationWeeks.value; w++) {
+    if (w !== activeWeek.value) next.add(w);
+  }
+  copyWeekTargets.value = next;
+}
+
+function cancelCopyWeek() {
+  multiWeekMenuOpen.value = false;
+  copyWeekTargets.value = new Set();
+}
+
+// Copy every shift from the active week to each checked target week. Reuses
+// the undo stack so one undo rolls back the whole copy. Preserves employee +
+// position-linked task lists on each new shift, same as the day-copy flow.
+const copyingWeek = ref(false);
+async function confirmCopyWeek() {
+  if (copyWeekTargets.value.size === 0 || copyingWeek.value) return;
+  const source = shiftsForWeek(activeWeek.value);
+  if (!source.length) { cancelCopyWeek(); return; }
+  copyingWeek.value = true;
+  const createdBatch = [];
+  try {
+    for (const targetWeek of copyWeekTargets.value) {
+      for (const s of source) {
+        try {
+          const created = await createTemplateShift({
+            id_template: id.value,
+            dayOfWeek:   s.dayOfWeek,
+            weekOffset:  targetWeek,
+            startHour:   s.startHour,
+            endHour:     s.endHour,
+            label:       s.label || "",
+            id_position: s.id_position,
+            notes:       s.notes || "",
+          });
+          templateShifts.value.push(created);
+          createdBatch.push(created);
+
+          const emp = shiftEmployeeMap.value[s.id_templateShift];
+          if (emp?.id_employee) {
+            try {
+              await addTemplateShiftEmployee({ id_templateShift: created.id_templateShift, id_employee: emp.id_employee });
+              shiftEmployeeMap.value[created.id_templateShift] = emp;
+            } catch (_) { /* ignore */ }
+          }
+          await attachPositionTaskListsForTemplateShift(created.id_templateShift, Number(s.id_position));
+        } catch (err) { console.error("Copy-week shift failed:", err); }
+      }
+    }
+    if (createdBatch.length) pushUndo({ type: 'create', shifts: createdBatch });
+  } finally {
+    copyingWeek.value = false;
+    cancelCopyWeek();
+  }
+}
 
 // Duplicate every shift from sourceDay → each of the targetDays. Re-attaches
 // each new shift's employee + position-linked task lists + individual tasks
@@ -1316,6 +1675,7 @@ async function copyDayToDays(sourceDay, targetDays) {
         const created = await createTemplateShift({
           id_template: id.value,
           dayOfWeek:   day,
+          weekOffset:  activeWeek.value,
           startHour:   s.startHour,
           endHour:     s.endHour,
           label:       s.label || "",
@@ -1349,7 +1709,9 @@ function copyDayToEveryday(sourceDay)          { return copyDayToDays(sourceDay,
 const coverageByHour = computed(() => {
   const counts = new Array(hours.length).fill(0);
   for (let d = 0; d < 7; d++) {
-    const dayShifts = templateShifts.value.filter(s => s.dayOfWeek === d);
+    const dayShifts = templateShifts.value.filter(
+      s => s.dayOfWeek === d && (s.weekOffset || 0) === activeWeek.value
+    );
     for (let i = 0; i < hours.length; i++) {
       const h = hours[i];
       const count = dayShifts.filter(s => s.startHour <= h && s.endHour > h).length;
@@ -1723,6 +2085,7 @@ function copySelected() {
   const selected = templateShifts.value.filter(s => selectedShiftIds.value.has(s.id_templateShift));
   clipboard.value = selected.map(s => ({
     dayOfWeek:   s.dayOfWeek,
+    weekOffset:  s.weekOffset || 0,
     startHour:   s.startHour,
     endHour:     s.endHour,
     label:       s.label || "",
@@ -1750,6 +2113,7 @@ async function pasteToDay(targetColIdx) {
       const created = await createTemplateShift({
         id_template: id.value,
         dayOfWeek:   newDay,
+        weekOffset:  activeWeek.value,
         startHour:   item.startHour,
         endHour:     item.endHour,
         label:       item.label,
@@ -1821,6 +2185,7 @@ async function confirmQuickCreate() {
     const created = await createTemplateShift({
       id_template:  id.value,
       dayOfWeek:    quickCreate.value.dayIndex,
+      weekOffset:   activeWeek.value,
       startHour,    endHour,
       label:        quickCreate.value.label,
       id_position:  Number(quickCreate.value.id_position),
@@ -2123,7 +2488,8 @@ function fromTimeInput(t) {
   line-height: 1.5;
 }
 .hours-sidebar-list {
-  flex: 1;
+  flex: 0 1 auto;
+  max-height: 40%;
   overflow-y: auto;
   padding: 10px 12px;
   display: flex;
@@ -2203,6 +2569,161 @@ function fromTimeInput(t) {
 }
 .legend-swatch.open  { background: rgba(34, 197, 94, 0.85); }
 .legend-swatch.close { background: rgba(248, 113, 113, 0.85); }
+
+/* ── Employees preview panel (in the left sidebar) ── */
+.emp-preview-section {
+  border-top: 1px solid var(--bdr-subtle);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.emp-preview-search-wrap {
+  padding: 10px 16px 4px;
+}
+.emp-preview-search {
+  width: 100%;
+  background: var(--bg-modal);
+  border: 1px solid var(--bdr-faint);
+  border-radius: 7px;
+  padding: 6px 10px;
+  color: var(--tx-primary);
+  font-size: 13px;
+  font-family: 'Satoshi', sans-serif;
+  outline: none;
+  transition: border-color .15s;
+}
+.emp-preview-search:focus { border-color: var(--accent); }
+.emp-preview-search::placeholder { color: var(--tx-faded); }
+.emp-preview-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.emp-preview-list::-webkit-scrollbar { width: 4px; }
+.emp-preview-list::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
+.emp-preview-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--tx-secondary);
+  font-family: 'Satoshi', sans-serif;
+  cursor: pointer;
+  text-align: left;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.emp-preview-opt:hover {
+  background: var(--bg-hover);
+  color: var(--tx-primary);
+}
+.emp-preview-opt.active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.emp-preview-avatar {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #181820;
+  font-family: 'DM Mono', monospace;
+  letter-spacing: .3px;
+}
+.emp-preview-name {
+  flex: 1;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.emp-preview-count {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: 'DM Mono', monospace;
+  background: rgba(255, 23, 68, 0.14);
+  color: rgba(255, 23, 68, 0.9);
+  border-radius: 10px;
+  padding: 1px 7px;
+  min-width: 18px;
+  text-align: center;
+}
+.emp-preview-opt.active .emp-preview-count {
+  background: rgba(255,255,255,0.22);
+  color: #fff;
+}
+.emp-preview-footer {
+  padding: 8px 16px;
+  border-top: 1px solid var(--bdr-subtle);
+}
+.emp-preview-clear {
+  background: none;
+  border: 1px solid var(--bdr-faint);
+  color: var(--tx-muted);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: 'DM Mono', monospace;
+  cursor: pointer;
+  width: 100%;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.emp-preview-clear:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+/* Hatched unavailability overlay on the day columns. Sits below shift
+   blocks (shift-block z-index 2) and hours-op lines so shifts remain
+   click-through. `pointer-events: none` is critical — any future rule
+   must not shadow it or drag-to-create breaks. */
+.tpl-unavail-overlay {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 23, 68, 0.14), rgba(255, 23, 68, 0.14) 6px,
+    transparent 6px, transparent 12px
+  );
+  border: 1px dashed rgba(255, 23, 68, 0.45);
+  border-radius: 5px;
+  z-index: 1;
+  pointer-events: none !important;
+  display: flex;
+  align-items: flex-start;
+}
+.tpl-unavail-overlay-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: rgba(255, 23, 68, 0.9);
+  background: rgba(255, 255, 255, 0.75);
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin: 3px 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: calc(100% - 8px);
+  font-family: 'DM Mono', monospace;
+  pointer-events: none !important;
+}
 
 /* ── Hours of operation overlay lines (calendar grid) ── */
 .hours-op-line {
@@ -2396,6 +2917,168 @@ function fromTimeInput(t) {
 .form-row { display: flex; gap: 10px; }
 .form-row .form-group { flex: 1; }
 .optional { color: var(--tx-faded); font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+/* ── Week Tab Bar ── */
+.week-tab-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 24px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--bdr-subtle);
+}
+.week-tab-list {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+}
+.week-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  background: var(--bg-modal);
+  border: 1px solid var(--bdr-faint);
+  color: var(--tx-muted);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-family: 'Satoshi', sans-serif;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+  white-space: nowrap;
+}
+.week-tab:hover { color: var(--tx-primary); border-color: var(--bdr-medium); }
+.week-tab.active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.week-tab-label { font-size: 14px; font-weight: 600; }
+.week-tab-count {
+  font-size: 11px;
+  font-family: 'DM Mono', monospace;
+  opacity: .75;
+  letter-spacing: .3px;
+}
+.week-tab-actions { flex-shrink: 0; position: relative; }
+.multi-week-menu-wrap { position: relative; }
+.week-action-btn {
+  background: var(--bg-modal);
+  border: 1px solid var(--bdr-faint);
+  color: var(--tx-muted);
+  border-radius: 7px;
+  padding: 7px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: 'Satoshi', sans-serif;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.week-action-btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+.week-action-btn.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+.week-action-btn:disabled { opacity: .4; cursor: not-allowed; }
+.multi-week-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  width: 260px;
+  background: var(--bg-modal);
+  border: 1px solid var(--bdr-faint);
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.multi-week-menu-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tx-faint);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  font-family: 'DM Mono', monospace;
+}
+.multi-week-menu-days {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.multi-week-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--tx-primary);
+  cursor: pointer;
+  user-select: none;
+}
+.multi-week-check input { accent-color: var(--accent); }
+.multi-week-menu-sep {
+  height: 1px;
+  background: var(--bdr-subtle);
+  margin: 2px 0;
+}
+.multi-week-menu-opt {
+  background: none;
+  border: 1px solid var(--bdr-subtle);
+  color: var(--tx-muted);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: 'Satoshi', sans-serif;
+  cursor: pointer;
+  text-align: left;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.multi-week-menu-opt:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+.multi-week-menu-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+}
+.cancel-btn-sm {
+  background: none;
+  border: 1px solid var(--bdr-faint);
+  color: var(--tx-muted);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.cancel-btn-sm:hover { color: var(--tx-primary); border-color: var(--bdr-medium); }
+.confirm-btn-sm {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.confirm-btn-sm:disabled { opacity: .4; cursor: not-allowed; }
+.confirm-btn-sm:not(:disabled):hover { opacity: .85; }
 
 /* ── Multi-selected shift block ── */
 .shift-block--multi-selected {
